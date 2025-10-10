@@ -10,65 +10,68 @@ import { motion } from 'framer-motion';
 const supabase = getSupabase();
 
 /**
- * 🎯 Role Selector — Versión estable ManosYA
- * - Guarda el rol en Supabase y localStorage
- * - Redirige correctamente a /client o /worker
- * - Animaciones suaves, sin errores ni flickers
+ * 🎯 Role Selector — versión estable ManosYA (Vercel + Local)
  */
 export default function RoleSelectorPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState(null);
 
-  // 🔐 Verificar sesión Supabase
+  // 🔐 Verificar sesión Supabase (método estable)
   useEffect(() => {
-    const checkSession = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (error || !data?.session?.user) {
-        toast.error('Iniciá sesión para continuar');
+    const checkUser = async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+
+        if (error || !data?.user) {
+          console.warn('🔒 Sesión no encontrada, redirigiendo a login...');
+          toast.error('Iniciá sesión para continuar');
+          router.replace('/login');
+          return;
+        }
+
+        setUserEmail(data.user.email);
+      } catch (err) {
+        console.error('❌ Error verificando sesión:', err);
+        toast.error('Error verificando sesión');
         router.replace('/login');
-        return;
+      } finally {
+        setLoading(false);
       }
-      setUserEmail(data.session.user.email);
-      setLoading(false);
     };
-    checkSession();
+
+    checkUser();
   }, [router]);
 
   // ⚙️ Guardar rol seleccionado
   const handleSelectRole = async (role) => {
     setLoading(true);
     try {
-      const { data } = await supabase.auth.getSession();
-      const session = data?.session;
-      if (!session?.user) {
+      const { data } = await supabase.auth.getUser();
+      const user = data?.user;
+
+      if (!user) {
         toast.error('Sesión expirada. Iniciá sesión nuevamente.');
         router.replace('/login');
         return;
       }
 
-      const userId = session.user.id;
-
-      // Guardar en Supabase
       const { error } = await supabase
         .from('profiles')
         .update({ role })
-        .eq('id', userId);
+        .eq('id', user.id);
 
       if (error) throw error;
 
-      // Guardar en localStorage
       localStorage.setItem('app_role', role);
-
       toast.success(`Modo ${role === 'worker' ? 'Trabajador' : 'Cliente'} activado ✅`);
 
-      // Redirección segura
-      setTimeout(() => {
-        router.replace(`/${role}`);
-      }, 600);
+      // Redirección suave
+      setTimeout(() => router.replace(`/${role}`), 600);
     } catch (err) {
       console.error(err);
       toast.error('No se pudo guardar tu elección.');
+    } finally {
       setLoading(false);
     }
   };
@@ -78,7 +81,7 @@ export default function RoleSelectorPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white text-gray-800">
         <Loader2 className="animate-spin w-6 h-6 mr-2" />
-        <p className="text-lg font-medium">Cargando tu sesión...</p>
+        <p className="text-lg font-medium">Verificando sesión...</p>
       </div>
     );
   }
@@ -86,8 +89,6 @@ export default function RoleSelectorPage() {
   // 🌟 Pantalla principal
   return (
     <div className="min-h-screen bg-gradient-to-b from-white via-emerald-50 to-cyan-50 flex flex-col items-center justify-between py-10 px-6">
-      
-      {/* === Header === */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -102,9 +103,7 @@ export default function RoleSelectorPage() {
         </p>
       </motion.div>
 
-      {/* === Opciones === */}
       <div className="w-full max-w-xs flex flex-col gap-5 mt-8">
-        {/* Cliente */}
         <motion.button
           whileTap={{ scale: 0.97 }}
           whileHover={{ scale: 1.03 }}
@@ -118,7 +117,6 @@ export default function RoleSelectorPage() {
           </p>
         </motion.button>
 
-        {/* Trabajador */}
         <motion.button
           whileTap={{ scale: 0.97 }}
           whileHover={{ scale: 1.03 }}
@@ -133,7 +131,6 @@ export default function RoleSelectorPage() {
         </motion.button>
       </div>
 
-      {/* === Footer === */}
       <p className="text-xs text-gray-500 text-center mt-10">
         Podés cambiar tu rol en cualquier momento desde tu perfil.
       </p>
