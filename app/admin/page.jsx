@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { getSupabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+
+const supabase = getSupabase();
 
 export default function RequireAdmin({ children }) {
   const [loading, setLoading] = useState(true);
@@ -12,11 +14,11 @@ export default function RequireAdmin({ children }) {
     const check = async () => {
       try {
         const { data, error } = await supabase.auth.getUser();
-        console.log("🔍 Usuario actual (RequireAdmin):", data, error);
+        console.log('🔍 Usuario actual (RequireAdmin):', data, error);
 
         const user = data?.user;
         if (!user) {
-          console.warn("🚫 No hay sesión activa. Redirigiendo al login...");
+          console.warn('🚫 No hay sesión activa. Redirigiendo al login...');
           router.replace('/login');
           return;
         }
@@ -33,11 +35,11 @@ export default function RequireAdmin({ children }) {
         if (profile?.role === 'admin') {
           setAllowed(true);
         } else {
-          console.warn("🚫 Acceso denegado: rol =", profile?.role);
+          console.warn('🚫 Acceso denegado: rol =', profile?.role);
           router.replace('/');
         }
       } catch (e) {
-        console.error("❌ Error en RequireAdmin:", e);
+        console.error('❌ Error en RequireAdmin:', e);
       } finally {
         setLoading(false);
       }

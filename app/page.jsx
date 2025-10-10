@@ -1,14 +1,18 @@
 'use client';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { getSupabase } from '@/lib/supabase';
+
+const supabase = getSupabase();
 
 export default function RootPage() {
   const router = useRouter();
 
   useEffect(() => {
     async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       const savedRole = localStorage.getItem('app_role');
 
       if (!user) {
