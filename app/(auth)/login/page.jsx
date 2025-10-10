@@ -15,13 +15,13 @@ export default function LoginManosYA() {
   const [busy, setBusy] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
 
-  // ✅ Si ya hay sesión activa, ir directo a /role-selector
+  // ✅ Si ya hay sesión activa → ir directo al dashboard de cliente
   useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         console.log('🔁 Sesión activa detectada:', session.user.email);
-        window.location.href = '/role-selector';
+        window.location.href = '/client'; // 👈 cambio clave
       } else {
         setCheckingSession(false);
       }
@@ -46,15 +46,10 @@ export default function LoginManosYA() {
         return;
       }
 
-      console.log('✅ Sesión iniciada:', data.user?.email);
       toast.success('Bienvenido 👋');
-
-      // 🔄 Forzar sincronización de cookie y esperar propagación
       await supabase.auth.refreshSession();
-      await new Promise((resolve) => setTimeout(resolve, 1200)); // 1.2s
-
-      // 🔥 Redirección forzada (sin router)
-      window.location.href = '/role-selector';
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      window.location.href = '/client'; // 👈 cambio clave
     } catch (err) {
       console.error('⚠️ Error inesperado:', err.message);
       toast.error('Error al iniciar sesión');
@@ -81,9 +76,9 @@ export default function LoginManosYA() {
         return;
       }
 
-      toast.success('Cuenta creada ✅ Verificá tu correo.');
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      window.location.href = '/role-selector';
+      toast.success('Cuenta creada ✅');
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      window.location.href = '/client'; // 👈 cambio clave
     } catch (err) {
       console.error('⚠️ Error inesperado:', err.message);
       toast.error('Error al registrarse');
