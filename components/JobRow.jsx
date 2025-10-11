@@ -1,106 +1,82 @@
 'use client';
 
-import Link from 'next/link';
-
-function formatWhen(ts) {
-  if (!ts) return '';
-  const d = new Date(ts);
-  const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  if (sameDay) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-  return d.toLocaleDateString();
-}
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Download } from 'lucide-react';
 
 /**
- * props:
- *  - job: { id, title, status, created_at, skill_slug, price_offer }
- *  - unreadInfo?: { unread?: number, last_message?: string, last_message_at?: string }
+ * 📲 Banner “Instalar ManosYA”
+ * Detecta el evento beforeinstallprompt y muestra un popup elegante.
  */
-export default function JobRow({ job, unreadInfo }) {
-  const unread = unreadInfo?.unread || 0;
-  const lastMessage = unreadInfo?.last_message || null;
-  const lastAt = unreadInfo?.last_message_at || job?.created_at;
+export default function InstallPrompt() {
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setVisible(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // Si ya está instalada, no mostramos nada
+    window.addEventListener('appinstalled', () => {
+      setVisible(false);
+    });
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+    };
+  }, []);
+
+  if (!visible || !deferredPrompt) return null;
+
+  const handleInstall = async () => {
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      console.log('✅ Usuario aceptó instalar ManosYA');
+    } else {
+      console.log('❌ Usuario canceló instalación');
+    }
+    setVisible(false);
+  };
 
   return (
-    <Link
-      href={`/job/${job.id}`}
-      className="block p-4 rounded-xl border border-white/10 hover:border-white/20 transition-colors"
-      style={{ background: 'rgba(255,255,255,0.03)' }}
-    >
-      <div className="flex items-start gap-3">
-        {/* Dot / contador */}
-        <div className="pt-1">
-          {unread > 0 ? (
-            <span
-              title={`${unread} sin leer`}
-              style={{
-                background: 'var(--accent)',
-                color: '#0B0D0F',
-                borderRadius: 9999,
-                padding: '0 8px',
-                minWidth: 22,
-                height: 22,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 12,
-                fontWeight: 800,
-                lineHeight: '22px',
-              }}
-            >
-              {unread > 99 ? '99+' : unread}
-            </span>
-          ) : (
-            <span
-              title="Sin nuevos"
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: 9999,
-                background: 'rgba(255,255,255,0.2)',
-                display: 'inline-block',
-              }}
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          initial={{ y: 100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 100, opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          className="fixed bottom-5 left-0 right-0 flex justify-center z-[9999]"
+        >
+          <div className="bg-white shadow-lg rounded-2xl border border-emerald-100 flex items-center gap-4 p-4 w-[90%] max-w-md">
+            <img
+              src="/icons/icon-192.png"
+              alt="ManosYA"
+              className="w-12 h-12 rounded-xl border border-emerald-200"
             />
-          )}
-        </div>
-
-        {/* Info principal */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <div className="font-heading font-extrabold truncate">
-              {job.title || 'Pedido'}
+            <div className="flex-1">
+              <h3 className="font-bold text-gray-800 text-sm">
+                Instalar <span className="text-emerald-600">ManosYA</span>
+              </h3>
+              <p className="text-xs text-gray-500">
+                Acceso rápido desde tu pantalla de inicio 🚀
+              </p>
             </div>
-            {job.skill_slug && (
-              <span className="text-xs text-white/60">• {job.skill_slug}</span>
-            )}
-            {typeof job.price_offer === 'number' && job.price_offer > 0 && (
-              <span className="text-xs text-white/60">
-                • Gs. {Math.round(job.price_offer).toLocaleString()}
-              </span>
-            )}
+            <button
+              onClick={handleInstall}
+              className="flex items-center gap-1 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm px-3 py-2 rounded-xl transition"
+            >
+              <Download size={16} /> Instalar
+            </button>
           </div>
-
-          {/* Preview del último mensaje (o descripción corta) */}
-          <div className="text-sm text-white/70 truncate mt-1">
-            {lastMessage?.trim()
-              ? lastMessage
-              : (job.description?.trim() || 'Sin mensajes todavía')}
-          </div>
-        </div>
-
-        {/* When / status */}
-        <div className="text-right ml-2 shrink-0">
-          <div className="text-xs text-white/60">{formatWhen(lastAt)}</div>
-          <div className="text-xs text-white/60 mt-1 capitalize">
-            {job.status || 'open'}
-          </div>
-        </div>
-      </div>
-    </Link>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

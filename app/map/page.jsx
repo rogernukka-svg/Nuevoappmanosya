@@ -97,7 +97,6 @@ function StarRating({ avg = 0, count = 0 }) {
     </div>
   );
 }
-/* normaliza para que 'plomería' coincida con 'plomeria' */
 const normalize = (s) =>
   (s || '')
     .toString()
@@ -201,6 +200,18 @@ export default function MapPage() {
       setBusy(false);
     }
   }
+
+  /* === 🔥 Realtime automático === */
+  useEffect(() => {
+    const channel = supabase
+      .channel('realtime-workers')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_profiles' }, () => {
+        fetchWorkers(); // refresca el mapa cada vez que un trabajador cambia algo
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [selectedService]);
 
   /* === Solicitar trabajo === */
   async function solicitar(worker) {

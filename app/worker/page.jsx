@@ -15,16 +15,6 @@ import {
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 
-// 🧩 Import dinámico seguro de Leaflet solo si hay window
-let L, icon, iconShadow;
-if (typeof window !== 'undefined') {
-  import('leaflet').then((mod) => {
-    L = mod.default;
-    import('leaflet/dist/images/marker-icon.png').then((m) => (icon = m.default));
-    import('leaflet/dist/images/marker-shadow.png').then((m) => (iconShadow = m.default));
-  });
-}
-
 const supabase = getSupabase();
 
 /* === Crear perfil si no existe === */
@@ -38,9 +28,9 @@ async function ensureWorkerProfile(userId) {
       .maybeSingle();
 
     if (!existing) {
-      await supabase.from('worker_profiles').insert([
-        { user_id: userId, is_active: true, radius_km: 5 },
-      ]);
+      await supabase
+        .from('worker_profiles')
+        .insert([{ user_id: userId, is_active: true, radius_km: 5 }]);
     }
   } catch (err) {
     console.error('Error creando worker_profile:', err.message);
@@ -58,14 +48,14 @@ export default function WorkerPage() {
   const [sending, setSending] = useState(false);
   const inputRef = useRef(null);
   const chatChannelRef = useRef(null);
+  const bottomRef = useRef(null);
   const soundRef = useRef(null);
 
   /* === Sesión === */
   useEffect(() => {
-    if (typeof window === 'undefined') return; // 🧠 evita SSR crash
+    if (typeof window === 'undefined') return;
     (async () => {
       try {
-        // Audio solo en cliente
         if (typeof Audio !== 'undefined') {
           soundRef.current = new Audio('/notify.mp3');
         }
@@ -88,7 +78,6 @@ export default function WorkerPage() {
 
   /* === Cargar trabajos === */
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     if (!user?.id) return;
     const load = async () => {
       try {
@@ -122,15 +111,25 @@ export default function WorkerPage() {
         p_worker_id: user.id,
       });
 
-      if (error || !data?.success) throw error || new Error(data?.message);
+      if (error || !data?.ok)
+        throw error || new Error(data?.message || 'No se pudo aceptar el trabajo');
 
       toast.success('✅ Trabajo aceptado correctamente');
 
       setJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, status: 'taken' } : j))
+        prev.map((j) =>
+          j.id === job.id ? { ...j, status: data.status || 'accepted' } : j
+        )
       );
 
-      if (data.chat_id) await openChat({ ...job, chat_id: data.chat_id });
+      // abrir chat automáticamente
+      await openChat(job);
+
+      // abrir Google Maps automáticamente
+      window.open(
+        `https://www.google.com/maps/dir/?api=1&destination=${job.client_lat},${job.client_lng}`,
+        '_blank'
+      );
     } catch (err) {
       console.error('Error al aceptar trabajo:', err);
       toast.error(err.message || 'No se pudo aceptar el trabajo');
@@ -146,7 +145,7 @@ export default function WorkerPage() {
       });
 
       if (error) throw error;
-      if (!data?.success) {
+      if (!data?.ok) {
         toast.warning(data?.message || 'No se pudo rechazar');
         return;
       }
@@ -159,7 +158,7 @@ export default function WorkerPage() {
     }
   }
 
-  /* === Finalizar trabajo (RPC) === */
+  /* === Finalizar trabajo === */
   async function completeJob(job) {
     try {
       const { data, error } = await supabase.rpc('complete_job_flow', {
@@ -168,13 +167,12 @@ export default function WorkerPage() {
       });
 
       if (error) throw error;
-      if (!data?.success) {
+      if (!data?.ok) {
         toast.warning(data?.message || 'No se pudo finalizar');
         return;
       }
 
       toast.success('🎉 Trabajo finalizado correctamente');
-
       setJobs((prev) =>
         prev.map((j) => (j.id === job.id ? { ...j, status: 'completed' } : j))
       );
@@ -186,53 +184,58 @@ export default function WorkerPage() {
     }
   }
 
-  /* === Chat === */
+  /* === Chat sincronizado === */
   async function openChat(job) {
-    if (typeof window === 'undefined') return; // 🧠 protección SSR
     try {
-      let { data: chatRow } = await supabase
-        .from('chats')
-        .select('id')
-        .eq('job_id', job.id)
-        .maybeSingle();
+      const { data: chatIdData, error: chatErr } = await supabase.rpc(
+        'ensure_chat_for_job',
+        { p_job_id: job.id }
+      );
+      if (chatErr) throw chatErr;
+      const chatId = chatIdData;
 
-      if (!chatRow?.id) {
-        const { data: newChat, error: chatErr } = await supabase
-          .from('chats')
-          .insert([{ job_id: job.id, created_at: new Date().toISOString() }])
-          .select()
-          .single();
-        if (chatErr) throw chatErr;
-        chatRow = newChat;
-      }
-
+      // Cargar mensajes previos
       const { data: msgs } = await supabase
         .from('messages')
         .select('*')
-        .eq('chat_id', chatRow.id)
+        .eq('chat_id', chatId)
         .order('created_at', { ascending: true });
 
       setMessages(msgs || []);
       setIsChatOpen(true);
-      setSelectedJob(job);
+      setSelectedJob({ ...job, chat_id: chatId });
 
+      // 🟢 Realtime sincronizado
       if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
+
       const channel = supabase
-        .channel(`chat-${chatRow.id}`)
+        .channel(`chat-${chatId}`, {
+          config: {
+            broadcast: { self: true },
+            presence: { key: user.id },
+          },
+        })
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
             table: 'messages',
-            filter: `chat_id=eq.${chatRow.id}`,
+            filter: `chat_id=eq.${chatId}`,
           },
           (payload) => {
             setMessages((prev) => [...prev, payload.new]);
-            if (payload.new.sender_id !== user.id) soundRef.current?.play?.();
+            if (payload.new.sender_id !== user.id) {
+              soundRef.current?.play?.();
+            }
+            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
           }
         )
-        .subscribe();
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log(`✅ Realtime conectado al chat ${chatId}`);
+          }
+        });
 
       chatChannelRef.current = channel;
     } catch (e) {
@@ -246,18 +249,12 @@ export default function WorkerPage() {
     if (!text || !selectedJob) return;
     try {
       setSending(true);
-      const { data: chat } = await supabase
-        .from('chats')
-        .select('id')
-        .eq('job_id', selectedJob.id)
-        .maybeSingle();
-
-      if (!chat?.id) return toast.error('Sin chat activo');
       await supabase
         .from('messages')
-        .insert([{ chat_id: chat.id, sender_id: user.id, content: text }]);
+        .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, content: text }]);
     } finally {
       setSending(false);
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
     }
   }
 
@@ -351,11 +348,11 @@ export default function WorkerPage() {
                 </div>
               )}
 
-              {job.status === 'taken' && (
+              {job.status === 'accepted' && (
                 <div className="flex flex-col gap-2 mt-3">
                   <button
                     onClick={() =>
-                      window?.open?.(
+                      window.open(
                         `https://www.google.com/maps/dir/?api=1&destination=${job.client_lat},${job.client_lng}`,
                         '_blank'
                       )
@@ -404,7 +401,7 @@ export default function WorkerPage() {
                 <h2 className="font-semibold text-gray-800">Chat con cliente</h2>
                 <button
                   onClick={() =>
-                    window?.open?.(
+                    window.open(
                       `https://www.google.com/maps/dir/?api=1&destination=${selectedJob.client_lat},${selectedJob.client_lng}`,
                       '_blank'
                     )
@@ -441,6 +438,7 @@ export default function WorkerPage() {
                       </div>
                     );
                   })}
+                  <div ref={bottomRef} />
                 </div>
 
                 <form

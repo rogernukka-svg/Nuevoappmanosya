@@ -31,23 +31,27 @@ export default function ClientJobsPage() {
   const inputRef = useRef(null);
   const chatChannelRef = useRef(null);
   const bottomRef = useRef(null);
+  const soundRef = useRef(null);
 
   // Review
   const [showReview, setShowReview] = useState(false);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
 
-  // === CARGAR USUARIO ===
+  /* === SESIÓN === */
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data?.user) setUser(data.user);
+      if (data?.user) {
+        setUser(data.user);
+        if (typeof Audio !== 'undefined') soundRef.current = new Audio('/notify.mp3');
+      }
     });
     return () => {
       if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
     };
   }, []);
 
-  // === CARGAR PEDIDOS ===
+  /* === CARGAR PEDIDOS === */
   async function loadJobs() {
     if (!user?.id) return;
     setLoading(true);
@@ -65,7 +69,6 @@ export default function ClientJobsPage() {
       console.error('❌ Error cargando pedidos:', error);
       toast.error('Error al cargar pedidos');
     } else setJobs(data || []);
-
     setLoading(false);
   }
 
@@ -73,48 +76,61 @@ export default function ClientJobsPage() {
     if (user?.id) loadJobs();
   }, [user]);
 
-  // === CHAT ===
+  /* === CHAT === */
   async function openChat(job) {
     try {
-      if (!job.worker_id) return toast('⚠️ Aún no tiene trabajador asignado');
+      if (!job?.worker_id) return toast('⚠️ Aún no tiene trabajador asignado');
 
-      let { data: chatRow } = await supabase
-        .from('chats')
-        .select('id')
-        .eq('job_id', job.id)
-        .maybeSingle();
+      // ✅ Garantizar chat compartido
+      const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
+        p_job_id: job.id,
+      });
+      if (chatErr) throw chatErr;
+      const chatId = chatIdData;
 
-      if (!chatRow) {
-        const { data: newChat } = await supabase
-          .from('chats')
-          .insert([{ job_id: job.id, client_id: user.id, worker_id: job.worker_id }])
-          .select('id')
-          .single();
-        chatRow = newChat;
-      }
-
+      // Cargar mensajes previos
       const { data: msgs } = await supabase
         .from('messages')
         .select('*')
-        .eq('chat_id', chatRow.id)
+        .eq('chat_id', chatId)
         .order('created_at', { ascending: true });
 
       setMessages(msgs || []);
-      setSelectedJob({ ...job, chat_id: chatRow.id });
+      setSelectedJob({ ...job, chat_id: chatId });
       setIsChatOpen(true);
 
+      // 🟢 Realtime sincronizado
       if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
+
       const channel = supabase
-        .channel(`chat-${chatRow.id}`)
+        .channel(`chat-${chatId}`, {
+          config: {
+            broadcast: { self: true },
+            presence: { key: user.id },
+          },
+        })
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatRow.id}` },
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `chat_id=eq.${chatId}`,
+          },
           (payload) => {
             setMessages((prev) => [...prev, payload.new]);
-            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+            if (payload.new.sender_id !== user.id) {
+              soundRef.current?.play?.();
+            }
+            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
           }
         )
-        .subscribe();
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log(`✅ Realtime conectado al chat ${chatId}`);
+          }
+        });
+
       chatChannelRef.current = channel;
     } catch (e) {
       console.error('❌ Error abriendo chat:', e);
@@ -127,9 +143,9 @@ export default function ClientJobsPage() {
     if (!text || !user?.id || !selectedJob) return;
     try {
       setSending(true);
-      const { error } = await supabase.from('messages').insert([
-        { chat_id: selectedJob.chat_id, sender_id: user.id, content: text },
-      ]);
+      const { error } = await supabase
+        .from('messages')
+        .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, content: text }]);
       if (error) throw error;
     } catch (err) {
       toast.error('No se pudo enviar el mensaje');
@@ -147,7 +163,7 @@ export default function ClientJobsPage() {
     }
   }
 
-  // === REVIEW ===
+  /* === REVIEW === */
   async function submitReview(jobId, workerId) {
     if (!rating) return toast('Seleccioná una calificación');
     try {
@@ -170,7 +186,7 @@ export default function ClientJobsPage() {
     }
   }
 
-  // === REASIGNAR TRABAJADOR (AUTO) ===
+  /* === REASIGNAR TRABAJADOR (AUTO) === */
   async function reassignWorker(jobId) {
     try {
       const { error } = await supabase.rpc('reassign_worker_if_needed', { p_job_id: jobId });
@@ -182,6 +198,7 @@ export default function ClientJobsPage() {
     }
   }
 
+  /* === UI === */
   return (
     <motion.div
       initial={{ opacity: 0 }}

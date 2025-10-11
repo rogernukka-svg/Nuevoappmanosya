@@ -15,82 +15,92 @@ export default function LoginManosYA() {
   const [busy, setBusy] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
 
-  // ✅ Si ya hay sesión activa → ir directo al dashboard de cliente
+  // 🧠 Verificar sesión activa
   useEffect(() => {
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        console.log('🔁 Sesión activa detectada:', session.user.email);
-        window.location.href = '/client'; // 👈 cambio clave
-      } else {
-        setCheckingSession(false);
-      }
-    })();
-  }, []);
+    let isMounted = true;
 
-  /* === LOGIN === */
+    const checkSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) console.error('Error obteniendo sesión:', error);
+
+      if (data?.session?.user) {
+        console.log('✅ Sesión activa detectada:', data.session.user.email);
+        if (isMounted) {
+          toast.success('Bienvenido 👋 Redirigiendo...');
+          setTimeout(() => router.push('/role-selector'), 500); // 👈 forzamos redirección visible
+        }
+      } else {
+        console.log('ℹ️ No hay sesión activa.');
+        if (isMounted) setCheckingSession(false);
+      }
+    };
+
+    checkSession();
+    // Segundo intento por si el token tarda en escribirse
+    const retry = setTimeout(checkSession, 1000);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(retry);
+    };
+  }, [router]);
+
+  // 🚀 Iniciar sesión
   async function handleLogin(e) {
     e.preventDefault();
     setBusy(true);
-
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
+      if (error) throw error;
 
-      if (error) {
-        toast.error('Credenciales incorrectas ❌');
-        console.error('Error login:', error.message);
-        setBusy(false);
-        return;
-      }
+      console.log('✅ Login exitoso:', data);
+      toast.success('Inicio de sesión exitoso 🎉');
 
-      toast.success('Bienvenido 👋');
-      await supabase.auth.refreshSession();
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      window.location.href = '/client'; // 👈 cambio clave
+      setTimeout(() => router.push('/role-selector'), 800);
     } catch (err) {
-      console.error('⚠️ Error inesperado:', err.message);
-      toast.error('Error al iniciar sesión');
+      console.error('❌ Error al iniciar sesión:', err);
+      toast.error('Correo o contraseña incorrectos.');
     } finally {
       setBusy(false);
     }
   }
 
-  /* === REGISTRO === */
+  // 🧩 Crear cuenta
   async function handleSignup(e) {
     e.preventDefault();
     setBusy(true);
-
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
       });
+      if (error) throw error;
 
-      if (error) {
-        toast.error('Error al crear la cuenta ❌');
-        console.error('Error signup:', error.message);
-        setBusy(false);
-        return;
-      }
+      console.log('✅ Cuenta creada:', data);
+      toast.success('Cuenta creada correctamente ✅');
 
-      toast.success('Cuenta creada ✅');
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      window.location.href = '/client'; // 👈 cambio clave
+      const { error: loginError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (loginError) throw loginError;
+
+      setTimeout(() => router.push('/role-selector'), 800);
     } catch (err) {
-      console.error('⚠️ Error inesperado:', err.message);
-      toast.error('Error al registrarse');
+      console.error('⚠️ Error al registrarse:', err);
+      toast.error('No se pudo crear la cuenta');
     } finally {
       setBusy(false);
     }
   }
 
-  // 🌀 Estado intermedio mientras revisa sesión existente
+  // ⏳ Mientras se verifica sesión
   if (checkingSession) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#F9FAFB]">
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="animate-pulse text-emerald-600 text-lg font-semibold">
           Verificando sesión...
         </div>
@@ -98,65 +108,72 @@ export default function LoginManosYA() {
     );
   }
 
+  // 🎨 UI principal
   return (
-    <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md mx-auto animate-fadeIn">
-      <h1 className="text-2xl font-extrabold text-center text-emerald-600 mb-2">
-        Manos<span className="text-gray-900">YA</span>
-      </h1>
-      <p className="text-center text-gray-500 mb-6">
-        {mode === 'login' ? 'Iniciá sesión' : 'Creá tu cuenta'}
-      </p>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-white to-gray-50 p-6">
+      <div className="w-full max-w-md bg-white shadow-2xl rounded-2xl border border-gray-100 p-8 text-center">
+        <h1 className="text-3xl font-extrabold mb-2">
+          <span className="text-emerald-600">Manos</span>
+          <span className="text-gray-900">YA</span>
+        </h1>
+        <p className="text-gray-600 italic mb-6">
+          Conectamos talento y confianza en segundos.
+        </p>
 
-      <form onSubmit={mode === 'login' ? handleLogin : handleSignup}>
-        <input
-          type="email"
-          placeholder="Correo electrónico"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="w-full mb-3 p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
-        />
+        <form onSubmit={mode === 'login' ? handleLogin : handleSignup}>
+          <input
+            type="email"
+            placeholder="Correo electrónico"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="w-full mb-3 p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
+          />
+          <input
+            type="password"
+            placeholder="Contraseña"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="w-full mb-4 p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
+          />
 
-        <input
-          type="password"
-          placeholder="Contraseña"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className="w-full mb-4 p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
-        />
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-lg shadow-md transition disabled:opacity-70"
+          >
+            {busy
+              ? 'Procesando...'
+              : mode === 'login'
+              ? 'Entrar a ManosYA'
+              : 'Crear cuenta'}
+          </button>
+        </form>
 
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-lg transition disabled:opacity-70"
-        >
-          {busy ? 'Procesando...' : mode === 'login' ? 'Entrar' : 'Registrarme'}
-        </button>
-      </form>
-
-      <div className="mt-6 text-center">
-        {mode === 'login' ? (
-          <p className="text-sm">
-            ¿No tenés cuenta?{' '}
-            <button
-              onClick={() => setMode('signup')}
-              className="text-emerald-600 font-medium hover:underline"
-            >
-              Crear cuenta
-            </button>
-          </p>
-        ) : (
-          <p className="text-sm">
-            ¿Ya tenés cuenta?{' '}
-            <button
-              onClick={() => setMode('login')}
-              className="text-emerald-600 font-medium hover:underline"
-            >
-              Iniciar sesión
-            </button>
-          </p>
-        )}
+        <div className="mt-6">
+          {mode === 'login' ? (
+            <p className="text-sm text-gray-600">
+              ¿No tenés cuenta?{' '}
+              <button
+                onClick={() => setMode('signup')}
+                className="text-emerald-600 font-medium hover:underline"
+              >
+                Crear cuenta
+              </button>
+            </p>
+          ) : (
+            <p className="text-sm text-gray-600">
+              ¿Ya tenés cuenta?{' '}
+              <button
+                onClick={() => setMode('login')}
+                className="text-emerald-600 font-medium hover:underline"
+              >
+                Iniciar sesión
+              </button>
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -6,13 +6,13 @@ import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import {
   Briefcase,
-  CheckCircle2,
-  Loader2,
-  MapPin,
-  Upload,
-  CalendarClock,
-  Building2,
   Building,
+  Building2,
+  CalendarClock,
+  Clock4,
+  MapPin,
+  User2,
+  DollarSign,
 } from 'lucide-react';
 
 const supabase = getSupabase();
@@ -90,9 +90,13 @@ function Form() {
   const [err, setErr] = useState(null);
   const [newJobId, setNewJobId] = useState(null);
 
-  const [files, setFiles] = useState([]);
-  const [upBusy, setUpBusy] = useState(false);
-  const [upErr, setUpErr] = useState(null);
+  // 🏢 Datos empresariales
+  const [companyName, setCompanyName] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [billingEmail, setBillingEmail] = useState('');
+  const [billingRuc, setBillingRuc] = useState('');
+  const [notes, setNotes] = useState('');
 
   useEffect(() => {
     if (!navigator.geolocation) return;
@@ -133,7 +137,7 @@ function Form() {
   }, [frequency, startDate, endDate, startTime, endTime, durationDays, estimatedSessions]);
 
   /* =======================================================
-   ✅ FUNCIÓN CORREGIDA: inserta el job con client_id correcto
+     ✅ Inserta job + business_job + asignación automática
   ======================================================= */
   async function submit(e) {
     e.preventDefault();
@@ -169,11 +173,11 @@ function Form() {
         return;
       }
 
-      // Crear el trabajo directamente
+      // Crear el trabajo principal
       const { data: newJob, error: jobError } = await supabase
         .from('jobs')
         .insert({
-          client_id: profile.id, // ✅ usa el ID de perfil
+          client_id: profile.id,
           title,
           description,
           skill_slug: skill,
@@ -189,49 +193,46 @@ function Form() {
         .single();
 
       if (jobError) throw jobError;
-
       setNewJobId(newJob.id);
 
-      // Asignación automática
+      // Crear datos empresariales asociados
+      const { error: bizErr } = await supabase.from('business_jobs').insert({
+        job_id: newJob.id,
+        business_id: profile.id,
+        company_name: companyName,
+        contact_name: contactName,
+        contact_phone: contactPhone,
+        billing_email: billingEmail,
+        billing_ruc: billingRuc,
+        notes,
+      });
+      if (bizErr) console.error('⚠️ Error creando business_job:', bizErr);
+
+      // Asignar automáticamente trabajador cercano
       if (autoAssign) {
         await supabase.rpc('assign_worker_auto', { p_job_id: newJob.id }).catch(() => {});
       }
 
-      setBusy(false);
+      toast.success('✅ Pedido empresarial creado correctamente');
       setMsg('Trabajo publicado con éxito.');
-      toast.success('✅ Pedido creado correctamente');
+      setBusy(false);
+
+      // Limpiar
       setTitle('');
       setDesc('');
       setAddress('');
+      setCompanyName('');
+      setContactName('');
+      setContactPhone('');
+      setBillingEmail('');
+      setBillingRuc('');
+      setNotes('');
     } catch (error) {
       console.error('❌ Error al crear trabajo:', error);
       toast.error('No se pudo publicar el trabajo');
       setErr(error.message);
       setBusy(false);
     }
-  }
-
-  async function uploadAll() {
-    if (!newJobId || !files?.length) return;
-    setUpBusy(true);
-    setUpErr(null);
-    for (const f of files) {
-      try {
-        const ext = f.name.split('.').pop();
-        const path = `${newJobId}/${crypto.randomUUID()}.${ext}`;
-        const { error: e1 } = await supabase.storage.from('job-photos').upload(path, f, { upsert: false });
-        if (e1) {
-          setUpErr(e1.message);
-          continue;
-        }
-        const user = (await supabase.auth.getUser()).data.user;
-        await supabase.from('job_photos').insert({ job_id: newJobId, path, created_by: user.id });
-      } catch (e) {
-        setUpErr(String(e));
-      }
-    }
-    setUpBusy(false);
-    toast.success('📸 Fotos subidas correctamente');
   }
 
   return (
@@ -292,15 +293,120 @@ function Form() {
         </div>
       </div>
 
-      {/* === PLANIFICACIÓN === */}
-      {/* resto igual que antes (sin cambios) */}
-      {/* ... */}
+      {/* === DATOS EMPRESARIALES === */}
+      <div className="pt-4 border-t border-gray-200">
+        <h3 className="text-lg font-semibold text-emerald-600 mb-3 flex items-center gap-2">
+          <Building2 className="w-5 h-5" /> Datos de empresa / facturación
+        </h3>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <label className="font-semibold text-gray-700">Nombre de la empresa</label>
+            <input
+              className="w-full mt-1 rounded-xl border border-gray-200 p-3 focus:ring-2 focus:ring-emerald-400 outline-none"
+              placeholder="Ej: LimpiaMax S.A."
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="font-semibold text-gray-700">Responsable / contacto</label>
+            <input
+              className="w-full mt-1 rounded-xl border border-gray-200 p-3"
+              placeholder="Nombre completo"
+              value={contactName}
+              onChange={(e) => setContactName(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="font-semibold text-gray-700">Teléfono</label>
+            <input
+              className="w-full mt-1 rounded-xl border border-gray-200 p-3"
+              placeholder="0991 123 456"
+              value={contactPhone}
+              onChange={(e) => setContactPhone(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="font-semibold text-gray-700">Email de facturación</label>
+            <input
+              type="email"
+              className="w-full mt-1 rounded-xl border border-gray-200 p-3"
+              placeholder="facturacion@empresa.com"
+              value={billingEmail}
+              onChange={(e) => setBillingEmail(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="font-semibold text-gray-700">RUC</label>
+            <input
+              className="w-full mt-1 rounded-xl border border-gray-200 p-3"
+              placeholder="Ej: 80012345-6"
+              value={billingRuc}
+              onChange={(e) => setBillingRuc(e.target.value)}
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="font-semibold text-gray-700">Notas / comentarios</label>
+            <textarea
+              className="w-full mt-1 rounded-xl border border-gray-200 p-3 min-h-[80px]"
+              placeholder="Indicaciones adicionales, materiales incluidos, etc."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* === RESUMEN DE PLANIFICACIÓN === */}
+      {startDate && (
+        <div className="mt-6 bg-emerald-50 border border-emerald-100 rounded-2xl p-4 text-sm text-emerald-800">
+          <p className="font-semibold mb-1 flex items-center gap-2">
+            <CalendarClock className="w-4 h-4" /> Planificación:
+          </p>
+          <p>
+            📅 Del <b>{startDate}</b> al <b>{endDate}</b> ({estimatedSessions} días)
+          </p>
+          <p>
+            ⏰ De <b>{startTime}</b> a <b>{endTime}</b> — Frecuencia: <b>{frequency}</b>
+          </p>
+          <p className="mt-1">
+            💰 Precio sugerido: <b>{price.toLocaleString()} Gs.</b>
+          </p>
+          {coords && (
+            <p className="mt-1">
+              📍 Ubicación detectada: lat {coords.lat.toFixed(4)}, lon {coords.lon.toFixed(4)}
+            </p>
+          )}
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={busy}
+        className={`w-full py-3 rounded-xl font-semibold text-white transition ${
+          busy ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-500 hover:bg-emerald-600 shadow-md'
+        }`}
+      >
+        {busy ? 'Publicando...' : 'Publicar pedido empresarial'}
+      </button>
     </motion.form>
   );
 }
 
 /* ========= PREVIEW EN VIVO ========= */
 function LivePreview() {
-  // ⚙️ tu versión actual funciona bien, no se modifica
-  // la dejamos igual
+  return (
+    <div className="bg-white rounded-3xl shadow-md p-6 border border-gray-100 text-center text-gray-600">
+      <p className="text-sm">
+        🧩 Vista previa en construcción. Próximamente mostrará el resumen del pedido empresarial antes de publicar.
+      </p>
+    </div>
+  );
 }

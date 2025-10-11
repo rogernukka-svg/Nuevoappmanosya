@@ -1,25 +1,26 @@
 import "./globals.css";
 import { Inter, Manrope } from "next/font/google";
 import { Toaster } from "sonner";
-import ClientOnlyLayout from "./ClientOnlyLayout"; // 👈 maneja lógica de rutas en cliente
+import ClientOnlyLayout from "./ClientOnlyLayout"; // 👈 lógica cliente (roles, rutas, etc.)
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
 
-/* === SEO + PWA Metadata === */
+/* === 🧠 SEO + PWA Metadata === */
 export const metadata = {
   title: "ManosYA | Tu ayuda al instante",
   description:
     "Conectamos clientes y profesionales en minutos. Rápido, seguro y confiable.",
   manifest: "/manifest.json",
   icons: {
-    icon: "/icons/icon-192.png",
-    apple: "/icons/icon-192.png",
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/icons/icon-192x192.png",
   },
   themeColor: "#14B8A6",
 };
 
-/* === Root Layout Global (Server Component) === */
+/* === 🌍 Root Layout Global === */
 export default function RootLayout({ children }) {
   return (
     <html
@@ -28,13 +29,20 @@ export default function RootLayout({ children }) {
       className={`${inter.variable} ${manrope.variable} antialiased`}
     >
       <head>
-        {/* === Metadatos esenciales === */}
+        {/* === 🧠 Metadatos PWA === */}
         <meta name="theme-color" content="#14B8A6" />
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-        <link rel="icon" href="/icons/icon-192.png" sizes="192x192" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="ManosYA" />
+        <meta name="application-name" content="ManosYA" />
+
+        {/* ✅ Favicon / Icons / Manifest */}
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="apple-touch-icon" href="/icons/icon-512x512.png" />
         <link rel="manifest" href="/manifest.json" />
 
-        {/* ✅ Evita FOUC al hidratar */}
+        {/* ✅ Evita FOUC (flash blanco antes de hidratar) */}
         <style>{`html:not(.hydrated){visibility:hidden}`}</style>
         <script
           dangerouslySetInnerHTML={{
@@ -55,11 +63,27 @@ export default function RootLayout({ children }) {
           selection:bg-emerald-200 selection:text-emerald-800
         "
       >
-        {/* ✅ Sistema de notificaciones global */}
+        {/* 🌟 Sistema global de notificaciones */}
         <Toaster position="top-center" richColors />
 
-        {/* ✅ Lógica de cliente y footer condicional va acá */}
+        {/* ⚙️ Layout dinámico para roles y navegación */}
         <ClientOnlyLayout>{children}</ClientOnlyLayout>
+
+        {/* ⚡ Registro automático del Service Worker */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker
+                    .register('/sw.js')
+                    .then(() => console.log('🟢 Service Worker ManosYA activo'))
+                    .catch(err => console.error('❌ Error registrando SW:', err));
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );

@@ -1,51 +1,60 @@
 {
-  "id": "/",
   "name": "ManosYA",
   "short_name": "ManosYA",
-  "description": "Conectamos clientes y profesionales en minutos. Rápido, seguro y confiable.",
+  "description": "Tu ayuda al instante — Conectamos clientes y profesionales cerca de ti.",
+  "lang": "es",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#00bfa6",
   "orientation": "portrait",
-  "categories": ["productivity", "utilities", "business"],
+  "background_color": "#F9FAFB",
+  "theme_color": "#14B8A6",
   "icons": [
     {
-      "src": "/icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "src": "/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png"
     },
     {
-      "src": "/icon-512x512.png",
+      "src": "/icons/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     }
-  ],
-  "screenshots": [
-    {
-      "src": "/splash-1080x1920.png",
-      "sizes": "1080x1920",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Pantalla de inicio ManosYA (Android)"
-    },
-    {
-      "src": "/splash-1242x2208.png",
-      "sizes": "1242x2208",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Pantalla de inicio ManosYA (iPhone)"
-    },
-    {
-      "src": "/splash-2048x2732.png",
-      "sizes": "2048x2732",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "Pantalla de inicio ManosYA (iPad)"
-    }
-  ],
-  "prefer_related_applications": false
+  ]
 }

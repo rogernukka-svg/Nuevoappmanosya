@@ -3,7 +3,11 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
+import { Rocket } from 'lucide-react';
+
+const supabase = getSupabase();
 
 // === 🔹 Carga dinámica de componentes de mapa ===
 const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
@@ -19,7 +23,6 @@ function ChatBox({ chatId, userId }) {
   useEffect(() => {
     if (!chatId) return;
 
-    // 🔹 Cargar mensajes iniciales
     supabase
       .from('chat_messages')
       .select('*')
@@ -27,7 +30,6 @@ function ChatBox({ chatId, userId }) {
       .order('created_at', { ascending: true })
       .then(({ data }) => setMessages(data || []));
 
-    // 🔹 Escuchar mensajes nuevos
     const channel = supabase
       .channel(`chat-${chatId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `chat_id=eq.${chatId}` }, (payload) =>
@@ -47,7 +49,6 @@ function ChatBox({ chatId, userId }) {
 
   return (
     <div className="flex flex-col h-72 bg-zinc-900 rounded-xl border border-white/10">
-      {/* Mensajes */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {messages.map((m) => (
           <div key={m.id} className={`flex ${m.sender_id === userId ? 'justify-end' : 'justify-start'}`}>
@@ -65,7 +66,6 @@ function ChatBox({ chatId, userId }) {
         ))}
       </div>
 
-      {/* Input */}
       <form onSubmit={sendMessage} className="p-2 border-t border-white/10 flex gap-2">
         <input
           type="text"
@@ -74,7 +74,9 @@ function ChatBox({ chatId, userId }) {
           placeholder="Escribir mensaje..."
           className="flex-1 bg-zinc-800 text-white rounded-full px-3 py-2 text-sm focus:outline-none"
         />
-        <button className="btn btn-primary rounded-full px-4">📨</button>
+        <button className="bg-emerald-500 hover:bg-emerald-600 text-black font-semibold rounded-full px-4 transition-all active:scale-95">
+          📨
+        </button>
       </form>
     </div>
   );
@@ -122,8 +124,8 @@ export default function WorkerJobsPage() {
   const [error, setError] = useState(null);
   const [userId, setUserId] = useState(null);
   const [activeJob, setActiveJob] = useState(null);
+  const router = useRouter();
 
-  // === Obtener usuario logueado ===
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       const uid = data?.user?.id;
@@ -138,7 +140,6 @@ export default function WorkerJobsPage() {
     } catch {}
   }
 
-  // === Cargar trabajos ===
   useEffect(() => {
     if (!userId) return;
     (async () => {
@@ -155,7 +156,6 @@ export default function WorkerJobsPage() {
     })();
   }, [userId]);
 
-  // === Realtime: INSERT + UPDATE ===
   useEffect(() => {
     if (!userId) return;
     const channel = supabase
@@ -205,7 +205,6 @@ export default function WorkerJobsPage() {
     }
   }
 
-  // === Modal con pestañas ===
   function JobAcceptedModal({ job, onClose }) {
     const [tab, setTab] = useState('info');
     if (!job) return null;
@@ -217,7 +216,6 @@ export default function WorkerJobsPage() {
           <h2 className="text-xl font-bold mb-2 text-center">🚗 Trabajo asignado</h2>
           <p className="text-sm text-white/70 text-center mb-4">{job.title}</p>
 
-          {/* Tabs */}
           <div className="flex justify-around mb-4">
             {['info', 'chat', 'map'].map((t) => (
               <button
@@ -232,7 +230,6 @@ export default function WorkerJobsPage() {
             ))}
           </div>
 
-          {/* Contenido por pestaña */}
           {tab === 'info' && (
             <div className="grid grid-cols-3 gap-3">
               <button
@@ -277,8 +274,17 @@ export default function WorkerJobsPage() {
 
   return (
     <div className="container">
-      <header className="mt-6 mb-4">
+      <header className="mt-6 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
         <h1 className="text-2xl font-extrabold">📋 Mis trabajos activos</h1>
+
+        {/* 🚀 Botón Activar Perfil */}
+        <button
+          onClick={() => router.push('/worker/onboard')}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-white text-sm font-semibold hover:from-emerald-600 hover:to-cyan-600 transition-all active:scale-95 shadow-md"
+        >
+          <Rocket className="w-4 h-4" />
+          Activar perfil
+        </button>
       </header>
 
       {error && <div className="text-red-400 mb-3">{error}</div>}
