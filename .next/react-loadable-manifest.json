@@ -1,68 +1,30 @@
 {
-  "app\\job\\[id]\\page.jsx -> react-leaflet": {
-    "id": 9720,
+  "app\\client\\page.jsx -> react-leaflet": {
+    "id": "app\\client\\page.jsx -> react-leaflet",
     "files": [
-      "static/chunks/d0deef33-f4bfbbc3696bfdde.js",
-      "static/chunks/9720.4c7fa59523a957ed.js",
-      "static/chunks/9748.9b5a994ba70c656b.js"
+      "static/chunks/_app-pages-browser_node_modules_react-leaflet_lib_index_js.js"
     ]
   },
-  "app\\map\\page.jsx -> react-leaflet": {
-    "id": 9720,
+  "app\\client\\page.jsx -> react-leaflet-cluster": {
+    "id": "app\\client\\page.jsx -> react-leaflet-cluster",
     "files": [
-      "static/chunks/9720.4c7fa59523a957ed.js"
-    ]
-  },
-  "app\\map\\page.jsx -> react-leaflet-cluster": {
-    "id": 5790,
-    "files": [
-      "static/chunks/5790.4ca7bc835a463847.js"
-    ]
-  },
-  "app\\worker-route\\page.jsx -> react-leaflet": {
-    "id": 9720,
-    "files": [
-      "static/chunks/9720.4c7fa59523a957ed.js",
-      "static/chunks/556.b4430dbb5ba121ab.js"
-    ]
-  },
-  "app\\worker\\[id]\\page.jsx -> react-leaflet": {
-    "id": 9720,
-    "files": [
-      "static/chunks/d0deef33-f4bfbbc3696bfdde.js",
-      "static/chunks/9720.4c7fa59523a957ed.js",
-      "static/chunks/9748.9b5a994ba70c656b.js"
-    ]
-  },
-  "app\\worker\\jobs\\page.jsx -> react-leaflet": {
-    "id": 9720,
-    "files": [
-      "static/chunks/d0deef33-f4bfbbc3696bfdde.js",
-      "static/chunks/9720.4c7fa59523a957ed.js",
-      "static/chunks/9748.9b5a994ba70c656b.js"
-    ]
-  },
-  "app\\worker\\route\\[jobId]\\page.jsx -> react-leaflet": {
-    "id": 9720,
-    "files": [
-      "static/chunks/9720.4c7fa59523a957ed.js",
-      "static/chunks/556.b4430dbb5ba121ab.js"
+      "static/chunks/_app-pages-browser_node_modules_react-leaflet-cluster_dist_index_js.js"
     ]
   },
   "node_modules\\@supabase\\auth-js\\dist\\module\\lib\\helpers.js -> @supabase/node-fetch": {
-    "id": 4307,
+    "id": "node_modules\\@supabase\\auth-js\\dist\\module\\lib\\helpers.js -> @supabase/node-fetch",
     "files": []
   },
   "node_modules\\@supabase\\functions-js\\dist\\module\\helper.js -> @supabase/node-fetch": {
-    "id": 4307,
+    "id": "node_modules\\@supabase\\functions-js\\dist\\module\\helper.js -> @supabase/node-fetch",
     "files": []
   },
   "node_modules\\@supabase\\realtime-js\\dist\\module\\RealtimeClient.js -> @supabase/node-fetch": {
-    "id": 4307,
+    "id": "node_modules\\@supabase\\realtime-js\\dist\\module\\RealtimeClient.js -> @supabase/node-fetch",
     "files": []
   },
   "node_modules\\@supabase\\storage-js\\dist\\module\\lib\\helpers.js -> @supabase/node-fetch": {
-    "id": 4307,
+    "id": "node_modules\\@supabase\\storage-js\\dist\\module\\lib\\helpers.js -> @supabase/node-fetch",
     "files": []
   }
 }
