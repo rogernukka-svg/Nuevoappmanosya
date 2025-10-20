@@ -27,17 +27,18 @@ import Link from 'next/link';
 import { getSupabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
+/* ======================= Supabase ======================= */
 const supabase = getSupabase();
 
-/* === React Leaflet dinámico === */
-const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((m) => m.Marker), { ssr: false });
-const Circle = dynamic(() => import('react-leaflet').then((m) => m.Circle), { ssr: false });
-const Tooltip = dynamic(() => import('react-leaflet').then((m) => m.Tooltip), { ssr: false });
-const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then((m) => m.default), { ssr: false });
+/* ==================== React Leaflet (SSR off) ==================== */
+const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
+const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
+const Circle = dynamic(() => import('react-leaflet').then(m => m.Circle), { ssr: false });
+const Tooltip = dynamic(() => import('react-leaflet').then(m => m.Tooltip), { ssr: false });
+const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then(m => m.default), { ssr: false });
 
-/* === Auxiliar: mover mapa === */
+/* ======================= Aux: mover mapa ======================= */
 import { useMap } from 'react-leaflet';
 function ChangeView({ center }) {
   const map = useMap();
@@ -47,7 +48,7 @@ function ChangeView({ center }) {
   return null;
 }
 
-/* === Utilidades === */
+/* ======================= Utils ======================= */
 function formatLastSeen(updatedAt, status) {
   if (!updatedAt) return 'Sin datos';
   if (status === 'working') return 'En trabajo';
@@ -99,40 +100,46 @@ function StarRating({ avg = 0, count = 0 }) {
     </div>
   );
 }
-const normalize = (s) =>
+const normalize = s =>
   (s || '')
     .toString()
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
 
-/* === Página principal fusionada (Mapa + ClientHome minimal) === */
-export default function MapMergedPage() {
+/* =========================================================
+   Página con mapa + sheet deslizable (40% mapa visible)
+   ========================================================= */
+export default function ClientPage() {
   const router = useRouter();
 
-  // map / user state
+  /* ---- Map / user ---- */
   const [center, setCenter] = useState([-25.516, -54.616]);
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
   const [workers, setWorkers] = useState([]);
   const [busy, setBusy] = useState(false);
 
-  // selection / chat
+  /* ---- Selection / chat ---- */
   const [selected, setSelected] = useState(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatId, setChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const chatChannelRef = useRef(null);
 
-  // client-home pieces (jobs, reviews)
+  /* ---- Client home pieces ---- */
   const [user, setUser] = useState(null);
   const [activeJob, setActiveJob] = useState(null);
-  const [reviews, setReviews] = useState([]);
   const jobsChannelRef = useRef(null);
 
-  // misc
+  /* ---- Misc ---- */
   const [requestedWorkers, setRequestedWorkers] = useState(new Set());
   const [selectedService, setSelectedService] = useState(null);
   const inputRef = useRef(null);
+
+  /* ---- Bottom sheet (snaps) ---- */
+  const [sheetHeights, setSheetHeights] = useState({ min: 0, mid: 0, max: 0 });
+  const [sheetY, setSheetY] = useState(0); // translateY px (0 = expandido)
+  const sheetRef = useRef(null);
 
   const services = [
     { id: 'plomería', label: 'Plomería', icon: <Droplets size={18} /> },
@@ -144,7 +151,7 @@ export default function MapMergedPage() {
     { id: 'emergencia', label: 'Emergencia', icon: <Flame size={18} /> },
   ];
 
-  /* === Sesión / usuario === */
+  /* ---------------- Session ---------------- */
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -154,11 +161,11 @@ export default function MapMergedPage() {
         return;
       }
       setUser(data.user);
-      setMe((prev) => ({ ...prev, id: uid }));
+      setMe(prev => ({ ...prev, id: uid }));
     })();
   }, [router]);
 
-  /* === Cargar active job y reviews (como en ClientHome) === */
+  /* ---------------- Active job + realtime ---------------- */
   useEffect(() => {
     if (!user?.id) return;
     (async () => {
@@ -167,14 +174,7 @@ export default function MapMergedPage() {
           .from('jobs')
           .select('*, worker:profiles!worker_id(full_name, avatar_url)')
           .eq('client_id', user.id)
-          .in('status', [
-            'taken',
-            'accepted',
-            'on_route',
-            'arrived',
-            'started',
-            'completed',
-          ])
+          .in('status', ['taken', 'accepted', 'on_route', 'arrived', 'started', 'completed'])
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -182,21 +182,30 @@ export default function MapMergedPage() {
       } catch (e) {
         console.warn('Error cargando active job', e);
       }
-      try {
-        const { data: rev } = await supabase
-          .from('reviews')
-          .select('rating, comment, created_at, worker:profiles!worker_id(full_name)')
-          .eq('client_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(3);
-        setReviews(rev || []);
-      } catch (e) {
-        console.warn('Error cargando reviews', e);
-      }
     })();
+
+    if (jobsChannelRef.current) supabase.removeChannel(jobsChannelRef.current);
+    const channel = supabase
+      .channel('realtime-jobs')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'jobs', filter: `client_id=eq.${user.id}` },
+        payload => {
+          const updated = payload.new;
+          if (updated.id === activeJob?.id) {
+            setActiveJob(updated);
+            toast(`🔄 Estado actualizado: ${updated.status}`);
+          }
+        }
+      )
+      .subscribe();
+    jobsChannelRef.current = channel;
+
+    return () => supabase.removeChannel(channel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  /* === Geolocalización: actualiza worker_profiles para tu usuario === */
+  /* ---------------- Geoloc ---------------- */
   useEffect(() => {
     if (!navigator.geolocation) {
       toast.error('Tu navegador no soporta geolocalización');
@@ -207,11 +216,11 @@ export default function MapMergedPage() {
       const { data } = await supabase.auth.getUser();
       const uid = data?.user?.id;
       watcher = navigator.geolocation.watchPosition(
-        async (pos) => {
+        async pos => {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
           setCenter([lat, lon]);
-          setMe((prev) => ({ ...prev, lat, lon }));
+          setMe(prev => ({ ...prev, lat, lon }));
           try {
             await supabase
               .from('worker_profiles')
@@ -220,11 +229,10 @@ export default function MapMergedPage() {
                 { onConflict: 'user_id' }
               );
           } catch (e) {
-            // no crítico si falla
             console.warn('upsert location failed', e);
           }
         },
-        (err) => {
+        err => {
           console.warn('⚠️ Error GPS:', err.message);
           toast.warning('No pudimos obtener tu ubicación precisa');
         },
@@ -234,7 +242,7 @@ export default function MapMergedPage() {
     return () => watcher && navigator.geolocation.clearWatch(watcher);
   }, []);
 
-  /* === Cargar trabajadores === */
+  /* ---------------- Workers load + realtime ---------------- */
   async function fetchWorkers() {
     setBusy(true);
     try {
@@ -244,72 +252,36 @@ export default function MapMergedPage() {
         .not('lat', 'is', null)
         .not('lng', 'is', null);
       if (error) throw error;
-
       let filtered = data;
       if (selectedService) {
         const needle = normalize(selectedService);
-        filtered = filtered.filter((w) =>
-          (w.skills || []).some((s) => normalize(s).includes(needle))
-        );
+        filtered = filtered.filter(w => (w.skills || []).some(s => normalize(s).includes(needle)));
       }
       setWorkers(filtered);
     } catch (err) {
-      toast.error('Error cargando trabajadores: ' + (err?.message || err));
+      toast.error('Error cargando Pros: ' + (err?.message || err));
     } finally {
       setBusy(false);
     }
   }
-
-  /* === Realtime: refrescar workers cuando cambien profiles === */
   useEffect(() => {
-    const channel = supabase
+    const ch = supabase
       .channel('realtime-workers')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_profiles' }, () => {
-        fetchWorkers(); // refresca el mapa cada vez que un trabajador cambia algo
-      })
-      .subscribe();
-
-    // también carga inicial ligera
-    fetchWorkers();
-
-    return () => supabase.removeChannel(channel);
-  }, [selectedService]);
-
-  /* === Realtime jobs para el cliente (actualiza activeJob) === */
-  useEffect(() => {
-    if (!user?.id) return;
-    if (jobsChannelRef.current) supabase.removeChannel(jobsChannelRef.current);
-    const channel = supabase
-      .channel('realtime-jobs')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'jobs',
-          filter: `client_id=eq.${user.id}`,
-        },
-        (payload) => {
-          const updated = payload.new;
-          if (updated.id === activeJob?.id) {
-            setActiveJob(updated);
-            toast(`🔄 Estado actualizado: ${updated.status}`);
-          }
-        }
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_profiles' }, () =>
+        fetchWorkers()
       )
       .subscribe();
-    jobsChannelRef.current = channel;
-    return () => supabase.removeChannel(channel);
-  }, [user, activeJob]);
+    fetchWorkers();
+    return () => supabase.removeChannel(ch);
+  }, [selectedService]);
 
-  /* === Solicitar trabajo (mantiene la lógica) === */
+  /* ---------------- Jobs: solicitar ---------------- */
   async function solicitar(worker) {
     if (!me.id) return toast.warning('Iniciá sesión');
     if (requestedWorkers.has(worker.user_id)) return;
 
     try {
-      setRequestedWorkers((prev) => new Set([...prev, worker.user_id]));
-
+      setRequestedWorkers(prev => new Set([...prev, worker.user_id]));
       const { error } = await supabase
         .from('jobs')
         .insert([
@@ -325,15 +297,14 @@ export default function MapMergedPage() {
         ])
         .select()
         .single();
-
       if (error) throw error;
-      toast.success(`🚀 Solicitud enviada a ${worker.full_name || 'el trabajador'}`);
+      toast.success(`🚀 Solicitud enviada a ${worker.full_name || 'el Pro'}`);
     } catch (err) {
       toast.error('Error al solicitar: ' + (err?.message || err));
     }
   }
 
-  /* === Chat (mantiene la lógica) === */
+  /* ---------------- Chat ---------------- */
   async function openChat(worker) {
     if (!me.id) return toast.warning('Iniciá sesión');
     try {
@@ -370,7 +341,7 @@ export default function MapMergedPage() {
         .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${cid}` },
-          (payload) => setMessages((prev) => [...prev, payload.new])
+          payload => setMessages(prev => [...prev, payload.new])
         )
         .subscribe();
       chatChannelRef.current = channel;
@@ -379,27 +350,49 @@ export default function MapMergedPage() {
       toast.error('No se pudo abrir el chat');
     }
   }
-
   async function sendMessage(content) {
     const text = (content || '').trim();
     if (!text || !chatId) return;
     await supabase.from('messages').insert([{ chat_id: chatId, sender_id: me.id, content: text }]);
   }
 
+  /* ---------------- Map helpers ---------------- */
   function recenter() {
     if (me.lat && me.lon) setCenter([me.lat, me.lon]);
   }
-
   function clusterIconCreateFunction(cluster) {
     if (typeof window === 'undefined') return null;
     const L = require('leaflet');
     const count = cluster.getChildCount();
     return L.divIcon({
-      html: `<div style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#10b981;color:white;font-weight:700;box-shadow:0 6px 18px rgba(16,185,129,.18);">${count}</div>`,
+      html: `<div style="
+        width:56px;height:56px;border-radius:50%;
+        display:flex;align-items:center;justify-content:center;
+        background:#10b981;color:white;font-weight:800;font-size:18px;
+        box-shadow:0 8px 22px rgba(16,185,129,.22);">${count}</div>`,
       className: '',
     });
   }
 
+  /* ---------------- Sheet: definir snaps ---------------- */
+  useEffect(() => {
+    const h = typeof window !== 'undefined' ? window.innerHeight : 800;
+    // translateY values (0 = abierto)
+    const min = Math.max(64, h * 0.85); // casi oculto (solo handle visible)
+    const mid = h * 0.60; // 40% del mapa visible
+    const max = 0; // abierto
+    setSheetHeights({ min, mid, max });
+    setSheetY(mid); // arrancar con 40% mapa visible
+  }, []);
+
+  function snapTo(targetY) {
+    // el más cercano de [min, mid, max]
+    const opts = [sheetHeights.min, sheetHeights.mid, sheetHeights.max];
+    const closest = opts.reduce((p, c) => (Math.abs(c - targetY) < Math.abs(p - targetY) ? c : p), opts[0]);
+    setSheetY(closest);
+  }
+
+  /* ---------------- Cleanup ---------------- */
   useEffect(() => {
     return () => {
       if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
@@ -407,156 +400,121 @@ export default function MapMergedPage() {
     };
   }, []);
 
-  /* === UI === */
+  /* ======================= UI ======================= */
   return (
     <div className="relative min-h-screen bg-white">
-      {/* Header (minimal) */}
-      <header className="fixed top-4 left-4 right-4 z-50 flex items-center justify-between pointer-events-auto px-4">
+      {/* ====== MAPA de fondo - ocupa toda la pantalla ====== */}
+      <div className="fixed inset-0 z-0">
+        <MapContainer center={center} zoom={14} style={{ height: '100%', width: '100%' }} className="leaflet-map">
+          <ChangeView center={center} />
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+          {me.lat && me.lon && (
+            <Circle center={[me.lat, me.lon]} radius={60} pathOptions={{ color: '#10b981', fillOpacity: 0.12 }}>
+              <Tooltip>📍 Mi ubicación</Tooltip>
+            </Circle>
+          )}
+          <MarkerClusterGroup chunkedLoading maxClusterRadius={48} iconCreateFunction={clusterIconCreateFunction}>
+            {workers.map(w => (
+              <Marker
+                key={w.user_id}
+                position={[w.lat, w.lng]}
+                icon={avatarIcon(w.avatar_url, w)}
+                eventHandlers={{ click: () => setSelected(w) }}
+              />
+            ))}
+          </MarkerClusterGroup>
+        </MapContainer>
+
+        {/* Recenter floating button */}
+        <button
+          onClick={recenter}
+          className="absolute bottom-6 right-6 bg-white/95 p-3 rounded-full shadow-lg border hover:scale-95 transition z-20"
+          title="Centrar en mi ubicación"
+        >
+          <Navigation2 className="text-emerald-600" size={22} />
+        </button>
+      </div>
+
+      {/* ====== Header flotante ====== */}
+      <header className="fixed top-4 left-4 right-4 z-30 flex items-center justify-between pointer-events-auto px-3">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push('/role-selector')}
-            className="flex items-center gap-2 bg-white/80 backdrop-blur-sm px-3 py-2 rounded-full shadow-sm border hover:scale-[1.02] transition"
+            className="flex items-center gap-2 bg-white/85 backdrop-blur-sm px-3 py-2 rounded-full shadow-sm border hover:scale-[1.02] transition"
             title="Cambiar rol"
           >
             <RefreshCcw size={16} className="text-emerald-600" />
             <span className="text-sm font-semibold text-emerald-600">Cambiar rol</span>
           </button>
         </div>
-
         <div className="flex-1 flex justify-center pointer-events-none">
-          <div className="bg-white/70 backdrop-blur-sm px-4 py-2 rounded-xl shadow-sm pointer-events-auto">
+          <div className="bg-white/85 backdrop-blur-sm px-4 py-2 rounded-xl shadow-sm pointer-events-auto">
             <h1 className="text-emerald-600 font-extrabold text-lg">ManosYA</h1>
           </div>
         </div>
-
-        <div className="w-28 flex justify-end">
-          {/* placeholder for symmetry */}
-        </div>
+        <div className="w-24" />
       </header>
 
-      {/* Page content */}
-      <main className="pt-24 pb-32">
-        <div className="mx-auto max-w-5xl px-4 space-y-4">
-          {/* Services filter (mapa de servicios) */}
-          <section className="p-4 bg-white border rounded-2xl shadow-sm text-center z-40 relative">
-            <h2 className="font-extrabold text-lg md:text-2xl mb-3">⚡ ¿Qué necesitás hoy?</h2>
-            <div className="flex flex-wrap justify-center gap-2 mb-3">
-              {services.map((s) => (
+      {/* ====== Bottom Sheet (deslizable) ====== */}
+      <motion.div
+        ref={sheetRef}
+        className="fixed left-0 right-0 bottom-0 z-30 pointer-events-auto"
+        drag="y"
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={0.15}
+        onDragEnd={(_, info) => {
+          const projected = sheetY + info.velocity.y * 0.2 + info.offset.y;
+          snapTo(projected);
+        }}
+        animate={{ y: sheetY }}
+        transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+      >
+        <div className="mx-auto w-full max-w-xl px-3 pb-6">
+          <div className="rounded-t-3xl bg-white/95 backdrop-blur-md shadow-xl border">
+            {/* Handle */}
+            <div
+              className="w-full flex items-center justify-center pt-2 cursor-pointer select-none"
+              onClick={() => setSheetY(prev => (prev === sheetHeights.mid ? sheetHeights.max : sheetHeights.mid))}
+            >
+              <div className="h-1.5 w-16 rounded-full bg-gray-300" />
+            </div>
+
+            <div className="p-4">
+              <h2 className="text-center text-emerald-700 font-extrabold text-xl mb-3">ManosYA</h2>
+
+              {/* Row 1 */}
+              <div className="grid grid-cols-2 gap-3">
                 <motion.button
-                  key={s.id}
-                  whileTap={{ scale: 0.95 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => {
-                    setSelectedService(s.id === selectedService ? null : s.id);
-                    // fetch automatically on selection for UX
-                    setTimeout(fetchWorkers, 120);
+                    fetchWorkers();
+                    toast.success(busy ? 'Buscando Pros…' : 'Pros cerca tuyo');
                   }}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
-                    selectedService === s.id
-                      ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
-                      : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                  }`}
+                  className="h-16 rounded-2xl bg-emerald-500 text-white font-semibold shadow active:scale-95"
                 >
-                  {s.icon}
-                  {s.label}
+                  <div className="flex flex-col items-center justify-center">
+                    <span className="text-lg">🔍 Buscar Pros</span>
+                    <small className="text-[11px] text-white/85">cerca tuyo</small>
+                  </div>
                 </motion.button>
-              ))}
-            </div>
 
-            <div className="flex gap-2 justify-center">
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                onClick={fetchWorkers}
-                className="px-4 py-2 rounded-xl bg-emerald-500 text-white font-semibold shadow hover:bg-emerald-600"
-              >
-                {busy ? 'Buscando…' : 'Mostrar en mapa'}
-              </motion.button>
+                <Link
+                  href="/client/jobs"
+                  className="h-16 rounded-2xl bg-white border text-gray-800 font-semibold shadow flex items-center justify-center active:scale-95"
+                >
+                  <div className="flex flex-col items-center justify-center">
+                    <span className="text-lg">📦 Mis pedidos</span>
+                    <small className="text-[11px] text-gray-500">historial / estado</small>
+                  </div>
+                </Link>
+              </div>
 
-              <button
-                onClick={() => {
-                  setSelectedService(null);
-                  fetchWorkers();
-                }}
-                className="px-3 py-2 rounded-xl border bg-white text-gray-700 hover:bg-gray-50"
-              >
-                Limpiar
-              </button>
-            </div>
-          </section>
-
-          {/* Map card (z-0 so overlays appear above) */}
-          <div className="rounded-2xl overflow-hidden border shadow-sm relative z-0" style={{ height: '72vh' }}>
-            <MapContainer
-              center={center}
-              zoom={13}
-              style={{ height: '100%', width: '100%', zIndex: 0 }}
-              className="leaflet-map"
-            >
-              <ChangeView center={center} />
-              <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
-              {me.lat && me.lon && (
-                <Circle center={[me.lat, me.lon]} radius={60} pathOptions={{ color: '#10b981', fillOpacity: 0.12 }}>
-                  <Tooltip>📍 Mi ubicación</Tooltip>
-                </Circle>
-              )}
-              <MarkerClusterGroup chunkedLoading maxClusterRadius={48} iconCreateFunction={clusterIconCreateFunction}>
-                {workers.map((w) => (
-                  <Marker
-                    key={w.user_id}
-                    position={[w.lat, w.lng]}
-                    icon={avatarIcon(w.avatar_url, w)}
-                    eventHandlers={{ click: () => setSelected(w) }}
-                  />
-                ))}
-              </MarkerClusterGroup>
-            </MapContainer>
-
-            <button
-              onClick={recenter}
-              className="absolute bottom-6 right-6 bg-white/90 p-3 rounded-full shadow-lg border hover:scale-95 transition z-40"
-              title="Centrar en mi ubicación"
-            >
-              <Navigation2 className="text-emerald-600" size={22} />
-            </button>
-          </div>
-        </div>
-      </main>
-
-      {/* Floating bottom action bar (glass) - z above map */}
-      <div className="fixed left-0 right-0 bottom-6 z-50 flex justify-center pointer-events-auto">
-        <div className="max-w-4xl w-full px-6">
-          <div className="flex gap-3 justify-between items-center bg-white/70 backdrop-blur-md border border-gray-100 rounded-3xl p-3 shadow-lg">
-            {/* Programá tu pedido */}
-            <Link href="/client/new" className="flex-1">
-              <motion.div
-                whileTap={{ scale: 0.97 }}
-                className="flex flex-col items-center gap-1 py-2 rounded-2xl bg-emerald-500 text-white shadow-md"
-              >
-                <BriefcaseIconSimple />
-                <span className="text-sm font-semibold">Programá tu pedido</span>
-                <small className="text-xs text-white/80">Perfecto para planificar</small>
-              </motion.div>
-            </Link>
-
-            {/* Ver mis pedidos */}
-            <Link href="/client/jobs" className="flex-1">
-              <motion.div
-                whileTap={{ scale: 0.97 }}
-                className="flex flex-col items-center gap-1 py-2 rounded-2xl hover:bg-gray-50 transition"
-              >
-                <ClipboardIconSimple />
-                <span className="text-sm font-semibold text-gray-700">Ver mis pedidos</span>
-                <small className="text-xs text-gray-400">Historial y estado</small>
-              </motion.div>
-            </Link>
-
-            {/* Chat quick (if active job) */}
-            <div className="flex-1 flex flex-col items-center gap-1 py-2 rounded-2xl">
-              {activeJob?.worker ? (
+              {/* Row 2 */}
+              <div className="grid grid-cols-2 gap-3 mt-3">
                 <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => {
-                    // open chat for active job
-                    (async () => {
+                  whileTap={{ scale: 0.98 }}
+                  onClick={async () => {
+                    if (activeJob?.id) {
                       try {
                         const { data: chatRow } = await supabase
                           .from('chats')
@@ -564,7 +522,6 @@ export default function MapMergedPage() {
                           .eq('job_id', activeJob.id)
                           .maybeSingle();
                         if (!chatRow?.id) throw new Error('Chat no encontrado.');
-                        // load messages and show modal similar to openChat logic
                         const { data: msgs } = await supabase
                           .from('messages')
                           .select('*')
@@ -580,32 +537,70 @@ export default function MapMergedPage() {
                           .on(
                             'postgres_changes',
                             { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatRow.id}` },
-                            (payload) => setMessages((prev) => [...prev, payload.new])
+                            payload => setMessages(prev => [...prev, payload.new])
                           )
                           .subscribe();
                         chatChannelRef.current = channel;
                       } catch (e) {
                         toast.error('No se pudo abrir el chat: ' + (e?.message || e));
                       }
-                    })();
+                    } else {
+                      toast.info('No tenés un chat activo. Primero iniciá un pedido con un Pro.');
+                    }
                   }}
-                  className="w-full flex flex-col items-center gap-1 rounded-2xl bg-gray-100 px-3 py-2"
+                  className="h-16 rounded-2xl bg-gray-100 text-gray-800 font-semibold shadow active:scale-95"
                 >
-                  <div className="w-7 h-7 flex items-center justify-center rounded-full bg-white border shadow-sm">
-                    <SendHorizontal size={14} />
+                  <div className="flex flex-col items-center justify-center">
+                    <span className="text-lg">💬 Mi chat</span>
+                    <small className="text-[11px] text-gray-500">
+                      {activeJob?.worker ? 'con tu Pro' : 'sin activo'}
+                    </small>
                   </div>
-                  <span className="text-sm font-semibold text-gray-700">Chat con {activeJob.worker?.full_name?.split(' ')[0]}</span>
-                  <small className="text-xs text-gray-400">Seguimiento en curso</small>
                 </motion.button>
-              ) : (
-                <div className="w-full text-center text-sm text-gray-500">Sin servicio activo</div>
-              )}
+
+                <motion.button
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => router.push('/role-selector')}
+                  className="h-16 rounded-2xl bg-white border text-emerald-700 font-semibold shadow active:scale-95"
+                >
+                  <div className="flex flex-col items-center justify-center">
+                    <span className="text-lg">⚙️ Cambiar rol</span>
+                    <small className="text-[11px] text-emerald-700/80">cliente / Pro</small>
+                  </div>
+                </motion.button>
+              </div>
+
+              {/* Chips servicios */}
+              <div className="pt-4">
+                <p className="text-center text-xs text-gray-600 mb-2">Elegí un servicio</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {services.map(s => (
+                    <motion.button
+                      key={s.id}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => {
+                        const newSel = s.id === selectedService ? null : s.id;
+                        setSelectedService(newSel);
+                        setTimeout(fetchWorkers, 120);
+                      }}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border ${
+                        selectedService === s.id
+                          ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
+                          : 'bg-gray-50 text-gray-700 border-gray-200'
+                      }`}
+                    >
+                      {s.icon}
+                      {s.label}
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Selected worker profile + chat modal (preserva lógica existente) */}
+      {/* ====== Modal Perfil + Chat ====== */}
       <AnimatePresence>
         {selected && (
           <motion.div
@@ -629,7 +624,7 @@ export default function MapMergedPage() {
                   <div className="w-6" />
                 )}
                 <div className="font-semibold">
-                  {isChatOpen ? `Chat con ${selected.full_name || 'Trabajador'}` : 'Perfil'}
+                  {isChatOpen ? `Chat con ${selected.full_name || 'Pro'}` : 'Perfil'}
                 </div>
                 <button onClick={() => setSelected(null)}>
                   <XCircle size={22} className="text-gray-400 hover:text-red-400" />
@@ -640,10 +635,10 @@ export default function MapMergedPage() {
                 <div className="px-6 pb-8 pt-4">
                   <img
                     src={selected.avatar_url || '/avatar-fallback.png'}
-                    alt={selected.full_name || 'Trabajador'}
+                    alt={selected.full_name || 'Pro'}
                     className="w-24 h-24 rounded-full mx-auto mb-3 border-4 border-emerald-500 object-cover"
                   />
-                  <h3 className="text-xl font-bold capitalize">{selected.full_name || 'Trabajador'}</h3>
+                  <h3 className="text-xl font-bold capitalize">{selected.full_name || 'Pro'}</h3>
                   <StarRating avg={selected.rating_avg || 0} count={selected.rating_count || 0} />
                   <p className="text-sm italic text-gray-600 mt-2">“{selected.bio || 'Sin descripción.'}”</p>
 
@@ -697,7 +692,7 @@ export default function MapMergedPage() {
               ) : (
                 <div className="flex flex-col h-[70vh]">
                   <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-                    {messages.map((m) => {
+                    {messages.map(m => {
                       const mine = m.sender_id === me.id;
                       return (
                         <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
@@ -714,7 +709,7 @@ export default function MapMergedPage() {
                   </div>
                   <form
                     className="p-3 border-t flex gap-2"
-                    onSubmit={async (e) => {
+                    onSubmit={async e => {
                       e.preventDefault();
                       const value = inputRef.current?.value || '';
                       await sendMessage(value);
@@ -741,7 +736,7 @@ export default function MapMergedPage() {
   );
 }
 
-/* === Small inline icon components (keeps UI tidy) === */
+/* ====== Pequeños SVG helpers ====== */
 function BriefcaseIconSimple() {
   return (
     <div className="w-7 h-7 flex items-center justify-center rounded-full bg-transparent">
@@ -762,15 +757,5 @@ function ClipboardIconSimple() {
         <rect x="8" y="3" width="8" height="18" rx="2" stroke="currentColor" strokeWidth="2" />
       </svg>
     </div>
-  );
-}
-
-/* === small svg helpers so we don't import more icons and keep bundle small === */
-function SearchSimpleSvg() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-gray-600">
-      <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth="2" />
-    </svg>
   );
 }
