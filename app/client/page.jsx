@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
 import { useRouter } from 'next/navigation';
@@ -8,9 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   XCircle,
   Star,
-  Navigation2,
   Clock3,
-  ShieldCheck,
   Wrench,
   Droplets,
   Sparkles,
@@ -18,25 +16,25 @@ import {
   Leaf,
   PawPrint,
   Flame,
-  Building2,
-  CheckCircle2,
+  MessageCircle,
 } from 'lucide-react';
 import { getSupabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 const supabase = getSupabase();
-const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((m) => m.Marker), { ssr: false });
-const Circle = dynamic(() => import('react-leaflet').then((m) => m.Circle), { ssr: false });
-const Tooltip = dynamic(() => import('react-leaflet').then((m) => m.Tooltip), { ssr: false });
-const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then((m) => m.default), { ssr: false });
+const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
+const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
+const Tooltip = dynamic(() => import('react-leaflet').then(m => m.Tooltip), { ssr: false });
+const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
+const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then(m => m.default), { ssr: false });
 import { useMap } from 'react-leaflet';
 
+/* ======= Utils ======= */
 function ChangeView({ center }) {
   const map = useMap();
   useEffect(() => {
-    if (map && center) map.setView(center);
+    if (map && center) map.setView(center, 14);
   }, [center, map]);
   return null;
 }
@@ -65,44 +63,52 @@ function avatarIcon(url, worker) {
   return L.divIcon({ html, iconSize: [size, size], className: '' });
 }
 
-function formatLastSeen(updatedAt) {
-  if (!updatedAt) return 'Sin datos';
-  const diff = Date.now() - new Date(updatedAt).getTime();
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return 'Activo hace segundos';
-  if (min < 60) return `Activo hace ${min} min`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `Activo hace ${h}h`;
-  const d = Math.floor(h / 24);
-  return `Activo hace ${d} día${d > 1 ? 's' : ''}`;
+/* === Icono de clúster === */
+function clusterIconCreateFunction(cluster) {
+  if (typeof window === 'undefined') return null;
+  const L = require('leaflet');
+  const count = cluster.getChildCount();
+  const html = `
+    <div class="cluster-pulse" style="
+      width:64px;height:64px;border-radius:50%;
+      background:#10b981;display:flex;align-items:center;justify-content:center;
+      box-shadow:0 0 12px rgba(16,185,129,0.6);
+      color:#fff;font-weight:700;font-size:14px;position:relative;">
+      <div style="position:absolute;inset:3px;border-radius:50%;background:#059669;z-index:1;"></div>
+      <span style="position:relative;z-index:2;">${count}</span>
+    </div>`;
+  return L.divIcon({ html, iconSize: [64, 64], className: 'cluster-animated' });
 }
 
-function StarRating({ avg = 0, count = 0 }) {
-  const full = Math.floor(avg);
-  const half = avg - full >= 0.5;
-  const empty = 5 - full - (half ? 1 : 0);
-  return (
-    <div className="flex justify-center items-center gap-0.5 mt-1">
-      {Array.from({ length: full }).map((_, i) => (
-        <Star key={`f${i}`} size={14} className="text-yellow-400 fill-yellow-400" />
-      ))}
-      {half && <Star size={14} className="text-yellow-400" />}
-      {Array.from({ length: empty }).map((_, i) => (
-        <Star key={`e${i}`} size={14} className="text-gray-300" />
-      ))}
-      <span className="text-xs text-gray-500 ml-1">({count})</span>
-    </div>
-  );
+/* CSS animación clúster */
+if (typeof window !== 'undefined') {
+  const style = document.createElement('style');
+  style.innerHTML = `
+    .cluster-pulse { animation: pulse 2s infinite; }
+    @keyframes pulse {
+      0% { transform: scale(1); box-shadow: 0 0 0 rgba(16,185,129,0.35); }
+      50% { transform: scale(1.08); box-shadow: 0 0 25px rgba(16,185,129,0.55); }
+      100% { transform: scale(1); box-shadow: 0 0 0 rgba(16,185,129,0.35); }
+    }`;
+  if (!document.head.querySelector('style[data-manosya-pulse]')) {
+    style.setAttribute('data-manosya-pulse', '1');
+    document.head.appendChild(style);
+  }
 }
 
 export default function MapPage() {
   const router = useRouter();
+  const mapRef = useRef(null);
+
   const [center, setCenter] = useState([-25.516, -54.616]);
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
+
   const [workers, setWorkers] = useState([]);
-  const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [requested, setRequested] = useState(new Set());
+
+  const [selected, setSelected] = useState(null);
+  const [showPrice, setShowPrice] = useState(false);
+  const [route, setRoute] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
 
   const services = [
@@ -115,91 +121,92 @@ export default function MapPage() {
     { id: 'emergencia', label: 'Emergencia', icon: <Flame size={18} /> },
   ];
 
+  /* === Usuario === */
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
       const uid = data?.user?.id;
       if (!uid) router.replace('/login');
-      else setMe((prev) => ({ ...prev, id: uid }));
+      else setMe(prev => ({ ...prev, id: uid }));
     })();
   }, [router]);
 
+  /* === Geoloc === */
   useEffect(() => {
     if (!navigator.geolocation) return;
-    let watcher;
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      const uid = data?.user?.id;
-      watcher = navigator.geolocation.watchPosition(
-        async (pos) => {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-          setCenter([lat, lon]);
-          setMe((prev) => ({ ...prev, lat, lon }));
-          try {
-            await supabase
-              .from('worker_profiles')
-              .upsert({ user_id: uid, lat, lng: lon, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-          } catch {}
-        },
-        () => {},
-        { enableHighAccuracy: true }
-      );
-    })();
+    const watcher = navigator.geolocation.watchPosition(
+      pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        setCenter([lat, lon]);
+        setMe({ ...me, lat, lon });
+      },
+      () => {},
+      { enableHighAccuracy: true }
+    );
     return () => watcher && navigator.geolocation.clearWatch(watcher);
   }, []);
 
+  /* === Cargar trabajadores === */
   async function fetchWorkers(serviceFilter = null) {
     setBusy(true);
     try {
-      let query = supabase.from('map_workers_view').select('*').not('lat', 'is', null).not('lng', 'is', null);
+      let query = supabase
+        .from('map_workers_view')
+        .select('*')
+        .not('lat', 'is', null)
+        .not('lng', 'is', null);
       if (serviceFilter) query = query.ilike('skills', `%${serviceFilter}%`);
       const { data, error } = await query;
       if (error) throw error;
-      setWorkers(data);
+      setWorkers(data || []);
     } catch {
       toast.error('Error cargando trabajadores');
     } finally {
       setBusy(false);
     }
   }
+  useEffect(() => { fetchWorkers(); }, []);
 
-  useEffect(() => {
-    fetchWorkers();
-  }, []);
+  /* === Interacciones === */
+  function handleMarkerClick(worker) {
+    setSelected(worker);
+    setShowPrice(false);
+  }
 
-  async function solicitar(worker) {
-    if (requested.has(worker.user_id)) return;
-    try {
-      setRequested((prev) => new Set([...prev, worker.user_id]));
-      await supabase.from('jobs').insert([
-        {
-          status: 'open',
-          title: `Trabajo con ${worker.full_name}`,
-          worker_id: worker.user_id,
-          client_id: me.id,
-          created_at: new Date().toISOString(),
-        },
-      ]);
-      toast.success(`Solicitud enviada a ${worker.full_name}`);
-    } catch {
-      toast.error('Error al enviar solicitud');
+  function solicitar() {
+    setShowPrice(true);
+  }
+
+  // ✅ CONFIRMAR — muestra solo el trabajador seleccionado + línea verde
+  function confirmarSolicitud() {
+    toast.success('Solicitud confirmada ✅');
+    setShowPrice(false);
+    setWorkers([selected]); // 🔹 Muestra solo el trabajador elegido
+    setRoute([[me.lat, me.lon], [selected.lat, selected.lng]]); // 🔹 Línea verde
+    if (mapRef.current && me.lat && selected?.lat) {
+      mapRef.current.fitBounds([[me.lat, me.lon], [selected.lat, selected.lng]], { padding: [80, 80] });
     }
   }
 
-  function clusterIconCreateFunction(cluster) {
-    if (typeof window === 'undefined') return null;
-    const L = require('leaflet');
-    const count = cluster.getChildCount();
-    return L.divIcon({
-      html: `<div style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#10b981;color:white;font-weight:700;box-shadow:0 6px 18px rgba(16,185,129,.18);">${count}</div>`,
-      className: '',
-    });
+  // ✅ CANCELAR — borra línea y recarga todos los trabajadores
+  function cancelarPedido() {
+    setRoute(null);
+    setSelected(null);
+    fetchWorkers(selectedService || null);
+  }
+
+  function toggleService(id) {
+    const next = selectedService === id ? null : id;
+    setSelectedService(next);
+    setSelected(null);
+    setRoute(null);
+    fetchWorkers(next);
   }
 
   return (
     <div className="relative min-h-screen bg-white">
-      {/* === Header === */}
+      {/* Header */}
       <div className="absolute top-4 left-4 z-[1000]">
         <button
           onClick={() => router.push('/role-selector')}
@@ -209,66 +216,78 @@ export default function MapPage() {
         </button>
       </div>
 
-      {/* === Mapa === */}
+      {/* MAPA */}
       <div className="absolute inset-0 z-0">
-        <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }}>
+        <MapContainer
+          center={center}
+          zoom={13}
+          style={{ height: '100%', width: '100%' }}
+          whenCreated={(map) => (mapRef.current = map)}
+        >
           <ChangeView center={center} />
           <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+          {route && <Polyline positions={route} color="#10b981" weight={5} />}
           <MarkerClusterGroup chunkedLoading maxClusterRadius={48} iconCreateFunction={clusterIconCreateFunction}>
-            {workers.map((w) => (
+            {workers.map(w => (
               <Marker
                 key={w.user_id}
                 position={[w.lat, w.lng]}
                 icon={avatarIcon(w.avatar_url, w)}
-                eventHandlers={{ click: () => setSelected(w) }}
-              />
+                eventHandlers={{ click: () => handleMarkerClick(w) }}
+              >
+                <Tooltip>
+                  <div className="text-xs">
+                    <strong>{w.full_name}</strong>
+                    <p>Servicio: {w.main_skill || 'No especificado'}</p>
+                    <p>💰 Desde ₲45.000</p>
+                  </div>
+                </Tooltip>
+              </Marker>
             ))}
           </MarkerClusterGroup>
         </MapContainer>
       </div>
 
-      {/* === Panel Inferior === */}
+      {/* PANEL INFERIOR */}
       <div
-        className="fixed left-0 right-0 bottom-0 z-[9999] bg-white rounded-t-3xl border-t border-gray-200 overflow-hidden"
-        style={{ height: '60vh', maxHeight: '40vh', transition: 'max-height 0.3s ease-out' }}
+        className="fixed left-0 right-0 bottom-0 z-[9999] bg-white rounded-t-3xl border-t border-gray-200 overflow-y-auto"
+        style={{ maxHeight: '45vh' }}
       >
-        <div
-          className="flex justify-center items-center py-3 cursor-pointer"
-          onClick={(e) => {
-            const sheet = e.currentTarget.parentElement;
-            sheet.style.maxHeight = sheet.style.maxHeight === '90vh' ? '40vh' : '90vh';
-          }}
-        >
+        <div className="flex justify-center items-center py-3">
           <div className="h-1.5 w-12 rounded-full bg-emerald-500"></div>
         </div>
-
-        <div className="px-5 pb-8 overflow-y-auto" style={{ height: 'calc(100% - 32px)' }}>
+        <div className="px-5 pb-8">
           <h2 className="text-center text-lg font-bold text-emerald-600 mb-3">ManosYA</h2>
-
-          {/* Botones principales */}
           <div className="grid grid-cols-3 gap-3 mb-5">
-            <button onClick={() => fetchWorkers(selectedService)} className="bg-emerald-500 text-white font-semibold py-3 rounded-xl">
+            <button
+              onClick={() => fetchWorkers(selectedService)}
+              className="bg-emerald-500 text-white font-semibold py-3 rounded-xl"
+            >
               🚀 Buscar Pros
             </button>
-            <button onClick={() => router.push('/client/jobs')} className="bg-white border font-semibold py-3 rounded-xl">
+            <button
+              onClick={() => router.push('/client/jobs')}
+              className="bg-white border font-semibold py-3 rounded-xl"
+            >
               📦 Mis pedidos
             </button>
-            <button onClick={() => router.push('/client/new')} className="bg-white border font-semibold py-3 rounded-xl">
+            <button
+              onClick={() => router.push('/client/new')}
+              className="bg-white border font-semibold py-3 rounded-xl"
+            >
               🏢 Empresarial
             </button>
           </div>
 
-          {/* Servicios */}
-          <div className="grid grid-cols-3 gap-2 text-sm">
-            {services.map((s) => (
+          <div className="grid grid-cols-3 gap-2 text-sm mb-4">
+            {services.map(s => (
               <button
                 key={s.id}
-                onClick={() => {
-                  setSelectedService(s.id === selectedService ? null : s.id);
-                  fetchWorkers(s.id === selectedService ? null : s.id);
-                }}
+                onClick={() => toggleService(s.id)}
                 className={`flex items-center justify-center gap-1 px-2 py-2 rounded-lg border ${
-                  selectedService === s.id ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-50 text-gray-700 border-gray-200'
+                  selectedService === s.id
+                    ? 'bg-emerald-500 text-white border-emerald-500'
+                    : 'bg-gray-50 text-gray-700 border-gray-200'
                 }`}
               >
                 {s.icon}
@@ -277,79 +296,111 @@ export default function MapPage() {
             ))}
           </div>
 
-          {/* Estado */}
-          <div className="mt-6 flex flex-col items-center gap-2">
-            <p className="text-xs text-gray-500 italic">
-              {busy ? 'Buscando trabajadores cerca…' : `${workers.length} trabajadores activos cerca`}
-            </p>
-          </div>
+          <p className="text-xs text-gray-500 italic text-center">
+            {busy ? 'Buscando trabajadores cerca…' : `${workers.length} trabajadores activos cerca`}
+          </p>
         </div>
       </div>
 
-      {/* === Modal Perfil === */}
+      {/* PERFIL DEL TRABAJADOR */}
       <AnimatePresence>
-        {selected && (
+        {selected && !showPrice && (
           <motion.div
-            className="fixed inset-0 bg-black/40 flex items-center justify-center z-[99999]"
+            key="perfil"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 120, damping: 18 }}
+            className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
+          >
+            <div className="text-center">
+              <img
+                src={selected.avatar_url || '/avatar-fallback.png'}
+                className="w-20 h-20 mx-auto rounded-full border-4 border-emerald-500 mb-2"
+                alt="avatar"
+              />
+              <h2 className="font-bold text-lg">{selected.full_name}</h2>
+              <p className="text-sm italic text-gray-500 mb-2">“{selected.bio || 'Sin descripción'}”</p>
+              <div className="flex justify-center items-center gap-1 mb-2">
+                <Star size={14} className="text-yellow-400 fill-yellow-400" />
+                <Star size={14} className="text-yellow-400 fill-yellow-400" />
+                <Star size={14} className="text-yellow-400 fill-yellow-400" />
+                <Star size={14} className="text-yellow-400 fill-yellow-400" />
+                <Star size={14} className="text-gray-300" />
+                <span className="text-xs text-gray-500 ml-1">(2)</span>
+              </div>
+              <p className="text-sm text-gray-600">
+                <Clock3 size={14} className="inline mr-1" /> 12 años de experiencia
+              </p>
+              <p className="text-sm text-emerald-600 font-medium mt-1">Frecuente en tu zona</p>
+              <p className="text-xs text-gray-500">Activo hace 12 días</p>
+              <div className="mt-3 bg-gray-50 rounded-xl p-2 text-sm text-gray-700">
+                Especialidades: {selected.skills || 'limpieza, plomería, jardinería'}
+              </div>
+              {!route ? (
+                <div className="flex justify-center gap-3 mt-5">
+                  <button onClick={() => setSelected(null)} className="px-5 py-3 rounded-xl border text-gray-700">
+                    Cerrar
+                  </button>
+                  <button
+                    onClick={solicitar}
+                    className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
+                  >
+                    🚀 Solicitar
+                  </button>
+                </div>
+              ) : (
+                <div className="flex justify-center gap-3 mt-5">
+                  <button className="px-5 py-3 rounded-xl border flex items-center gap-1">
+                    <MessageCircle size={16} /> Chatear
+                  </button>
+                  <button
+                    onClick={cancelarPedido}
+                    className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
+                  >
+                    <XCircle size={16} /> Cancelar pedido
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL PRECIO */}
+      <AnimatePresence>
+        {showPrice && (
+          <motion.div
+            key="precio"
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-[10010]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="bg-white rounded-3xl w-[90%] max-w-md p-6 shadow-xl text-center"
-              initial={{ scale: 0.95, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl w-[85%] max-w-md p-6 shadow-lg text-center"
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
             >
-              <div className="flex justify-between items-center mb-3">
-                <h2 className="text-lg font-semibold">Perfil</h2>
-                <button onClick={() => setSelected(null)}>
-                  <XCircle size={22} className="text-gray-400 hover:text-red-400" />
+              <h3 className="text-lg font-bold text-emerald-600 mb-2">Precio estimado</h3>
+              <p className="text-2xl font-extrabold text-emerald-700 mb-2">₲55.000</p>
+              <div className="text-sm text-gray-600 space-y-1 mb-4">
+                <p>🚗 Incluye traslado promedio (hasta 3 km)</p>
+                <p>🌙 Urgencias nocturnas o feriados +20%</p>
+                <p>💰 Tarifa mínima de visita ₲10.000</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <button onClick={() => setShowPrice(false)} className="py-3 border rounded-xl">
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmarSolicitud}
+                  className="py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600"
+                >
+                  Confirmar
                 </button>
               </div>
-              <img
-                src={selected.avatar_url || '/avatar-fallback.png'}
-                alt={selected.full_name}
-                className="w-24 h-24 rounded-full mx-auto mb-3 border-4 border-emerald-500 object-cover"
-              />
-              <h3 className="text-lg font-bold capitalize">{selected.full_name}</h3>
-              <StarRating avg={selected.rating_avg || 0} count={selected.rating_count || 0} />
-              <p className="text-sm italic text-gray-600 mt-1">“{selected.bio || 'Sin descripción.'}”</p>
-
-              <div className="mt-4 flex flex-col gap-2 items-center">
-                <div className="flex items-center gap-2 text-gray-700 text-sm">
-                  <Clock3 className="text-emerald-500" size={16} />
-                  <span>
-                    {selected.years_experience ? `${selected.years_experience} años de experiencia` : 'Sin experiencia especificada'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full text-xs font-semibold">
-                  <ShieldCheck size={14} /> Frecuente en tu zona
-                </div>
-                <p className="text-xs text-emerald-600 mt-1">{formatLastSeen(selected.updated_at)}</p>
-              </div>
-
-              <div className="mt-4 bg-gray-50 border rounded-xl p-3">
-                <p className="text-xs text-gray-500">Especialidades</p>
-                <p className="text-sm">{(selected.skills || []).join(', ') || 'Sin especialidades registradas'}</p>
-              </div>
-
-              {requested.has(selected.user_id) ? (
-                <div className="mt-5 bg-gray-50 border rounded-xl p-3">
-                  <CheckCircle2 className="text-emerald-500 mx-auto" />
-                  <p className="text-emerald-600 font-semibold">Solicitud enviada</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 mt-5">
-                  <button className="py-3 border rounded-xl">💬 Chatear</button>
-                  <button
-                    onClick={() => solicitar(selected)}
-                    className="py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600"
-                  >
-                    🚀 Solicitar
-                  </button>
-                </div>
-              )}
             </motion.div>
           </motion.div>
         )}
