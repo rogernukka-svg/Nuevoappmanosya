@@ -16,58 +16,40 @@ export default function LoginManosYA() {
   const [busy, setBusy] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
 
-  /* 🔍 Verificar sesión activa */
+  // 🔍 Verificar sesión activa
   useEffect(() => {
-    let isMounted = true;
-
     const checkSession = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) console.error('Error obteniendo sesión:', error);
-
+      const { data } = await supabase.auth.getSession();
       if (data?.session?.user) {
-        console.log('✅ Sesión activa detectada:', data.session.user.email);
-        if (isMounted) {
-          toast.success('Bienvenido 👋 Redirigiendo...');
-          setTimeout(() => router.push('/role-selector'), 500);
-        }
+        toast.success('Bienvenido 👋 Redirigiendo...');
+        router.push('/role-selector');
       } else {
-        console.log('ℹ️ No hay sesión activa.');
-        if (isMounted) setCheckingSession(false);
+        setCheckingSession(false);
       }
     };
-
     checkSession();
-    const retry = setTimeout(checkSession, 1000);
-
-    return () => {
-      isMounted = false;
-      clearTimeout(retry);
-    };
   }, [router]);
 
-  /* 🚀 Iniciar sesión */
+  // 🚀 Login
   async function handleLogin(e) {
     e.preventDefault();
     setBusy(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
       if (error) throw error;
-
-      console.log('✅ Login exitoso:', data);
       toast.success('Inicio de sesión exitoso 🎉');
-      setTimeout(() => router.push('/role-selector'), 800);
+      router.push('/role-selector');
     } catch (err) {
-      console.error('❌ Error al iniciar sesión:', err);
       toast.error('Correo o contraseña incorrectos.');
     } finally {
       setBusy(false);
     }
   }
 
-  /* 🧩 Crear cuenta nueva */
+  // 🧩 Registro
   async function handleSignup(e) {
     e.preventDefault();
     setBusy(true);
@@ -77,81 +59,61 @@ export default function LoginManosYA() {
         password,
       });
       if (error) throw error;
-      console.log('✅ Cuenta creada:', data);
-      toast.success('Cuenta creada correctamente ✅');
 
-      // 🧱 Crear perfil en tabla "profiles"
       const userId = data.user?.id;
       if (userId && fullName.trim()) {
-        const { error: profileError } = await supabase.from('profiles').insert([
+        await supabase.from('profiles').insert([
           {
             id: userId,
             full_name: fullName.trim(),
             created_at: new Date(),
           },
         ]);
-        if (profileError) {
-          console.error('⚠️ Error creando perfil:', profileError);
-        } else {
-          console.log('✅ Perfil creado correctamente');
-        }
       }
 
-      // 🔑 Iniciar sesión automáticamente
-      const { error: loginError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      if (loginError) throw loginError;
-
-      setTimeout(() => router.push('/role-selector'), 800);
+      toast.success('Cuenta creada correctamente ✅');
+      router.push('/role-selector');
     } catch (err) {
-      console.error('⚠️ Error al registrarse:', err);
-      toast.error('No se pudo crear la cuenta');
+      toast.error('No se pudo crear la cuenta.');
     } finally {
       setBusy(false);
     }
   }
 
-  /* ⏳ Mientras se verifica sesión */
+  // 🕓 Cargando sesión
   if (checkingSession) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="animate-pulse text-emerald-600 text-lg font-semibold">
-          Verificando sesión...
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-white text-emerald-600">
+        Verificando sesión...
       </div>
     );
   }
 
-  /* 🎨 UI principal */
+  // 💎 UI limpia
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-white to-gray-50 p-6">
-      <div className="w-full max-w-md bg-white shadow-2xl rounded-2xl border border-gray-100 p-8 text-center">
-        {/* Logo */}
-        <h1 className="text-3xl font-extrabold mb-2">
-          <span className="text-emerald-600">Manos</span>
-          <span className="text-gray-900">YA</span>
+    <div className="min-h-screen flex flex-col justify-center items-center px-6 bg-gradient-to-b from-white to-emerald-50 font-[var(--font-manrope)]">
+      {/* Logo */}
+      <div className="text-center mb-8">
+        <h1 className="text-4xl font-extrabold tracking-tight">
+          <span className="text-[#111827]">Manos</span>
+          <span className="text-emerald-600">YA</span>
         </h1>
-
-        {/* CTA */}
-        <p className="text-gray-700 font-medium mb-3">
-          💡 <span className="text-emerald-600">Unite a la red</span> que conecta talento con oportunidades.
+        <p className="text-gray-500 mt-2 text-sm">
+          Conectamos talento con oportunidades.
         </p>
-        <p className="text-gray-500 italic mb-6 text-sm">
-          Empezá hoy y encontrá trabajo o ayuda en minutos.
-        </p>
+      </div>
 
-        {/* Formulario */}
-        <form onSubmit={mode === 'login' ? handleLogin : handleSignup}>
+      {/* Formulario */}
+      <div className="w-full max-w-sm bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <form onSubmit={mode === 'login' ? handleLogin : handleSignup} className="space-y-3">
           {mode === 'signup' && (
             <input
               type="text"
-              placeholder="Tu nombre completo"
+              placeholder="Nombre completo"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               required
-              className="w-full mb-3 p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-400 outline-none transition"
             />
           )}
           <input
@@ -160,7 +122,7 @@ export default function LoginManosYA() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full mb-3 p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-400 outline-none transition"
           />
           <input
             type="password"
@@ -168,26 +130,26 @@ export default function LoginManosYA() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full mb-4 p-3 border rounded-lg focus:ring-2 focus:ring-emerald-400 outline-none"
+            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-400 outline-none transition"
           />
 
           <button
             type="submit"
             disabled={busy}
-            className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-lg shadow-md transition disabled:opacity-70"
+            className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl transition shadow-sm"
           >
             {busy
               ? 'Procesando...'
               : mode === 'login'
-              ? 'Entrar a ManosYA'
-              : 'Crear cuenta y comenzar'}
+              ? 'Entrar'
+              : 'Crear cuenta'}
           </button>
         </form>
 
         {/* Cambiar modo */}
-        <div className="mt-6">
+        <div className="mt-4 text-sm text-gray-600 text-center">
           {mode === 'login' ? (
-            <p className="text-sm text-gray-600">
+            <>
               ¿No tenés cuenta?{' '}
               <button
                 onClick={() => setMode('signup')}
@@ -195,9 +157,9 @@ export default function LoginManosYA() {
               >
                 Crear cuenta
               </button>
-            </p>
+            </>
           ) : (
-            <p className="text-sm text-gray-600">
+            <>
               ¿Ya tenés cuenta?{' '}
               <button
                 onClick={() => setMode('login')}
@@ -205,15 +167,14 @@ export default function LoginManosYA() {
               >
                 Iniciar sesión
               </button>
-            </p>
+            </>
           )}
         </div>
       </div>
 
-      {/* Frase motivadora inferior */}
-      <p className="mt-6 text-sm text-gray-500 text-center max-w-sm">
-        🌎 En ManosYA, cada persona tiene algo valioso que ofrecer.  
-        Empezá hoy y formá parte del cambio.
+      {/* Footer */}
+      <p className="text-xs text-gray-400 mt-8 text-center max-w-xs">
+        🌎 En ManosYA, cada persona tiene algo valioso que ofrecer.
       </p>
     </div>
   );

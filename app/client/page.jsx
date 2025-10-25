@@ -102,10 +102,8 @@ export default function MapPage() {
 
   const [center, setCenter] = useState([-25.516, -54.616]);
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
-
   const [workers, setWorkers] = useState([]);
   const [busy, setBusy] = useState(false);
-
   const [selected, setSelected] = useState(null);
   const [showPrice, setShowPrice] = useState(false);
   const [route, setRoute] = useState(null);
@@ -139,7 +137,7 @@ export default function MapPage() {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         setCenter([lat, lon]);
-        setMe({ ...me, lat, lon });
+        setMe(prev => ({ ...prev, lat, lon }));
       },
       () => {},
       { enableHighAccuracy: true }
@@ -168,6 +166,23 @@ export default function MapPage() {
   }
   useEffect(() => { fetchWorkers(); }, []);
 
+  /* === Realtime listener: actualiza si el pedido cambia (ej. trabajador finaliza) === */
+  useEffect(() => {
+    const channel = supabase
+      .channel('jobs-realtime-client')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'jobs' },
+        payload => {
+          if (payload.new?.client_id === me.id) {
+            toast.info(`🔄 Pedido actualizado: ${payload.new.status}`);
+          }
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [me.id]);
+
   /* === Interacciones === */
   function handleMarkerClick(worker) {
     setSelected(worker);
@@ -178,14 +193,42 @@ export default function MapPage() {
     setShowPrice(true);
   }
 
-  // ✅ CONFIRMAR — muestra solo el trabajador seleccionado + línea verde
-  function confirmarSolicitud() {
-    toast.success('Solicitud confirmada ✅');
-    setShowPrice(false);
-    setWorkers([selected]); // 🔹 Muestra solo el trabajador elegido
-    setRoute([[me.lat, me.lon], [selected.lat, selected.lng]]); // 🔹 Línea verde
-    if (mapRef.current && me.lat && selected?.lat) {
-      mapRef.current.fitBounds([[me.lat, me.lon], [selected.lat, selected.lng]], { padding: [80, 80] });
+  // ✅ CONFIRMAR — guarda el pedido en Supabase y muestra visualmente el flujo
+  async function confirmarSolicitud() {
+    try {
+      setShowPrice(false);
+      toast.loading('Enviando solicitud...', { id: 'pedido' });
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) throw new Error('Sesión no encontrada');
+      if (!selected || !selected.user_id) throw new Error('No se seleccionó un trabajador válido');
+
+      const { error: insertError } = await supabase.from('jobs').insert([
+        {
+          title: `Trabajo con ${selected.full_name || 'Trabajador'}`,
+          description: 'Pedido generado desde el mapa',
+          status: 'open',
+          client_id: user.id,
+          worker_id: selected.user_id,
+          client_lat: me.lat,
+          client_lng: me.lon,
+          worker_lat: selected.lat,
+          worker_lng: selected.lng,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+
+      if (insertError) throw insertError;
+
+      toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
+      setWorkers([selected]);
+      setRoute([[me.lat, me.lon], [selected.lat, selected.lng]]);
+      if (mapRef.current && me.lat && selected?.lat) {
+        mapRef.current.fitBounds([[me.lat, me.lon], [selected.lat, selected.lng]], { padding: [80, 80] });
+      }
+    } catch (err) {
+      console.error('Error al confirmar solicitud:', err.message);
+      toast.error(err.message || 'No se pudo enviar el pedido', { id: 'pedido' });
     }
   }
 
@@ -259,22 +302,13 @@ export default function MapPage() {
         <div className="px-5 pb-8">
           <h2 className="text-center text-lg font-bold text-emerald-600 mb-3">ManosYA</h2>
           <div className="grid grid-cols-3 gap-3 mb-5">
-            <button
-              onClick={() => fetchWorkers(selectedService)}
-              className="bg-emerald-500 text-white font-semibold py-3 rounded-xl"
-            >
+            <button onClick={() => fetchWorkers(selectedService)} className="bg-emerald-500 text-white font-semibold py-3 rounded-xl">
               🚀 Buscar Pros
             </button>
-            <button
-              onClick={() => router.push('/client/jobs')}
-              className="bg-white border font-semibold py-3 rounded-xl"
-            >
+            <button onClick={() => router.push('/client/jobs')} className="bg-white border font-semibold py-3 rounded-xl">
               📦 Mis pedidos
             </button>
-            <button
-              onClick={() => router.push('/client/new')}
-              className="bg-white border font-semibold py-3 rounded-xl"
-            >
+            <button onClick={() => router.push('/client/new')} className="bg-white border font-semibold py-3 rounded-xl">
               🏢 Empresarial
             </button>
           </div>
@@ -367,7 +401,7 @@ export default function MapPage() {
         )}
       </AnimatePresence>
 
-      {/* MODAL PRECIO */}
+            {/* MODAL PRECIO */}
       <AnimatePresence>
         {showPrice && (
           <motion.div
@@ -391,12 +425,15 @@ export default function MapPage() {
                 <p>💰 Tarifa mínima de visita ₲10.000</p>
               </div>
               <div className="grid grid-cols-2 gap-3 mt-3">
-                <button onClick={() => setShowPrice(false)} className="py-3 border rounded-xl">
+                <button
+                  onClick={() => setShowPrice(false)}
+                  className="py-3 border rounded-xl hover:bg-gray-50"
+                >
                   Cancelar
                 </button>
                 <button
                   onClick={confirmarSolicitud}
-                  className="py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600"
+                  className="py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition"
                 >
                   Confirmar
                 </button>

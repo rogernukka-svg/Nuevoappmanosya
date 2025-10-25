@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { Loader2, UserRound, Wrench, LogOut } from 'lucide-react';
+import { Loader2, LogOut, UserRound, Wrench } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const supabase = getSupabase();
@@ -13,13 +13,13 @@ export default function RoleSelectorPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState(null);
+  const [selectedRole, setSelectedRole] = useState(null);
 
-  // 🔐 Verificar sesión
+  // 🔐 Sesión
   useEffect(() => {
     const checkSession = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (error || !data?.session?.user) {
-        toast.error('Iniciá sesión para continuar');
+      const { data } = await supabase.auth.getSession();
+      if (!data?.session?.user) {
         router.replace('/login');
         return;
       }
@@ -29,114 +29,134 @@ export default function RoleSelectorPage() {
     checkSession();
   }, [router]);
 
-  // ⚙️ Selección de rol
   const handleSelectRole = async (role) => {
+    setSelectedRole(role);
     setLoading(true);
-    try {
-      const { data } = await supabase.auth.getSession();
-      const session = data?.session;
-      if (!session?.user) {
-        toast.error('Sesión expirada. Iniciá sesión nuevamente.');
-        router.replace('/login');
-        return;
-      }
 
-      const userId = session.user.id;
-      const { error } = await supabase
-        .from('profiles')
-        .update({ role })
-        .eq('id', userId);
-
-      if (error) throw error;
-
-      localStorage.setItem('app_role', role);
-      toast.success(`Modo ${role === 'worker' ? 'Trabajador' : 'Cliente'} activado ✅`);
-
-      setTimeout(() => router.replace(`/${role}`), 500);
-    } catch (err) {
-      console.error(err);
-      toast.error('No se pudo guardar tu elección.');
-      setLoading(false);
+    const { data } = await supabase.auth.getSession();
+    const userId = data?.session?.user?.id;
+    if (!userId) {
+      toast.error('Sesión expirada');
+      router.replace('/login');
+      return;
     }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role })
+      .eq('id', userId);
+
+    if (error) {
+      toast.error('Error al guardar rol');
+      setLoading(false);
+      return;
+    }
+
+    localStorage.setItem('app_role', role);
+    toast.success(`Modo ${role === 'worker' ? 'Trabajador' : 'Cliente'} activado ✅`);
+    router.push(`/${role}`);
   };
 
-  // 🚪 Cerrar sesión
   const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-      localStorage.removeItem('app_role');
-      toast.info('Sesión cerrada correctamente 👋');
-      router.replace('/login');
-    } catch (err) {
-      toast.error('Error al cerrar sesión');
-    }
+    await supabase.auth.signOut();
+    localStorage.removeItem('app_role');
+    router.replace('/login');
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-700">
+      <div className="min-h-screen flex items-center justify-center bg-white text-gray-600">
         <Loader2 className="animate-spin w-6 h-6 mr-2" />
-        <p>Cargando...</p>
+        Cargando...
       </div>
     );
   }
 
+  // 🌈 UI Principal
   return (
-    <div className="min-h-screen flex flex-col items-center justify-between py-10 px-6 bg-gradient-to-b from-white to-emerald-50">
-      {/* === Header === */}
+    <div className="relative min-h-screen flex flex-col items-center justify-center px-6 font-[var(--font-manrope)] text-gray-800 overflow-hidden bg-gradient-to-b from-white via-emerald-50 to-cyan-50">
+      
+      {/* ✨ Halo de energía detrás del logo */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        className="absolute top-[25%] left-1/2 w-[320px] h-[320px] rounded-full bg-emerald-400/20 blur-[120px] -translate-x-1/2"
+        animate={{ opacity: [0.3, 0.7, 0.3], scale: [1, 1.08, 1] }}
+        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+      />
+
+      {/* 🤝 Logo y texto */}
+      <motion.div
+        initial={{ opacity: 0, y: 25 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="text-center"
+        transition={{ duration: 0.6 }}
+        className="text-center z-10"
       >
-        <h1 className="text-xl font-semibold text-gray-800">
-          ¡Hola, <span className="text-emerald-600 font-bold">{userEmail}</span>!
+        <motion.div
+          animate={{ y: [0, -6, 0] }}
+          transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+          className="text-6xl mb-4"
+        >
+          🤝
+        </motion.div>
+
+        <h1 className="text-4xl font-extrabold tracking-tight">
+          <span className="text-[#111827]">Manos</span>
+          <span className="text-emerald-600">YA</span>
         </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          <span className="text-emerald-500 font-semibold">ManosYA</span> te conecta al instante 🚀
+
+        <p className="mt-4 text-gray-600 leading-relaxed text-[15px] max-w-sm mx-auto">
+          Conectá con <span className="text-emerald-600 font-semibold">ManosYA</span> para pedir o brindar servicios al instante.
         </p>
       </motion.div>
 
-      {/* === Botones === */}
-      <div className="w-full max-w-sm flex flex-col gap-4 mt-8">
+      {/* 🟢 Botones de selección */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.9, delay: 0.3 }}
+        className="w-full max-w-xs flex flex-col gap-4 mt-10 z-10"
+      >
+        {/* Cliente */}
         <motion.button
-          whileHover={{ scale: 1.02 }}
+          whileHover={{ scale: 1.05, y: -2 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => handleSelectRole('client')}
-          className="relative flex items-center justify-center gap-3 py-3 px-5 
-                     bg-white/60 backdrop-blur-md border border-emerald-200 
-                     rounded-xl shadow-sm hover:shadow-md transition-all"
+          className={`flex items-center justify-center gap-2 py-3 rounded-full font-semibold shadow-md transition-all ${
+            selectedRole === 'client'
+              ? 'bg-emerald-600 text-white shadow-emerald-400/40'
+              : 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-emerald-300/30'
+          }`}
         >
-          <UserRound className="w-5 h-5 text-emerald-600" />
-          <span className="font-medium text-gray-800">Soy Cliente</span>
+          <UserRound className="w-5 h-5" />
+          Soy Cliente
         </motion.button>
 
+        {/* Trabajador */}
         <motion.button
-          whileHover={{ scale: 1.02 }}
+          whileHover={{ scale: 1.05, y: -2 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => handleSelectRole('worker')}
-          className="relative flex items-center justify-center gap-3 py-3 px-5 
-                     bg-white/60 backdrop-blur-md border border-cyan-200 
-                     rounded-xl shadow-sm hover:shadow-md transition-all"
+          className={`flex items-center justify-center gap-2 py-3 rounded-full font-semibold shadow-md transition-all ${
+            selectedRole === 'worker'
+              ? 'bg-cyan-600 text-white shadow-cyan-400/40'
+              : 'bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white shadow-cyan-300/30'
+          }`}
         >
-          <Wrench className="w-5 h-5 text-cyan-600" />
-          <span className="font-medium text-gray-800">Soy Trabajador</span>
+          <Wrench className="w-5 h-5" />
+          Soy Trabajador
         </motion.button>
-      </div>
+      </motion.div>
 
-      {/* === Footer === */}
-      <div className="flex flex-col items-center mt-10 gap-3">
+      {/* ⚙️ Footer */}
+      <div className="mt-10 text-center z-10">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-red-500 transition"
+          className="flex items-center gap-2 justify-center text-sm text-gray-500 hover:text-red-500 transition"
         >
           <LogOut className="w-4 h-4" />
           Cerrar sesión
         </button>
-
-        <p className="text-xs text-gray-400 text-center max-w-xs">
-          Podés cambiar tu rol en cualquier momento desde tu perfil.
+        <p className="text-xs text-gray-400 mt-2">
+          Podés cambiar tu rol más adelante desde tu perfil.
         </p>
       </div>
     </div>

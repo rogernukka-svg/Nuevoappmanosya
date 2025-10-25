@@ -4,13 +4,16 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  CheckCircle2,
   Loader2,
   SendHorizontal,
   ChevronLeft,
   Map,
   CheckSquare,
-  RefreshCcw,
+  Power,
+  MessageCircle,
+  Home,
+  User2,
+  ArrowLeftCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
@@ -30,7 +33,7 @@ async function ensureWorkerProfile(userId) {
     if (!existing) {
       await supabase
         .from('worker_profiles')
-        .insert([{ user_id: userId, is_active: true, radius_km: 5 }]);
+        .insert([{ user_id: userId, is_active: true, radius_km: 5, lat: null, lng: null }]);
     }
   } catch (err) {
     console.error('Error creando worker_profile:', err.message);
@@ -46,6 +49,9 @@ export default function WorkerPage() {
   const [messages, setMessages] = useState([]);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [isActive, setIsActive] = useState(true);
+  const [connectionLost, setConnectionLost] = useState(false);
+
   const inputRef = useRef(null);
   const chatChannelRef = useRef(null);
   const bottomRef = useRef(null);
@@ -56,9 +62,7 @@ export default function WorkerPage() {
     if (typeof window === 'undefined') return;
     (async () => {
       try {
-        if (typeof Audio !== 'undefined') {
-          soundRef.current = new Audio('/notify.mp3');
-        }
+        if (typeof Audio !== 'undefined') soundRef.current = new Audio('/notify.mp3');
         const { data, error } = await supabase.auth.getUser();
         if (error) throw error;
 
@@ -76,10 +80,12 @@ export default function WorkerPage() {
     })();
   }, [router]);
 
-  /* === Cargar trabajos === */
+  /* === Cargar trabajos y sincronización === */
   useEffect(() => {
     if (!user?.id) return;
-    const load = async () => {
+    const workerId = user.id;
+
+    async function loadJobs() {
       try {
         setLoading(true);
         const { data, error } = await supabase
@@ -89,8 +95,8 @@ export default function WorkerPage() {
             client_lat, client_lng, created_at,
             client:profiles!client_id(full_name, avatar_url)
           `)
+          .eq('worker_id', workerId)
           .order('created_at', { ascending: false });
-
         if (error) throw error;
         setJobs(data || []);
       } catch (err) {
@@ -99,102 +105,120 @@ export default function WorkerPage() {
       } finally {
         setLoading(false);
       }
+    }
+
+    loadJobs();
+
+    // 🔄 Suscripción en tiempo real a nuevos trabajos asignados
+    const channel = supabase
+      .channel('jobs-feed')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'jobs',
+          filter: `worker_id=eq.${workerId}`,
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            toast.success('📦 ¡Nuevo pedido asignado a ti!');
+            soundRef.current?.play?.();
+            setJobs((prev) => [payload.new, ...prev]);
+          }
+          if (payload.eventType === 'UPDATE') {
+            setJobs((prev) =>
+              prev.map((j) => (j.id === payload.new.id ? { ...j, ...payload.new } : j))
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
-    load();
   }, [user]);
+
+  /* === Cambiar disponibilidad === */
+  async function toggleActive() {
+    try {
+      const newState = !isActive;
+      setIsActive(newState);
+      await supabase.from('worker_profiles').update({ is_active: newState }).eq('user_id', user.id);
+      toast.success(newState ? '🟢 Ahora estás disponible' : '🔴 Estás pausado');
+    } catch {
+      toast.error('No se pudo cambiar tu estado');
+    }
+  }
 
   /* === Aceptar trabajo === */
   async function acceptJob(job) {
     try {
+      if (job.status !== 'open') return toast.warning('Este trabajo ya fue tomado');
       const { data, error } = await supabase.rpc('accept_job_flow', {
         p_job_id: job.id,
         p_worker_id: user.id,
       });
-
       if (error || !data?.ok)
         throw error || new Error(data?.message || 'No se pudo aceptar el trabajo');
 
       toast.success('✅ Trabajo aceptado correctamente');
-
       setJobs((prev) =>
-        prev.map((j) =>
-          j.id === job.id ? { ...j, status: data.status || 'accepted' } : j
-        )
+        prev.map((j) => (j.id === job.id ? { ...j, status: data.status || 'accepted' } : j))
       );
 
-      // abrir chat automáticamente
       await openChat(job);
-
-      // abrir Google Maps automáticamente
       window.open(
         `https://www.google.com/maps/dir/?api=1&destination=${job.client_lat},${job.client_lng}`,
         '_blank'
       );
     } catch (err) {
-      console.error('Error al aceptar trabajo:', err);
       toast.error(err.message || 'No se pudo aceptar el trabajo');
     }
   }
 
-  /* === Rechazar trabajo === */
   async function rejectJob(job) {
     try {
       const { data, error } = await supabase.rpc('reject_job_flow', {
         p_job_id: job.id,
         p_worker_id: user.id,
       });
-
       if (error) throw error;
-      if (!data?.ok) {
-        toast.warning(data?.message || 'No se pudo rechazar');
-        return;
-      }
-
+      if (!data?.ok) return toast.warning(data?.message || 'No se pudo rechazar');
       toast.success('🚫 Trabajo rechazado correctamente');
       setJobs((prev) => prev.filter((j) => j.id !== job.id));
     } catch (err) {
-      console.error('Error al rechazar trabajo:', err);
       toast.error(err.message || 'No se pudo rechazar el trabajo');
     }
   }
 
-  /* === Finalizar trabajo === */
   async function completeJob(job) {
     try {
       const { data, error } = await supabase.rpc('complete_job_flow', {
         p_job_id: job.id,
         p_worker_id: user.id,
       });
-
       if (error) throw error;
-      if (!data?.ok) {
-        toast.warning(data?.message || 'No se pudo finalizar');
-        return;
-      }
-
+      if (!data?.ok) return toast.warning(data?.message || 'No se pudo finalizar');
       toast.success('🎉 Trabajo finalizado correctamente');
-      setJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, status: 'completed' } : j))
-      );
+      setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: 'completed' } : j)));
       setSelectedJob(null);
       setIsChatOpen(false);
     } catch (err) {
-      console.error('Error al finalizar trabajo:', err);
       toast.error(err.message || 'No se pudo finalizar el trabajo');
     }
   }
 
-  /* === Chat sincronizado === */
+  /* === Chat === */
   async function openChat(job) {
     try {
-      const { data: chatIdData, error: chatErr } = await supabase.rpc(
-        'ensure_chat_for_job',
-        { p_job_id: job.id }
-      );
+      const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
+        p_job_id: job.id,
+      });
       if (chatErr) throw chatErr;
       const chatId = chatIdData;
 
-      // Cargar mensajes previos
       const { data: msgs } = await supabase
         .from('messages')
         .select('*')
@@ -205,41 +229,22 @@ export default function WorkerPage() {
       setIsChatOpen(true);
       setSelectedJob({ ...job, chat_id: chatId });
 
-      // 🟢 Realtime sincronizado
       if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
 
       const channel = supabase
-        .channel(`chat-${chatId}`, {
-          config: {
-            broadcast: { self: true },
-            presence: { key: user.id },
-          },
-        })
+        .channel(`chat-${chatId}`)
         .on(
           'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `chat_id=eq.${chatId}`,
-          },
+          { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` },
           (payload) => {
             setMessages((prev) => [...prev, payload.new]);
-            if (payload.new.sender_id !== user.id) {
-              soundRef.current?.play?.();
-            }
+            if (payload.new.sender_id !== user.id) soundRef.current?.play?.();
             setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
           }
         )
-        .subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            console.log(`✅ Realtime conectado al chat ${chatId}`);
-          }
-        });
-
+        .subscribe();
       chatChannelRef.current = channel;
-    } catch (e) {
-      console.error('Error en openChat:', e);
+    } catch {
       toast.error('No se pudo abrir el chat');
     }
   }
@@ -265,49 +270,59 @@ export default function WorkerPage() {
       animate={{ opacity: 1 }}
       className="container max-w-screen-md mx-auto px-4 pb-28 bg-white text-gray-900 min-h-screen"
     >
+      {/* ENCABEZADO */}
       <div className="flex items-center justify-between mb-4 pt-6">
-        <h1 className="text-lg font-extrabold text-emerald-600">
-          Panel del Trabajador
-        </h1>
-
+        <h1 className="text-lg font-extrabold text-emerald-600">Panel del Trabajador</h1>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => router.push('/role-selector')}
-            className="flex items-center gap-1 text-sm font-semibold text-cyan-600 hover:text-cyan-800 transition"
+            onClick={toggleActive}
+            className={`flex items-center gap-1 text-sm font-semibold ${
+              isActive ? 'text-emerald-600 hover:text-emerald-800' : 'text-gray-400 hover:text-red-500'
+            } transition`}
           >
-            <RefreshCcw size={16} /> Cambiar rol
+            <Power size={16} /> {isActive ? 'Disponible' : 'Pausado'}
           </button>
-
           <button
-            onClick={() => router.push('/worker/onboard')}
-            className="text-sm font-semibold text-gray-400 hover:text-emerald-500 transition"
+            onClick={() => router.push('/role-selector')}
+            className="flex items-center gap-1 text-sm font-semibold text-gray-400 hover:text-emerald-500 transition"
           >
-            ⚙️ Configurar perfil
+            <ArrowLeftCircle size={16} /> Volver al inicio
           </button>
         </div>
       </div>
 
+      {/* LISTA DE TRABAJOS */}
       {loading ? (
         <div className="flex justify-center mt-10 text-gray-400">
           <Loader2 className="animate-spin" /> Cargando trabajos...
         </div>
       ) : jobs.length === 0 ? (
-        <p className="text-gray-500 mt-10 text-center">
-          Aún no tenés solicitudes disponibles.
-        </p>
+        <p className="text-gray-500 mt-10 text-center">Aún no tenés solicitudes disponibles.</p>
       ) : (
         <section className="grid gap-3 mt-5">
           {jobs.map((job) => (
             <motion.div
               key={job.id}
-              whileTap={{ scale: 0.97 }}
+              whileTap={{ scale: 0.98 }}
               className="border rounded-2xl p-4 transition shadow-sm bg-white hover:shadow-md"
             >
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-bold text-gray-800">
-                  {job.title || 'Trabajo de Servicio'}
-                </h3>
-                <CheckCircle2 size={20} className="text-emerald-500 opacity-80" />
+                <h3 className="font-bold text-gray-800">{job.title || 'Trabajo de Servicio'}</h3>
+                <span
+                  className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                    job.status === 'open'
+                      ? 'bg-yellow-100 text-yellow-700'
+                      : job.status === 'accepted'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'bg-green-100 text-green-700'
+                  }`}
+                >
+                  {job.status === 'open'
+                    ? 'Disponible'
+                    : job.status === 'accepted'
+                    ? 'En curso'
+                    : 'Completado'}
+                </span>
               </div>
 
               <p className="text-sm text-gray-600">
@@ -327,10 +342,7 @@ export default function WorkerPage() {
                 </div>
               )}
 
-              <p className="text-xs text-emerald-600 mt-2 font-medium">
-                Estado: {job.status}
-              </p>
-
+              {/* BOTONES */}
               {job.status === 'open' && (
                 <div className="flex gap-2 mt-3">
                   <button
@@ -386,7 +398,7 @@ export default function WorkerPage() {
         </section>
       )}
 
-      {/* === CHAT MODAL === */}
+      {/* CHAT MODAL */}
       <AnimatePresence>
         {isChatOpen && selectedJob && (
           <motion.div className="fixed inset-0 bg-black/40 flex justify-center items-end z-[80]">
@@ -468,6 +480,25 @@ export default function WorkerPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* NAVBAR INFERIOR */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-sm flex justify-around py-2 text-sm font-semibold z-50">
+        <button className="flex flex-col items-center text-emerald-600">
+          <Home size={18} /> <span>Trabajos</span>
+        </button>
+        <button
+          onClick={() => setIsChatOpen(true)}
+          className="flex flex-col items-center text-gray-500"
+        >
+          <MessageCircle size={18} /> <span>Chats</span>
+        </button>
+        <button
+          onClick={() => router.push('/worker/onboard')}
+          className="flex flex-col items-center text-gray-500"
+        >
+          <User2 size={18} /> <span>Perfil</span>
+        </button>
+      </div>
     </motion.div>
   );
 }
