@@ -1,16 +1,5 @@
 {
   "pages": {
-    "/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/page.js"
-    ],
-    "/layout": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/css/app/layout.css",
-      "static/chunks/app/layout.js"
-    ],
     "/client/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
@@ -23,10 +12,11 @@
       "static/css/app/client/layout.css",
       "static/chunks/app/client/layout.js"
     ],
-    "/role-selector/page": [
+    "/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/role-selector/page.js"
+      "static/css/app/layout.css",
+      "static/chunks/app/layout.js"
     ],
     "/worker/page": [
       "static/chunks/webpack.js",
@@ -39,21 +29,20 @@
       "static/css/app/worker/layout.css",
       "static/chunks/app/worker/layout.js"
     ],
-    "/worker/onboard/page": [
+    "/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/css/app/worker/onboard/page.css",
-      "static/chunks/app/worker/onboard/page.js"
+      "static/chunks/app/page.js"
     ],
     "/client/jobs/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/client/jobs/page.js"
     ],
-    "/client/new/page": [
+    "/test-realtime/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/client/new/page.js"
+      "static/chunks/app/test-realtime/page.js"
     ],
     "/_not-found/page": [
       "static/chunks/webpack.js",

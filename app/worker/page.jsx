@@ -191,34 +191,75 @@ export default function WorkerPage() {
     }
   }
 
-  /* === Chat === */
+  /* === Chat sincronizado === */
   async function openChat(job) {
     try {
-      setSelectedJob(job);
+      const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
+        p_job_id: job.id,
+      });
+      if (chatErr) throw chatErr;
+      const cid = chatIdData;
+
+      const { data: msgs, error: msgErr } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', cid)
+        .order('created_at', { ascending: true });
+      if (msgErr) throw msgErr;
+
+      setMessages(msgs || []);
+      setSelectedJob({ ...job, chat_id: cid });
       setIsChatOpen(true);
+
+      if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
+
+      const ch = supabase
+        .channel(`chat-${cid}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `chat_id=eq.${String(cid)}`,
+          },
+          (payload) => {
+            setMessages((prev) => [...prev, payload.new]);
+            if (payload.new.sender_id !== user.id) soundRef.current?.play?.();
+            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+          }
+        )
+        .subscribe();
+
+      chatChannelRef.current = ch;
     } catch (err) {
+      console.error('❌ Error abriendo chat:', err);
       toast.error('No se pudo abrir el chat');
     }
   }
 
-  /* === Enviar mensaje === */
-  async function sendMessage(content) {
-    const text = (content || '').trim();
+  async function sendMessage() {
+    const text = inputRef.current?.value?.trim();
     if (!text) return;
+    if (!selectedJob?.chat_id) return toast.error('No hay chat activo');
+
     try {
       setSending(true);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now(),
-          sender_id: user.id,
-          content: text,
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      const { data, error } = await supabase
+        .from('messages')
+        .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, text }])
+        .select();
+
+      if (error) throw error;
+
+      setMessages((prev) => [...prev, data[0]]);
+      inputRef.current.value = '';
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+    } catch (err) {
+      console.error('❌ Error enviando mensaje:', err);
+      toast.error('No se pudo enviar el mensaje');
     } finally {
       setSending(false);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
     }
   }
 
@@ -336,12 +377,14 @@ export default function WorkerPage() {
                   >
                     <Map size={16} /> Ver ubicación
                   </button>
+
                   <button
                     onClick={() => openChat(job)}
                     className="w-full bg-gray-100 text-gray-800 py-2 rounded-xl font-semibold hover:bg-gray-200 transition"
                   >
                     💬 Chat con cliente
                   </button>
+
                   <button
                     onClick={() => completeJob(job)}
                     className="w-full bg-emerald-600 text-white py-2 rounded-xl font-semibold hover:bg-emerald-700 transition flex items-center justify-center gap-1"
@@ -409,7 +452,7 @@ export default function WorkerPage() {
                             mine ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-800'
                           }`}
                         >
-                          {m.content}
+                          {m.text}
                           <div
                             className={`text-[10px] mt-1 opacity-70 ${
                               mine ? 'text-white' : 'text-gray-500'
@@ -431,9 +474,7 @@ export default function WorkerPage() {
                   className="p-3 border-t border-gray-100 flex gap-2"
                   onSubmit={async (e) => {
                     e.preventDefault();
-                    const value = inputRef.current?.value || '';
-                    await sendMessage(value);
-                    if (inputRef.current) inputRef.current.value = '';
+                    await sendMessage();
                   }}
                 >
                   <input

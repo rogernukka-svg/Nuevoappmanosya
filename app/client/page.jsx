@@ -133,6 +133,88 @@ export default function MapPage() {
     { id: 'mascotas', label: 'Mascotas', icon: <PawPrint size={18} /> },
     { id: 'emergencia', label: 'Emergencia', icon: <Flame size={18} /> },
   ];
+/* 🧠 Restaurar estado completo (pedido + chat) desde localStorage */
+useEffect(() => {
+  const saved = localStorage.getItem('activeJobChat');
+  if (!saved) return;
+
+  const { jid, jstatus, cid, selectedWorker } = JSON.parse(saved);
+
+  // restaurar primero el pedido
+  if (jid) setJobId(jid);
+  if (jstatus) setJobStatus(jstatus);
+  if (selectedWorker) setSelected(selectedWorker);
+
+  // esperar 300ms para asegurar que jobId esté seteado antes de abrir el chat
+  setTimeout(() => {
+    if (cid && jid && jstatus !== 'completed' && jstatus !== 'cancelled') {
+      setChatId(cid);
+      setIsChatOpen(true);
+      openChat(cid); // reconecta el canal del chat
+    }
+  }, 300);
+
+  // restaurar la línea del mapa
+  if (selectedWorker?.lat && selectedWorker?.lng && me?.lat) {
+    setRoute([[me.lat, me.lon], [selectedWorker.lat, selectedWorker.lng]]);
+  }
+}, []);
+
+/* 💾 Guardar estado actual del pedido y chat */
+useEffect(() => {
+  if (isChatOpen && chatId && selected && jobId) {
+    localStorage.setItem(
+      'activeJobChat',
+      JSON.stringify({
+        jid: jobId,
+        jstatus: jobStatus,
+        cid: chatId,
+        selectedWorker: selected,
+      })
+    );
+  } else if (!isChatOpen) {
+    localStorage.removeItem('activeJobChat');
+  }
+}, [isChatOpen, chatId, selected, jobId, jobStatus]);
+
+
+// 🧩 Recuperar pedido activo desde Supabase si no hay nada en localStorage
+useEffect(() => {
+  if (jobId || !me?.id) return;
+
+  (async () => {
+    try {
+      const { data: job } = await supabase
+        .from('jobs')
+        .select('id, status, worker_id, worker_lat, worker_lng')
+        .eq('client_id', me.id)
+        .in('status', ['open', 'accepted', 'assigned'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (job) {
+        setJobId(job.id);
+        setJobStatus(job.status);
+
+        // cargar también el trabajador
+        const { data: worker } = await supabase
+          .from('map_workers_view')
+          .select('*')
+          .eq('user_id', job.worker_id)
+          .single();
+
+        if (worker) {
+          setSelected(worker);
+          setRoute([[me.lat, me.lon], [worker.lat, worker.lng]]);
+          toast.success(`Pedido restaurado (${job.status})`);
+        }
+      }
+    } catch (err) {
+      console.warn('Sin pedido activo para restaurar:', err.message);
+    }
+  })();
+}, [me?.id]);
 
   /* === Usuario === */
   useEffect(() => {
@@ -162,42 +244,58 @@ export default function MapPage() {
   }, []);
 
   /* === Cargar trabajadores === */
-  async function fetchWorkers(serviceFilter = null) {
-    setBusy(true);
-    try {
-      let query = supabase
-        .from('map_workers_view')
-        .select('*')
-        .not('lat', 'is', null)
-        .not('lng', 'is', null);
-      if (serviceFilter) query = query.ilike('skills', `%${serviceFilter}%`);
-      const { data, error } = await query;
-      if (error) throw error;
-      setWorkers(data || []);
-    } catch {
-      toast.error('Error cargando trabajadores');
-    } finally {
-      setBusy(false);
-    }
+async function fetchWorkers(serviceFilter = null) {
+  setBusy(true);
+  try {
+    let query = supabase
+      .from('map_workers_view')
+      .select('*')
+      .not('lat', 'is', null)
+      .not('lng', 'is', null);
+
+    if (serviceFilter) query = query.ilike('skills', `%${serviceFilter}%`);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    setWorkers(data || []);
+  } catch {
+    toast.error('Error cargando trabajadores');
+  } finally {
+    setBusy(false);
   }
+} // ✅ cierre correcto de fetchWorkers
+
+// Ejecutar automáticamente al cargar la página
+useEffect(() => {
+  fetchWorkers();
+}, []);
+
   useEffect(() => { fetchWorkers(); }, []);
 
   /* === Realtime global jobs (informativo) === */
-  useEffect(() => {
-    const channel = supabase
-      .channel('jobs-realtime-client')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'jobs' },
-        payload => {
-          if (payload.new?.client_id === me.id) {
-            toast.info(`🔄 Pedido actualizado: ${payload.new.status}`);
+useEffect(() => {
+  const channel = supabase
+    .channel('jobs-realtime-client')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'jobs' },
+      payload => {
+        if (payload.new?.client_id === me.id) {
+          toast.info(`🔄 Pedido actualizado: ${payload.new.status}`);
+
+          // 👇 Si el pedido se cancela, limpiar todo automáticamente
+          if (payload.new.status === 'cancelled') {
+            resetJobState();
           }
         }
-      )
-      .subscribe();
-    return () => supabase.removeChannel(channel);
-  }, [me.id]);
+      }
+    )
+    .subscribe();
+
+  return () => supabase.removeChannel(channel);
+}, [me.id]);
+
 
   /* === Realtime del job actual para estado (accepted/completed) === */
   useEffect(() => {
@@ -273,82 +371,133 @@ export default function MapPage() {
   }
 
   // 🔔 Abrir chat (crea/garantiza chat y se suscribe a mensajes)
-  async function openChat() {
-    try {
-      if (!jobId) return toast('⚠️ Creá un pedido primero');
-      const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
-        p_job_id: jobId,
-      });
-      if (chatErr) throw chatErr;
-      const cid = chatIdData;
-      setChatId(cid);
-
-      const { data: msgs } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', cid)
-        .order('created_at', { ascending: true });
-      setMessages(msgs || []);
-      setIsChatOpen(true);
-
-      if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
-
-      const channel = supabase
-        .channel(`chat-${cid}`, {
-          config: {
-            broadcast: { self: true },
-            presence: { key: me.id || 'client' },
-          },
-        })
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `chat_id=eq.${cid}`,
-          },
-          (payload) => {
-            setMessages((prev) => [...prev, payload.new]);
-            if (payload.new.sender_id !== me.id) {
-              soundRef.current?.play?.();
-            }
-            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-          }
-        )
-        .subscribe();
-
-      chatChannelRef.current = channel;
-    } catch (e) {
-      console.error('❌ Error abriendo chat:', e);
-      toast.error('No se pudo abrir el chat');
+async function openChat(forceChatId = null) {
+  try {
+    if (!jobId || !jobStatus || ['completed', 'cancelled'].includes(jobStatus)) {
+      toast.warning('⚠️ Esperá un momento, cargando pedido activo...');
+      return;
     }
+
+    const activeJob = localStorage.getItem('activeJobChat');
+    if (!jobId && activeJob) {
+      const parsed = JSON.parse(activeJob);
+      if (parsed?.jid) setJobId(parsed.jid);
+      if (parsed?.cid) setChatId(parsed.cid);
+    }
+
+    const finalJobId = jobId || JSON.parse(localStorage.getItem('activeJobChat') || '{}')?.jid;
+    const finalChatId = forceChatId || chatId || JSON.parse(localStorage.getItem('activeJobChat') || '{}')?.cid;
+
+    if (!finalJobId) {
+      toast.warning('⚠️ No hay pedido activo. Confirmá uno primero.');
+      return;
+    }
+
+    const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
+      p_job_id: finalJobId,
+    });
+    if (chatErr) throw chatErr;
+
+    const cid = chatIdData || finalChatId;
+    setChatId(cid);
+
+    const { data: msgs } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('chat_id', cid)
+      .order('created_at', { ascending: true });
+
+    setMessages(msgs || []);
+    setIsChatOpen(true);
+
+    if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
+
+    const channel = supabase
+      .channel(`chat-${cid}`, {
+        config: {
+          broadcast: { self: true },
+          presence: { key: me.id || 'client' },
+          reconnect: true,
+        },
+      })
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${String(cid)}` },
+        (payload) => {
+          console.log('💬 Nuevo mensaje recibido:', payload.new);
+          setMessages((prev) => [...prev, payload.new]);
+          if (payload.new.sender_id !== me.id) soundRef.current?.play?.();
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+        }
+      )
+      .subscribe((status) => console.log('📡 Canal de chat conectado:', status));
+
+    chatChannelRef.current = channel;
+  } catch (e) {
+    console.error('❌ Error abriendo chat:', e);
+    toast.error('No se pudo abrir el chat');
+  }
+}
+
+
+
+
+
+// ✉️ Enviar mensaje
+async function sendMessage() {
+  const text = inputRef.current?.value?.trim();
+  if (!text) return;
+  if (!chatId || !me?.id) {
+    console.error('❌ Falta chatId o sender_id');
+    toast.error('No se puede enviar el mensaje');
+    return;
   }
 
-  async function sendMessage(content) {
-    const text = (content || '').trim();
-    if (!text || !chatId || !me?.id) return;
-    try {
-      setSending(true);
-      const { error } = await supabase
-        .from('messages')
-        .insert([{ chat_id: chatId, sender_id: me.id, content: text }]);
-      if (error) throw error;
-    } catch (err) {
-      toast.error('No se pudo enviar el mensaje');
-    } finally {
-      setSending(false);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-    }
-  }
+  const { data, error } = await supabase
+    .from('messages')
+    .insert([
+      {
+        chat_id: chatId,
+        sender_id: me.id,
+        text,
+      },
+    ])
+    .select();
 
-  function closeChat() {
-    setIsChatOpen(false);
-    if (chatChannelRef.current) {
-      supabase.removeChannel(chatChannelRef.current);
-      chatChannelRef.current = null;
-    }
+  if (error) {
+    console.error('❌ Error enviando mensaje:', error);
+    toast.error('No se pudo enviar el mensaje');
+  } else {
+    console.log('✅ Mensaje insertado:', data);
+    setMessages((prev) => [...prev, data[0]]);
+    inputRef.current.value = '';
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
   }
+}
+
+// ❌ Cerrar chat
+function closeChat() {
+  setIsChatOpen(false);
+  if (chatChannelRef.current) {
+    supabase.removeChannel(chatChannelRef.current);
+    chatChannelRef.current = null;
+  }
+}
+// 🧹 Limpiar todo al finalizar o cancelar trabajo
+function resetJobState() {
+  setJobId(null);
+  setJobStatus(null);
+  setChatId(null);
+  setIsChatOpen(false);
+  setSelected(null);
+  setRoute(null);
+  localStorage.removeItem('activeJobChat');
+  fetchWorkers(selectedService || null);
+  toast.info('🧾 Trabajo finalizado. Volviendo al mapa...');
+}
+
+
+
 
   // ✅ CANCELAR — borra línea y recarga todos los trabajadores
   function cancelarPedido() {
@@ -635,27 +784,28 @@ export default function MapPage() {
               </div>
 
               {/* Mensajes */}
-              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-white">
-                {messages.length === 0 ? (
-                  <p className="text-center text-gray-400 mt-6">No hay mensajes aún 📭</p>
-                ) : (
-                  messages.map((m) => {
-                    const mine = m.sender_id === me?.id;
-                    return (
-                      <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                        <div
-                          className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm shadow-sm ${
-                            mine ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {m.content}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                <div ref={bottomRef} />
-              </div>
+<div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-white">
+  {messages.length === 0 ? (
+    <p className="text-center text-gray-400 mt-6">No hay mensajes aún 📭</p>
+  ) : (
+    messages.map((m) => {
+      const mine = m.sender_id === me?.id;
+      return (
+        <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+          <div
+            className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm shadow-sm ${
+              mine ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-800'
+            }`}
+          >
+            {m.text}
+          </div>
+        </div>
+      );
+    })
+  )}
+  <div ref={bottomRef} />
+</div>
+
 
               {/* Input */}
               <form
