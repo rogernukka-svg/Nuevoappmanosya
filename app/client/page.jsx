@@ -557,36 +557,45 @@ function resetJobState() {
       </div>
 
       {/* MAPA */}
-      <div className="absolute inset-0 z-0">
-        <MapContainer
-          center={center}
-          zoom={13}
-          style={{ height: '100%', width: '100%' }}
-          whenCreated={(map) => (mapRef.current = map)}
-        >
-          <ChangeView center={center} />
-          <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
-          {route && <Polyline positions={route} color="#10b981" weight={5} />}
-          <MarkerClusterGroup chunkedLoading maxClusterRadius={48} iconCreateFunction={clusterIconCreateFunction}>
-            {workers.map(w => (
-              <Marker
-                key={w.user_id}
-                position={[w.lat, w.lng]}
-                icon={avatarIcon(w.avatar_url, w)}
-                eventHandlers={{ click: () => handleMarkerClick(w) }}
-              >
-                <Tooltip>
-                  <div className="text-xs">
-                    <strong>{w.full_name}</strong>
-                    <p>Servicio: {w.main_skill || 'No especificado'}</p>
-                    <p>💰 Desde ₲45.000</p>
-                  </div>
-                </Tooltip>
-              </Marker>
-            ))}
-          </MarkerClusterGroup>
-        </MapContainer>
-      </div>
+<div className="absolute inset-0 z-0">
+  <MapContainer
+    center={center}
+    zoom={13}
+    style={{ height: '100%', width: '100%' }}
+    whenCreated={(map) => (mapRef.current = map)}
+  >
+    <ChangeView center={center} />
+    <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+    {route && <Polyline positions={route} color="#10b981" weight={5} />}
+
+    {/* ✅ Bloque corregido para evitar error de lat/lng null */}
+    <MarkerClusterGroup
+      chunkedLoading
+      maxClusterRadius={48}
+      iconCreateFunction={clusterIconCreateFunction}
+    >
+      {workers
+        ?.filter(w => w?.lat !== null && w?.lng !== null)
+        .map(w => (
+          <Marker
+            key={w.user_id}
+            position={[w.lat, w.lng]}
+            icon={avatarIcon(w.avatar_url, w)}
+            eventHandlers={{ click: () => handleMarkerClick(w) }}
+          >
+            <Tooltip>
+              <div className="text-xs">
+                <strong>{w.full_name}</strong>
+                <p>Servicio: {w.main_skill || 'No especificado'}</p>
+                <p>💰 Desde ₲45.000</p>
+              </div>
+            </Tooltip>
+          </Marker>
+        ))}
+    </MarkerClusterGroup>
+  </MapContainer>
+</div>
+
 
       {/* PANEL INFERIOR */}
       <div
