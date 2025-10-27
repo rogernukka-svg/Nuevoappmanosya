@@ -33,14 +33,20 @@ const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { 
 const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then(m => m.default), { ssr: false });
 import { useMap } from 'react-leaflet';
 
-/* ======= Utils ======= */
 function ChangeView({ center }) {
   const map = useMap();
+  const hasCenteredRef = useRef(false);
+
   useEffect(() => {
-    if (map && center) map.setView(center, 14);
+    if (map && center && !hasCenteredRef.current) {
+      map.setView(center, 14); // solo centra una vez al cargar
+      hasCenteredRef.current = true; // evita que se recoloque después
+    }
   }, [center, map]);
+
   return null;
 }
+
 
 function mapAccentColor(worker) {
   const diffMin = (Date.now() - new Date(worker?.updated_at || Date.now()).getTime()) / 60000;
@@ -676,94 +682,109 @@ async function finalizarPedido() {
       </div>
 
       {/* PERFIL DEL TRABAJADOR */}
-      <AnimatePresence>
-        {selected && !showPrice && (
-          <motion.div
-            key="perfil"
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 120, damping: 18 }}
-            className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
-          >
-            <div className="text-center">
-              <img
-                src={selected.avatar_url || '/avatar-fallback.png'}
-                className="w-20 h-20 mx-auto rounded-full border-4 border-emerald-500 mb-2"
-                alt="avatar"
-              />
-              <h2 className="font-bold text-lg">{selected.full_name}</h2>
-              <p className="text-sm italic text-gray-500 mb-2">“{selected.bio || 'Sin descripción'}”</p>
-              <div className="flex justify-center items-center gap-1 mb-2">
-                <Star size={14} className="text-yellow-400 fill-yellow-400" />
-                <Star size={14} className="text-yellow-400 fill-yellow-400" />
-                <Star size={14} className="text-yellow-400 fill-yellow-400" />
-                <Star size={14} className="text-yellow-400 fill-yellow-400" />
-                <Star size={14} className="text-gray-300" />
-                <span className="text-xs text-gray-500 ml-1">(2)</span>
-              </div>
-              <p className="text-sm text-gray-600">
-                <Clock3 size={14} className="inline mr-1" /> 12 años de experiencia
-              </p>
-              <p className="text-sm text-emerald-600 font-medium mt-1">Frecuente en tu zona</p>
-              <p className="text-xs text-gray-500">Activo hace 12 días</p>
-              <div className="mt-3 bg-gray-50 rounded-xl p-2 text-sm text-gray-700">
-                Especialidades: {selected.skills || 'limpieza, plomería, jardinería'}
-              </div>
-
-              {/* Estado de pedido si existe */}
-<div className="mt-3">{jobId && <StatusBadge />}</div>
-
-{!route ? (
-  // 🔹 No hay ruta → se muestra "Cerrar" y "Solicitar"
-  <div className="flex justify-center gap-3 mt-5">
-    <button
-      onClick={() => setSelected(null)}
-      className="px-5 py-3 rounded-xl border text-gray-700"
+<AnimatePresence>
+  {selected && !showPrice && (
+    <motion.div
+      key="perfil"
+      initial={{ y: '100%' }}
+      animate={{ y: 0 }}
+      exit={{ y: '100%' }}
+      transition={{ type: 'spring', stiffness: 120, damping: 18 }}
+      className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
     >
-      Cerrar
-    </button>
-    <button
-      onClick={solicitar}
-      className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
-    >
-      🚀 Solicitar
-    </button>
-  </div>
-) : (
-  // 🔹 Hay ruta → depende del estado del pedido
-  <div className="flex justify-center gap-3 mt-5">
-    {/* Botón de chat siempre visible */}
-    <button
-      onClick={openChat}
-      className="px-5 py-3 rounded-xl border flex items-center gap-1"
-    >
-      <MessageCircle size={16} /> Chatear
-    </button>
+      <div className="text-center">
+        <img
+          src={selected.avatar_url || '/avatar-fallback.png'}
+          className="w-20 h-20 mx-auto rounded-full border-4 border-emerald-500 mb-2"
+          alt="avatar"
+        />
+        <h2 className="font-bold text-lg">{selected.full_name}</h2>
+        <p className="text-sm italic text-gray-500 mb-2">
+          “{selected.bio || 'Sin descripción'}”
+        </p>
 
-    {/* Mostrar "Finalizar" solo si el pedido está aceptado o asignado */}
-    {(jobStatus === 'accepted' || jobStatus === 'assigned') ? (
-      <button
-        onClick={finalizarPedido}
-        className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
-      >
-        <CheckCircle2 size={16} /> Finalizar pedido
-      </button>
-    ) : (
-      <button
-        onClick={cancelarPedido}
-        className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
-      >
-        <XCircle size={16} /> Cancelar pedido
-      </button>
-    )}
-  </div>
-)}
+        <div className="flex justify-center items-center gap-1 mb-2">
+          <Star size={14} className="text-yellow-400 fill-yellow-400" />
+          <Star size={14} className="text-yellow-400 fill-yellow-400" />
+          <Star size={14} className="text-yellow-400 fill-yellow-400" />
+          <Star size={14} className="text-yellow-400 fill-yellow-400" />
+          <Star size={14} className="text-gray-300" />
+          <span className="text-xs text-gray-500 ml-1">(2)</span>
+        </div>
 
-            </div>
-          </motion.div>
+        <p className="text-sm text-gray-600">
+          <Clock3 size={14} className="inline mr-1" /> 12 años de experiencia
+        </p>
+        <p className="text-sm text-emerald-600 font-medium mt-1">
+          Frecuente en tu zona
+        </p>
+        <p className="text-xs text-gray-500">Activo hace 12 días</p>
+
+        <div className="mt-3 bg-gray-50 rounded-xl p-2 text-sm text-gray-700">
+          Especialidades: {selected.skills || 'limpieza, plomería, jardinería'}
+        </div>
+
+        {/* Estado de pedido si existe */}
+        <div className="mt-3">{jobId && <StatusBadge />}</div>
+
+        {!route ? (
+          // 🔹 No hay ruta → se muestra "Cerrar" y "Solicitar"
+          <div className="flex justify-center gap-3 mt-5">
+            <button
+              onClick={() => setSelected(null)}
+              className="px-5 py-3 rounded-xl border text-gray-700"
+            >
+              Cerrar
+            </button>
+            <button
+              onClick={solicitar}
+              className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
+            >
+              🚀 Solicitar
+            </button>
+          </div>
+        ) : (
+          // 🔹 Hay ruta → depende del estado del pedido
+          <div className="flex flex-col items-center gap-3 mt-5">
+            {/* Botón de chat */}
+            <button
+              onClick={openChat}
+              className="px-5 py-3 rounded-xl border flex items-center gap-1"
+            >
+              <MessageCircle size={16} /> Chatear
+            </button>
+
+            {/* Mostrar "Finalizar" o "Cancelar" */}
+            {(jobStatus === 'accepted' || jobStatus === 'assigned') ? (
+              <button
+                onClick={finalizarPedido}
+                className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
+              >
+                <CheckCircle2 size={16} /> Finalizar pedido
+              </button>
+            ) : (
+              <button
+                onClick={cancelarPedido}
+                className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
+              >
+                <XCircle size={16} /> Cancelar pedido
+              </button>
+            )}
+
+            {/* 🔄 Botón de sincronización */}
+            <button
+              onClick={() => window.location.reload()}
+              className="px-5 py-2 rounded-xl border border-emerald-300 text-emerald-700 bg-emerald-50 font-semibold flex items-center gap-1 hover:bg-emerald-100 transition"
+            >
+              🔄 Sincronizar estado
+            </button>
+          </div>
         )}
-      </AnimatePresence>
+      </div>
+    </motion.div>
+  )}
+</AnimatePresence>
+
 
       {/* MODAL PRECIO */}
       <AnimatePresence>
