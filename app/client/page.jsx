@@ -495,6 +495,39 @@ function resetJobState() {
   fetchWorkers(selectedService || null);
   toast.info('🧾 Trabajo finalizado. Volviendo al mapa...');
 }
+// ✅ Finalizar pedido — cambia estado en Supabase y limpia todo
+async function finalizarPedido() {
+  try {
+    if (!jobId) {
+      toast.warning('⚠️ No hay pedido activo para finalizar');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('jobs')
+      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .eq('id', jobId);
+
+    if (error) throw error;
+
+    toast.success('✅ Pedido finalizado correctamente');
+    resetJobState(); // limpia mapa y estado local
+
+    // (opcional) enviar mensaje automático al chat
+    if (chatId) {
+      await supabase.from('messages').insert([
+        {
+          chat_id: chatId,
+          sender_id: me.id,
+          text: '✅ El cliente marcó el trabajo como finalizado',
+        },
+      ]);
+    }
+  } catch (err) {
+    console.error('Error al finalizar pedido:', err.message);
+    toast.error('No se pudo finalizar el pedido');
+  }
+}
 
 
 
@@ -679,33 +712,54 @@ function resetJobState() {
               </div>
 
               {/* Estado de pedido si existe */}
-              <div className="mt-3">{jobId && <StatusBadge />}</div>
+<div className="mt-3">{jobId && <StatusBadge />}</div>
 
-              {!route ? (
-                <div className="flex justify-center gap-3 mt-5">
-                  <button onClick={() => setSelected(null)} className="px-5 py-3 rounded-xl border text-gray-700">
-                    Cerrar
-                  </button>
-                  <button
-                    onClick={solicitar}
-                    className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
-                  >
-                    🚀 Solicitar
-                  </button>
-                </div>
-              ) : (
-                <div className="flex justify-center gap-3 mt-5">
-                  <button onClick={openChat} className="px-5 py-3 rounded-xl border flex items-center gap-1">
-                    <MessageCircle size={16} /> Chatear
-                  </button>
-                  <button
-                    onClick={cancelarPedido}
-                    className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
-                  >
-                    <XCircle size={16} /> Cancelar pedido
-                  </button>
-                </div>
-              )}
+{!route ? (
+  // 🔹 No hay ruta → se muestra "Cerrar" y "Solicitar"
+  <div className="flex justify-center gap-3 mt-5">
+    <button
+      onClick={() => setSelected(null)}
+      className="px-5 py-3 rounded-xl border text-gray-700"
+    >
+      Cerrar
+    </button>
+    <button
+      onClick={solicitar}
+      className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
+    >
+      🚀 Solicitar
+    </button>
+  </div>
+) : (
+  // 🔹 Hay ruta → depende del estado del pedido
+  <div className="flex justify-center gap-3 mt-5">
+    {/* Botón de chat siempre visible */}
+    <button
+      onClick={openChat}
+      className="px-5 py-3 rounded-xl border flex items-center gap-1"
+    >
+      <MessageCircle size={16} /> Chatear
+    </button>
+
+    {/* Mostrar "Finalizar" solo si el pedido está aceptado o asignado */}
+    {(jobStatus === 'accepted' || jobStatus === 'assigned') ? (
+      <button
+        onClick={finalizarPedido}
+        className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
+      >
+        <CheckCircle2 size={16} /> Finalizar pedido
+      </button>
+    ) : (
+      <button
+        onClick={cancelarPedido}
+        className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
+      >
+        <XCircle size={16} /> Cancelar pedido
+      </button>
+    )}
+  </div>
+)}
+
             </div>
           </motion.div>
         )}

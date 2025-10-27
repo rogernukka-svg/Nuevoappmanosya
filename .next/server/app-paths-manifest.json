@@ -1,6 +1,7 @@
 {
-  "/test-realtime/page": "app/test-realtime/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/page": "app/page.js",
+  "/role-selector/page": "app/role-selector/page.js",
   "/client/page": "app/client/page.js",
-  "/worker/page": "app/worker/page.js",
-  "/client/jobs/page": "app/client/jobs/page.js"
+  "/(auth)/login/page": "app/(auth)/login/page.js"
 }
