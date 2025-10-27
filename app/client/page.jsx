@@ -17,6 +17,9 @@ import {
   PawPrint,
   Flame,
   MessageCircle,
+  SendHorizontal,
+  ChevronLeft,
+  CheckCircle2,
 } from 'lucide-react';
 import { getSupabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -109,6 +112,18 @@ export default function MapPage() {
   const [route, setRoute] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
 
+  // ✨ Nuevo: estado del job + chat
+  const [jobId, setJobId] = useState(null);
+  const [jobStatus, setJobStatus] = useState(null); // open | accepted | completed | cancelled | assigned ...
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatId, setChatId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [sending, setSending] = useState(false);
+  const inputRef = useRef(null);
+  const bottomRef = useRef(null);
+  const chatChannelRef = useRef(null);
+  const soundRef = useRef(null);
+
   const services = [
     { id: 'plomería', label: 'Plomería', icon: <Droplets size={18} /> },
     { id: 'electricidad', label: 'Electricidad', icon: <Wrench size={18} /> },
@@ -126,6 +141,7 @@ export default function MapPage() {
       const uid = data?.user?.id;
       if (!uid) router.replace('/login');
       else setMe(prev => ({ ...prev, id: uid }));
+      if (typeof Audio !== 'undefined') soundRef.current = new Audio('/notify.mp3');
     })();
   }, [router]);
 
@@ -166,7 +182,7 @@ export default function MapPage() {
   }
   useEffect(() => { fetchWorkers(); }, []);
 
-  /* === Realtime listener: actualiza si el pedido cambia (ej. trabajador finaliza) === */
+  /* === Realtime global jobs (informativo) === */
   useEffect(() => {
     const channel = supabase
       .channel('jobs-realtime-client')
@@ -182,6 +198,23 @@ export default function MapPage() {
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, [me.id]);
+
+  /* === Realtime del job actual para estado (accepted/completed) === */
+  useEffect(() => {
+    if (!jobId) return;
+    const ch = supabase
+      .channel(`job-${jobId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'jobs', filter: `id=eq.${jobId}` },
+        (payload) => {
+          const st = payload.new?.status;
+          if (st) setJobStatus(st);
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [jobId]);
 
   /* === Interacciones === */
   function handleMarkerClick(worker) {
@@ -203,22 +236,29 @@ export default function MapPage() {
       if (userError || !user) throw new Error('Sesión no encontrada');
       if (!selected || !selected.user_id) throw new Error('No se seleccionó un trabajador válido');
 
-      const { error: insertError } = await supabase.from('jobs').insert([
-        {
-          title: `Trabajo con ${selected.full_name || 'Trabajador'}`,
-          description: 'Pedido generado desde el mapa',
-          status: 'open',
-          client_id: user.id,
-          worker_id: selected.user_id,
-          client_lat: me.lat,
-          client_lng: me.lon,
-          worker_lat: selected.lat,
-          worker_lng: selected.lng,
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      const { data: inserted, error: insertError } = await supabase
+        .from('jobs')
+        .insert([
+          {
+            title: `Trabajo con ${selected.full_name || 'Trabajador'}`,
+            description: 'Pedido generado desde el mapa',
+            status: 'open',
+            client_id: user.id,
+            worker_id: selected.user_id,
+            client_lat: me.lat,
+            client_lng: me.lon,
+            worker_lat: selected.lat,
+            worker_lng: selected.lng,
+            created_at: new Date().toISOString(),
+          },
+        ])
+        .select('id, status')
+        .single();
 
       if (insertError) throw insertError;
+
+      setJobId(inserted.id);
+      setJobStatus(inserted.status);
 
       toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
       setWorkers([selected]);
@@ -232,10 +272,91 @@ export default function MapPage() {
     }
   }
 
+  // 🔔 Abrir chat (crea/garantiza chat y se suscribe a mensajes)
+  async function openChat() {
+    try {
+      if (!jobId) return toast('⚠️ Creá un pedido primero');
+      const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
+        p_job_id: jobId,
+      });
+      if (chatErr) throw chatErr;
+      const cid = chatIdData;
+      setChatId(cid);
+
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', cid)
+        .order('created_at', { ascending: true });
+      setMessages(msgs || []);
+      setIsChatOpen(true);
+
+      if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
+
+      const channel = supabase
+        .channel(`chat-${cid}`, {
+          config: {
+            broadcast: { self: true },
+            presence: { key: me.id || 'client' },
+          },
+        })
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `chat_id=eq.${cid}`,
+          },
+          (payload) => {
+            setMessages((prev) => [...prev, payload.new]);
+            if (payload.new.sender_id !== me.id) {
+              soundRef.current?.play?.();
+            }
+            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+          }
+        )
+        .subscribe();
+
+      chatChannelRef.current = channel;
+    } catch (e) {
+      console.error('❌ Error abriendo chat:', e);
+      toast.error('No se pudo abrir el chat');
+    }
+  }
+
+  async function sendMessage(content) {
+    const text = (content || '').trim();
+    if (!text || !chatId || !me?.id) return;
+    try {
+      setSending(true);
+      const { error } = await supabase
+        .from('messages')
+        .insert([{ chat_id: chatId, sender_id: me.id, content: text }]);
+      if (error) throw error;
+    } catch (err) {
+      toast.error('No se pudo enviar el mensaje');
+    } finally {
+      setSending(false);
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+    }
+  }
+
+  function closeChat() {
+    setIsChatOpen(false);
+    if (chatChannelRef.current) {
+      supabase.removeChannel(chatChannelRef.current);
+      chatChannelRef.current = null;
+    }
+  }
+
   // ✅ CANCELAR — borra línea y recarga todos los trabajadores
   function cancelarPedido() {
     setRoute(null);
     setSelected(null);
+    setJobId(null);
+    setJobStatus(null);
+    setChatId(null);
     fetchWorkers(selectedService || null);
   }
 
@@ -245,6 +366,33 @@ export default function MapPage() {
     setSelected(null);
     setRoute(null);
     fetchWorkers(next);
+  }
+
+  // Etiqueta estado bonita
+  function StatusBadge() {
+    if (!jobId) return null;
+    const base = 'text-xs px-2 py-1 rounded-lg font-semibold inline-flex items-center gap-1';
+    if (jobStatus === 'accepted') {
+      return (
+        <span className={`${base} bg-green-100 text-green-700`}>
+          🟢 Trabajador en camino
+        </span>
+      );
+    }
+    if (jobStatus === 'completed') {
+      return (
+        <span className={`${base} bg-emerald-100 text-emerald-700`}>
+          <CheckCircle2 size={14} /> Trabajo finalizado
+        </span>
+      );
+    }
+    if (jobStatus === 'cancelled') {
+      return <span className={`${base} bg-red-100 text-red-600`}>Cancelado</span>;
+    }
+    if (jobStatus === 'assigned') {
+      return <span className={`${base} bg-blue-100 text-blue-700`}>Asignado</span>;
+    }
+    return <span className={`${base} bg-emerald-50 text-emerald-700`}>{jobStatus || 'open'}</span>;
   }
 
   return (
@@ -371,6 +519,10 @@ export default function MapPage() {
               <div className="mt-3 bg-gray-50 rounded-xl p-2 text-sm text-gray-700">
                 Especialidades: {selected.skills || 'limpieza, plomería, jardinería'}
               </div>
+
+              {/* Estado de pedido si existe */}
+              <div className="mt-3">{jobId && <StatusBadge />}</div>
+
               {!route ? (
                 <div className="flex justify-center gap-3 mt-5">
                   <button onClick={() => setSelected(null)} className="px-5 py-3 rounded-xl border text-gray-700">
@@ -385,7 +537,7 @@ export default function MapPage() {
                 </div>
               ) : (
                 <div className="flex justify-center gap-3 mt-5">
-                  <button className="px-5 py-3 rounded-xl border flex items-center gap-1">
+                  <button onClick={openChat} className="px-5 py-3 rounded-xl border flex items-center gap-1">
                     <MessageCircle size={16} /> Chatear
                   </button>
                   <button
@@ -401,7 +553,7 @@ export default function MapPage() {
         )}
       </AnimatePresence>
 
-            {/* MODAL PRECIO */}
+      {/* MODAL PRECIO */}
       <AnimatePresence>
         {showPrice && (
           <motion.div
@@ -438,6 +590,96 @@ export default function MapPage() {
                   Confirmar
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 💬 CHAT MODAL FLOTANTE */}
+      <AnimatePresence>
+        {isChatOpen && selected && (
+          <motion.div
+            className="fixed inset-0 z-[10020] bg-black/70 flex items-end justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="w-full max-w-md bg-white rounded-t-3xl shadow-2xl flex flex-col"
+              initial={{ y: 300 }}
+              animate={{ y: 0 }}
+              exit={{ y: 300 }}
+              transition={{ type: 'spring', stiffness: 120 }}
+            >
+              {/* Header del chat con foto + nombre */}
+              <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
+                <button onClick={closeChat} className="flex items-center gap-1 text-gray-600 hover:text-red-500">
+                  <ChevronLeft size={18} /> Volver
+                </button>
+                <div className="flex items-center gap-2">
+                  <img
+                    src={selected.avatar_url || '/avatar-fallback.png'}
+                    alt="avatar"
+                    className="w-8 h-8 rounded-full border"
+                  />
+                  <div className="text-sm">
+                    <p className="font-semibold text-gray-800 leading-4">
+                      {selected.full_name || 'Trabajador'}
+                    </p>
+                    <p className="text-xs text-gray-500 leading-4">
+                      {jobStatus === 'accepted' ? '🟢 En camino' : '💬 Conectado'}
+                    </p>
+                  </div>
+                </div>
+                <div className="w-6" />
+              </div>
+
+              {/* Mensajes */}
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-white">
+                {messages.length === 0 ? (
+                  <p className="text-center text-gray-400 mt-6">No hay mensajes aún 📭</p>
+                ) : (
+                  messages.map((m) => {
+                    const mine = m.sender_id === me?.id;
+                    return (
+                      <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                        <div
+                          className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm shadow-sm ${
+                            mine ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {m.content}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={bottomRef} />
+              </div>
+
+              {/* Input */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const value = inputRef.current?.value || '';
+                  sendMessage(value);
+                  if (inputRef.current) inputRef.current.value = '';
+                }}
+                className="flex gap-2 p-3 border-t border-gray-100 bg-gray-50"
+              >
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Escribí un mensaje…"
+                  className="flex-1 bg-gray-100 rounded-xl px-3 py-3 outline-none focus:ring-2 focus:ring-emerald-400 border border-gray-200"
+                />
+                <button
+                  disabled={sending}
+                  className="px-4 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 transition disabled:opacity-60"
+                >
+                  <SendHorizontal size={18} />
+                </button>
+              </form>
             </motion.div>
           </motion.div>
         )}

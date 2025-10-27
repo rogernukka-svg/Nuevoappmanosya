@@ -50,7 +50,6 @@ export default function WorkerPage() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [isActive, setIsActive] = useState(true);
-  const [connectionLost, setConnectionLost] = useState(false);
 
   const inputRef = useRef(null);
   const chatChannelRef = useRef(null);
@@ -109,36 +108,22 @@ export default function WorkerPage() {
 
     loadJobs();
 
-    // 🔄 Suscripción en tiempo real a nuevos trabajos asignados
+    // 🔄 Realtime: actualiza si cambia algo
     const channel = supabase
-      .channel('jobs-feed')
+      .channel('jobs-worker-sync')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'jobs',
-          filter: `worker_id=eq.${workerId}`,
-        },
+        { event: '*', schema: 'public', table: 'jobs', filter: `worker_id=eq.${workerId}` },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            toast.success('📦 ¡Nuevo pedido asignado a ti!');
-            soundRef.current?.play?.();
-            setJobs((prev) => [payload.new, ...prev]);
-          }
-          if (payload.eventType === 'UPDATE') {
-            setJobs((prev) =>
-              prev.map((j) => (j.id === payload.new.id ? { ...j, ...payload.new } : j))
-            );
-          }
+          setJobs((prev) =>
+            prev.map((j) => (j.id === payload.new.id ? { ...j, ...payload.new } : j))
+          );
         }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user]);
+    return () => supabase.removeChannel(channel);
+  }, [user?.id]);
 
   /* === Cambiar disponibilidad === */
   async function toggleActive() {
@@ -156,114 +141,96 @@ export default function WorkerPage() {
   async function acceptJob(job) {
     try {
       if (job.status !== 'open') return toast.warning('Este trabajo ya fue tomado');
-      const { data, error } = await supabase.rpc('accept_job_flow', {
-        p_job_id: job.id,
-        p_worker_id: user.id,
-      });
-      if (error || !data?.ok)
-        throw error || new Error(data?.message || 'No se pudo aceptar el trabajo');
+      const { error } = await supabase
+        .from('jobs')
+        .update({ status: 'accepted' })
+        .eq('id', job.id);
+      if (error) throw error;
 
       toast.success('✅ Trabajo aceptado correctamente');
       setJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, status: data.status || 'accepted' } : j))
-      );
-
-      await openChat(job);
-      window.open(
-        `https://www.google.com/maps/dir/?api=1&destination=${job.client_lat},${job.client_lng}`,
-        '_blank'
+        prev.map((j) => (j.id === job.id ? { ...j, status: 'accepted' } : j))
       );
     } catch (err) {
-      toast.error(err.message || 'No se pudo aceptar el trabajo');
+      toast.error('No se pudo aceptar el trabajo');
+      console.error(err);
     }
   }
 
+  /* === Rechazar trabajo === */
   async function rejectJob(job) {
     try {
-      const { data, error } = await supabase.rpc('reject_job_flow', {
-        p_job_id: job.id,
-        p_worker_id: user.id,
-      });
+      const { error } = await supabase
+        .from('jobs')
+        .update({ status: 'rejected' })
+        .eq('id', job.id);
       if (error) throw error;
-      if (!data?.ok) return toast.warning(data?.message || 'No se pudo rechazar');
-      toast.success('🚫 Trabajo rechazado correctamente');
+      toast('🚫 Trabajo rechazado correctamente');
       setJobs((prev) => prev.filter((j) => j.id !== job.id));
     } catch (err) {
-      toast.error(err.message || 'No se pudo rechazar el trabajo');
+      toast.error('Error al rechazar trabajo');
+      console.error(err);
     }
   }
 
+  /* === Finalizar trabajo === */
   async function completeJob(job) {
     try {
-      const { data, error } = await supabase.rpc('complete_job_flow', {
-        p_job_id: job.id,
-        p_worker_id: user.id,
-      });
+      const { error } = await supabase
+        .from('jobs')
+        .update({ status: 'completed' })
+        .eq('id', job.id);
       if (error) throw error;
-      if (!data?.ok) return toast.warning(data?.message || 'No se pudo finalizar');
       toast.success('🎉 Trabajo finalizado correctamente');
       setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: 'completed' } : j)));
       setSelectedJob(null);
       setIsChatOpen(false);
     } catch (err) {
-      toast.error(err.message || 'No se pudo finalizar el trabajo');
+      toast.error('Error al finalizar el trabajo');
+      console.error(err);
     }
   }
 
   /* === Chat === */
   async function openChat(job) {
     try {
-      const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
-        p_job_id: job.id,
-      });
-      if (chatErr) throw chatErr;
-      const chatId = chatIdData;
-
-      const { data: msgs } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: true });
-
-      setMessages(msgs || []);
+      setSelectedJob(job);
       setIsChatOpen(true);
-      setSelectedJob({ ...job, chat_id: chatId });
-
-      if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
-
-      const channel = supabase
-        .channel(`chat-${chatId}`)
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` },
-          (payload) => {
-            setMessages((prev) => [...prev, payload.new]);
-            if (payload.new.sender_id !== user.id) soundRef.current?.play?.();
-            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-          }
-        )
-        .subscribe();
-      chatChannelRef.current = channel;
-    } catch {
+    } catch (err) {
       toast.error('No se pudo abrir el chat');
     }
   }
 
+  /* === Enviar mensaje === */
   async function sendMessage(content) {
     const text = (content || '').trim();
-    if (!text || !selectedJob) return;
+    if (!text) return;
     try {
       setSending(true);
-      await supabase
-        .from('messages')
-        .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, content: text }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          sender_id: user.id,
+          content: text,
+          created_at: new Date().toISOString(),
+        },
+      ]);
     } finally {
       setSending(false);
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
     }
   }
 
-  /* === Render === */
+  /* === UI === */
+  if (loading)
+    return (
+      <div className="flex flex-col items-center justify-center h-screen text-emerald-600">
+        <Loader2 className="animate-spin w-6 h-6 mb-2" />
+        <p>Cargando trabajos...</p>
+      </div>
+    );
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -286,17 +253,13 @@ export default function WorkerPage() {
             onClick={() => router.push('/role-selector')}
             className="flex items-center gap-1 text-sm font-semibold text-gray-400 hover:text-emerald-500 transition"
           >
-            <ArrowLeftCircle size={16} /> Volver al inicio
+            <ArrowLeftCircle size={16} /> Volver
           </button>
         </div>
       </div>
 
       {/* LISTA DE TRABAJOS */}
-      {loading ? (
-        <div className="flex justify-center mt-10 text-gray-400">
-          <Loader2 className="animate-spin" /> Cargando trabajos...
-        </div>
-      ) : jobs.length === 0 ? (
+      {jobs.length === 0 ? (
         <p className="text-gray-500 mt-10 text-center">Aún no tenés solicitudes disponibles.</p>
       ) : (
         <section className="grid gap-3 mt-5">
@@ -307,7 +270,7 @@ export default function WorkerPage() {
               className="border rounded-2xl p-4 transition shadow-sm bg-white hover:shadow-md"
             >
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-bold text-gray-800">{job.title || 'Trabajo de Servicio'}</h3>
+                <h3 className="font-bold text-gray-800">{job.title || 'Trabajo de servicio'}</h3>
                 <span
                   className={`px-2 py-1 rounded-full text-xs font-semibold ${
                     job.status === 'open'
@@ -325,12 +288,12 @@ export default function WorkerPage() {
                 </span>
               </div>
 
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 mb-2">
                 {job.description || 'Pedido generado desde el mapa'}
               </p>
 
               {job.client && (
-                <div className="flex items-center gap-2 mt-2">
+                <div className="flex items-center gap-2 mt-1">
                   <img
                     src={job.client?.avatar_url || '/avatar-fallback.png'}
                     alt={job.client?.full_name || 'Cliente'}
@@ -342,7 +305,7 @@ export default function WorkerPage() {
                 </div>
               )}
 
-              {/* BOTONES */}
+              {/* BOTONES SEGÚN ESTADO */}
               {job.status === 'open' && (
                 <div className="flex gap-2 mt-3">
                   <button
@@ -401,8 +364,19 @@ export default function WorkerPage() {
       {/* CHAT MODAL */}
       <AnimatePresence>
         {isChatOpen && selectedJob && (
-          <motion.div className="fixed inset-0 bg-black/40 flex justify-center items-end z-[80]">
-            <motion.div className="bg-white rounded-t-3xl w-full max-w-md shadow-xl">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex justify-center items-end z-[80]"
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 18 }}
+              className="bg-white rounded-t-3xl w-full max-w-md shadow-xl"
+            >
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
                 <button
                   onClick={() => setIsChatOpen(false)}
