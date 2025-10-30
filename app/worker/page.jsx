@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
+import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
+
 
 const supabase = getSupabase();
 
@@ -78,64 +80,302 @@ export default function WorkerPage() {
       }
     })();
   }, [router]);
+ 
+
+// 🛰️ Actualización continua de ubicación del trabajador
+const [status, setStatus] = useState('available'); // 🟢 Estado actual del trabajador
+
+useEffect(() => {
+  if (!user?.id || !navigator.geolocation) return;
+
+  let lastSent = 0;
+  let lastLat = null, lastLng = null;
+
+  const distance = (a, b, c, d) => {
+    const R = 6371000; // radio de la Tierra en metros
+    const toRad = (x) => (x * Math.PI) / 180;
+    const dLat = toRad(c - a);
+    const dLon = toRad(d - b);
+    const la1 = toRad(a);
+    const la2 = toRad(c);
+    const x =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(la1) * Math.cos(la2);
+    return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  };
+
+  const watcher = navigator.geolocation.watchPosition(
+    async (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+
+      const now = Date.now();
+      const movedEnough =
+        lastLat === null || distance(lastLat, lastLng, lat, lng) > 25; // >25 m
+      const timeOk = now - lastSent > 30000; // >30 segundos
+
+      if (!movedEnough && !timeOk) return;
+
+      lastLat = lat;
+      lastLng = lng;
+      lastSent = now;
+
+      try {
+        const { error } = await supabase
+          .from('worker_profiles')
+          .upsert(
+            {
+              user_id: user.id,
+              lat,
+              lng,
+              last_lat: lat, // opcional (compatibilidad)
+              last_lon: lng,
+              status, // ✅ mantenemos el estado actual
+              is_active: status === 'available', // ✅ solo activo si está disponible
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'user_id' }
+          );
+
+        if (error) {
+          console.error('❌ Error al actualizar ubicación:', error.message);
+        } else {
+          console.log('📍 Ubicación actualizada:', lat, lng);
+        }
+      } catch (err) {
+        console.error('⚠️ Error inesperado al guardar ubicación:', err);
+      }
+    },
+    (err) => console.warn('🚫 Error del GPS:', err),
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+  );
+
+  return () => navigator.geolocation.clearWatch(watcher);
+}, [user?.id, status]); // ✅ ahora escucha el estado actual
+
+// 🟢 Al iniciar, cargar estado real desde Supabase
+useEffect(() => {
+  if (!user?.id) return;
+
+  const fetchStatus = async () => {
+    const { data, error } = await supabase
+      .from('worker_profiles')
+      .select('status, is_active')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error obteniendo estado:', error.message);
+      return;
+    }
+
+    if (data?.status) setStatus(data.status);
+  };
+
+  fetchStatus();
+}, [user?.id]);
+
+// 🌐 Estado de conexión a internet (offline/online)
+const [isConnected, setIsConnected] = useState(true);
+
+useEffect(() => {
+  // Detecta si el navegador pierde o recupera conexión
+  const updateStatus = () => {
+    const online = navigator.onLine;
+    setIsConnected(online);
+    console.log(online ? '🟢 Conectado a internet' : '🔴 Sin conexión a internet');
+  };
+
+  // Verificar al montar
+  updateStatus();
+
+  // Escuchar eventos del navegador
+  window.addEventListener('online', updateStatus);
+  window.addEventListener('offline', updateStatus);
+
+  // Limpieza al desmontar
+  return () => {
+    window.removeEventListener('online', updateStatus);
+    window.removeEventListener('offline', updateStatus);
+  };
+}, []);
 
   /* === Cargar trabajos y sincronización === */
-  useEffect(() => {
-    if (!user?.id) return;
-    const workerId = user.id;
+useEffect(() => {
+  if (!user?.id) return;
+  const workerId = user.id;
 
-    async function loadJobs() {
-      try {
-        setLoading(true);
-        const { data, error } = await supabase
-          .from('jobs')
-          .select(`
-            id, title, description, status, client_id, worker_id,
-            client_lat, client_lng, created_at,
-            client:profiles!client_id(full_name, avatar_url)
-          `)
-          .eq('worker_id', workerId)
-          .order('created_at', { ascending: false });
-        if (error) throw error;
-        setJobs(data || []);
-      } catch (err) {
-        console.error('Error cargando trabajos:', err);
-        toast.error('Error al cargar trabajos');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadJobs();
-
-    // 🔄 Realtime: actualiza si cambia algo
-    const channel = supabase
-      .channel('jobs-worker-sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'jobs', filter: `worker_id=eq.${workerId}` },
-        (payload) => {
-          setJobs((prev) =>
-            prev.map((j) => (j.id === payload.new.id ? { ...j, ...payload.new } : j))
-          );
-        }
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, [user?.id]);
-
-  /* === Cambiar disponibilidad === */
-  async function toggleActive() {
+  async function loadJobs() {
     try {
-      const newState = !isActive;
-      setIsActive(newState);
-      await supabase.from('worker_profiles').update({ is_active: newState }).eq('user_id', user.id);
-      toast.success(newState ? '🟢 Ahora estás disponible' : '🔴 Estás pausado');
-    } catch {
-      toast.error('No se pudo cambiar tu estado');
+      setLoading(true);
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(`
+          id, title, description, status, client_id, worker_id,
+          client_lat, client_lng, created_at
+        `)
+        .eq('worker_id', workerId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setJobs(data || []);
+
+      const activeJob = data?.find((j) => j.status === 'accepted');
+      if (activeJob) {
+        const busyUntil = new Date(Date.now() + 60 * 60000);
+        setStatus('busy');
+        await supabase
+          .from('worker_profiles')
+          .update({
+            status: 'busy',
+            is_active: true,
+            busy_until: busyUntil.toISOString(),
+          })
+          .eq('user_id', workerId);
+      } else if (status !== 'paused') {
+        setStatus('available');
+        await supabase
+          .from('worker_profiles')
+          .update({
+            status: 'available',
+            is_active: true,
+            busy_until: null,
+          })
+          .eq('user_id', workerId);
+      }
+    } catch (err) {
+      console.error('❌ Error cargando trabajos:', err);
+      toast.error('Error al cargar trabajos');
+    } finally {
+      setLoading(false);
     }
   }
+
+  loadJobs();
+}, [user?.id, status]);
+
+
+  
+/* 🌐 RealtimeCore global: sincroniza pedidos, chat y perfil del trabajador */
+useEffect(() => {
+  if (!user?.id) return;
+
+  const stop = startRealtimeCore((type, data) => {
+    try {
+      switch (type) {
+        case 'job': {
+          if (data.__source === 'insert' && data.status === 'open') {
+            if (status === 'available') {
+              setJobs((prev) => {
+                const exists = prev.some((j) => j.id === data.id);
+                return exists ? prev : [data, ...prev];
+              });
+              toast('🆕 Nuevo pedido disponible cerca tuyo');
+            }
+            return;
+          }
+
+          if (data.worker_id === user.id) {
+            setJobs((prev) =>
+              prev.some((j) => j.id === data.id)
+                ? prev.map((j) => (j.id === data.id ? { ...j, ...data } : j))
+                : [data, ...prev]
+            );
+
+            if (data.status === 'cancelled') {
+              toast.warning('🚫 El cliente canceló el trabajo.');
+              setStatus('available');
+            } else if (data.status === 'completed') {
+              toast.success('🎉 Trabajo finalizado por el cliente.');
+              setStatus('available');
+            } else if (data.status === 'accepted') {
+              setStatus('busy');
+            }
+          }
+
+          if (data.__source === 'delete') {
+            setJobs((prev) => prev.filter((j) => j.id !== data.id));
+          }
+          break;
+        }
+
+        case 'message': {
+          if (selectedJob?.chat_id === data.chat_id) {
+            setMessages((prev) => {
+              // 🧠 Evita duplicar mensajes
+              if (prev.some((m) => m.id === data.id)) return prev;
+              return [...prev, data];
+            });
+            if (data.sender_id !== user.id) soundRef.current?.play?.();
+          }
+          break;
+        }
+
+        case 'profile': {
+          if (data.user_id === user.id && data.status) {
+            setStatus(data.status);
+          }
+          break;
+        }
+
+        default:
+          console.log('Evento realtime desconocido:', type, data);
+      }
+    } catch (err) {
+      console.warn('⚠️ Error en RealtimeCore worker:', err);
+    }
+  });
+
+  // 🧹 Limpieza al desmontar
+  return () => stopRealtimeCore();
+}, [user?.id, selectedJob?.chat_id, status]);
+
+
+
+  /* === Cambiar estado del trabajador === */
+async function toggleStatus() {
+  try {
+    let newStatus, newIsActive;
+
+    if (status === 'available') {
+      newStatus = 'paused';
+      newIsActive = false; // 🔴 al pausar → no visible
+    } else if (status === 'paused') {
+      newStatus = 'available';
+      newIsActive = true; // 🟢 al activar → visible
+    } else {
+      newStatus = 'available';
+      newIsActive = true;
+    }
+
+    setStatus(newStatus);
+
+    const { error } = await supabase
+      .from('worker_profiles')
+      .update({
+        status: newStatus,
+        is_active: newIsActive,
+        updated_at: new Date().toISOString(), // opcional, para refrescar cambios
+      })
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+
+    toast.success(
+      newStatus === 'available'
+        ? '🟢 Estás disponible'
+        : newStatus === 'paused'
+        ? '⏸️ Estás en pausa'
+        : '🔵 Estás trabajando'
+    );
+  } catch (err) {
+    console.error('Error cambiando estado:', err.message);
+    toast.error('No se pudo cambiar tu estado');
+  }
+}
+
+
 
   /* === Aceptar trabajo === */
   async function acceptJob(job) {
@@ -192,76 +432,85 @@ export default function WorkerPage() {
   }
 
   /* === Chat sincronizado === */
-  async function openChat(job) {
-    try {
-      const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
-        p_job_id: job.id,
-      });
-      if (chatErr) throw chatErr;
-      const cid = chatIdData;
+async function openChat(job) {
+  try {
+    const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
+      p_job_id: job.id,
+    });
+    if (chatErr) throw chatErr;
+    const cid = chatIdData;
 
-      const { data: msgs, error: msgErr } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', cid)
-        .order('created_at', { ascending: true });
-      if (msgErr) throw msgErr;
+    const { data: msgs, error: msgErr } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('chat_id', cid)
+      .order('created_at', { ascending: true });
+    if (msgErr) throw msgErr;
 
-      setMessages(msgs || []);
-      setSelectedJob({ ...job, chat_id: cid });
-      setIsChatOpen(true);
+    setMessages(msgs || []);
+    setSelectedJob({ ...job, chat_id: cid });
+    setIsChatOpen(true);
 
-      if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
+    if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
 
-      const ch = supabase
-        .channel(`chat-${cid}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `chat_id=eq.${String(cid)}`,
-          },
-          (payload) => {
-            setMessages((prev) => [...prev, payload.new]);
-            if (payload.new.sender_id !== user.id) soundRef.current?.play?.();
-            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-          }
-        )
-        .subscribe();
+    const ch = supabase
+      .channel(`chat-${cid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${String(cid)}`,
+        },
+        (payload) => {
+          setMessages((prev) => {
+            // ✅ Evitar mensajes duplicados
+            if (prev.some((m) => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
+          });
+          if (payload.new.sender_id !== user.id) soundRef.current?.play?.();
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+        }
+      )
+      .subscribe();
 
-      chatChannelRef.current = ch;
-    } catch (err) {
-      console.error('❌ Error abriendo chat:', err);
-      toast.error('No se pudo abrir el chat');
-    }
+    chatChannelRef.current = ch;
+  } catch (err) {
+    console.error('❌ Error abriendo chat:', err);
+    toast.error('No se pudo abrir el chat');
   }
+}
 
-  async function sendMessage() {
-    const text = inputRef.current?.value?.trim();
-    if (!text) return;
-    if (!selectedJob?.chat_id) return toast.error('No hay chat activo');
+async function sendMessage() {
+  const text = inputRef.current?.value?.trim();
+  if (!text) return;
+  if (!selectedJob?.chat_id) return toast.error('No hay chat activo');
 
-    try {
-      setSending(true);
-      const { data, error } = await supabase
-        .from('messages')
-        .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, text }])
-        .select();
+  try {
+    setSending(true);
+    const { data, error } = await supabase
+      .from('messages')
+      .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, text }])
+      .select();
 
-      if (error) throw error;
+    if (error) throw error;
 
-      setMessages((prev) => [...prev, data[0]]);
-      inputRef.current.value = '';
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-    } catch (err) {
-      console.error('❌ Error enviando mensaje:', err);
-      toast.error('No se pudo enviar el mensaje');
-    } finally {
-      setSending(false);
-    }
+    setMessages((prev) => {
+      // ✅ Evitar duplicado local del mismo mensaje
+      if (prev.some((m) => m.id === data[0]?.id)) return prev;
+      return [...prev, data[0]];
+    });
+
+    inputRef.current.value = '';
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+  } catch (err) {
+    console.error('❌ Error enviando mensaje:', err);
+    toast.error('No se pudo enviar el mensaje');
+  } finally {
+    setSending(false);
   }
+}
 
   /* === UI === */
   if (loading)
@@ -277,27 +526,100 @@ export default function WorkerPage() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="container max-w-screen-md mx-auto px-4 pb-28 bg-white text-gray-900 min-h-screen"
-    >
+    >{/* === BANNER DE ESTADO DEL TRABAJADOR === */}
+<motion.div
+  initial={{ opacity: 0, y: -10 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.3 }}
+  className={`w-full text-center rounded-xl p-3 mb-4 font-semibold border ${
+    status === 'available'
+      ? 'bg-emerald-100 text-emerald-700 border-emerald-400'
+      : status === 'paused'
+      ? 'bg-red-100 text-red-700 border-red-400'
+      : 'bg-blue-100 text-blue-700 border-blue-400'
+  }`}
+>
+  {status === 'available' && (
+    <>
+      🟢 Estás <span className="font-bold">DISPONIBLE</span>
+      <p className="text-sm font-normal text-emerald-600">
+        Recibirás solicitudes de nuevos clientes.
+      </p>
+    </>
+  )}
+  {status === 'paused' && (
+    <>
+      🔴 Estás <span className="font-bold">EN PAUSA</span>
+      <p className="text-sm font-normal text-red-600">
+        No recibirás nuevas solicitudes hasta reactivarte.
+      </p>
+    </>
+  )}
+  {status === 'busy' && (
+    <>
+      🔵 Estás <span className="font-bold">OCUPADO</span>
+      <p className="text-sm font-normal text-blue-600">
+        Termina tu trabajo actual antes de aceptar nuevos pedidos.
+      </p>
+    </>
+  )}
+  <button
+    onClick={toggleStatus}
+    className="mt-2 px-3 py-1 bg-white border border-gray-200 rounded-lg shadow-sm text-sm hover:bg-gray-50"
+  >
+    Cambiar estado
+  </button>
+</motion.div>
+{/* 🔌 Indicador de conexión realtime */}
+<div className="flex justify-center mb-2">
+  <span
+    className={`text-xs font-semibold px-3 py-1 rounded-full ${
+      isConnected
+        ? 'bg-emerald-100 text-emerald-700'
+        : 'bg-red-100 text-red-600'
+    }`}
+  >
+    {isConnected ? '🟢 Conectado a tiempo real' : '🔴 Sin conexión realtime'}
+  </span>
+</div>
+
+
       {/* ENCABEZADO */}
-      <div className="flex items-center justify-between mb-4 pt-6">
-        <h1 className="text-lg font-extrabold text-emerald-600">Panel del Trabajador</h1>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={toggleActive}
-            className={`flex items-center gap-1 text-sm font-semibold ${
-              isActive ? 'text-emerald-600 hover:text-emerald-800' : 'text-gray-400 hover:text-red-500'
-            } transition`}
-          >
-            <Power size={16} /> {isActive ? 'Disponible' : 'Pausado'}
-          </button>
-          <button
-            onClick={() => router.push('/role-selector')}
-            className="flex items-center gap-1 text-sm font-semibold text-gray-400 hover:text-emerald-500 transition"
-          >
-            <ArrowLeftCircle size={16} /> Volver
-          </button>
-        </div>
-      </div>
+<div className="flex items-center justify-between mb-4 pt-6">
+  <h1 className="text-lg font-extrabold text-emerald-600">
+    Panel del Trabajador
+  </h1>
+
+  <div className="flex items-center gap-3">
+    {/* Botón de estado */}
+    <button
+      onClick={toggleStatus}
+      className={`flex items-center gap-1 text-sm font-semibold transition ${
+        status === 'available'
+          ? 'text-emerald-600 hover:text-emerald-800'
+          : status === 'paused'
+          ? 'text-gray-400 hover:text-red-500'
+          : 'text-blue-500 hover:text-blue-700'
+      }`}
+    >
+      <Power size={16} />
+      {status === 'available'
+        ? 'Disponible'
+        : status === 'paused'
+        ? 'Pausado'
+        : 'Ocupado'}
+    </button>
+
+    {/* Botón volver */}
+    <button
+      onClick={() => router.push('/role-selector')}
+      className="flex items-center gap-1 text-sm font-semibold text-gray-400 hover:text-emerald-500 transition"
+    >
+      <ArrowLeftCircle size={16} /> Volver
+    </button>
+  </div>
+</div>
+
 
       {/* LISTA DE TRABAJOS */}
       {jobs.length === 0 ? (

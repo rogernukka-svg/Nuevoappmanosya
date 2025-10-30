@@ -22,6 +22,9 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { getSupabase } from '@/lib/supabase';
+import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
+
+
 import { toast } from 'sonner';
 
 const supabase = getSupabase();
@@ -58,10 +61,30 @@ function avatarIcon(url, worker) {
   const L = require('leaflet');
   const size = 52;
   const color = mapAccentColor(worker);
+
+  // ✨ Nuevo: animación de rebote si el marcador está seleccionado
+  const bounce = worker._selected
+    ? 'animation:bounceMarker 0.8s ease-in-out infinite alternate;'
+    : '';
+
+
+  // 💫 Si acaba de actualizar su posición, mostrar efecto "ping"
+  const pulse =
+    worker._justUpdated
+      ? `<div class="ping" style="
+            position:absolute;
+            inset:-10px;
+            border-radius:50%;
+            background:rgba(16,185,129,0.35);
+            animation:pulseGreen 1s ease-out infinite;
+         "></div>`
+      : '';
+
   const html = `
     <div style="width:${size}px;height:${size}px;border-radius:50%;
       position:relative;background:#fff;overflow:hidden;
       box-shadow:0 6px 16px rgba(0,0,0,.12);">
+      ${pulse}
       <div style="position:absolute;inset:-4px;border-radius:50%;
         border:3px solid ${color};
         filter:drop-shadow(0 0 8px ${color}40);"></div>
@@ -69,6 +92,7 @@ function avatarIcon(url, worker) {
            style="position:absolute;inset:0;width:100%;height:100%;
            object-fit:cover;border-radius:50%;" />
     </div>`;
+
   return L.divIcon({ html, iconSize: [size, size], className: '' });
 }
 
@@ -88,6 +112,20 @@ function clusterIconCreateFunction(cluster) {
     </div>`;
   return L.divIcon({ html, iconSize: [64, 64], className: 'cluster-animated' });
 }
+/* 🎯 Animación rebote marcador seleccionado */
+if (typeof window !== 'undefined') {
+  const styleBounce = document.createElement('style');
+  styleBounce.innerHTML = `
+    @keyframes bounceMarker {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+  `;
+  if (!document.head.querySelector('[data-bounce-marker]')) {
+    styleBounce.setAttribute('data-bounce-marker', '1');
+    document.head.appendChild(styleBounce);
+  }
+}
 
 /* CSS animación clúster */
 if (typeof window !== 'undefined') {
@@ -104,10 +142,35 @@ if (typeof window !== 'undefined') {
     document.head.appendChild(style);
   }
 }
+/* 💫 CSS global dinámico adicional para animaciones */
+if (typeof window !== 'undefined') {
+  const style2 = document.createElement('style');
+  style2.innerHTML = `
+    /* 💚 animación para actualización (ping en marcadores) */
+    @keyframes pulseGreen {
+      0% { transform: scale(0.6); opacity: 0.7; }
+      50% { transform: scale(1.3); opacity: 0.3; }
+      100% { transform: scale(0.6); opacity: 0; }
+    }
+  `;
+  if (!document.head.querySelector('style[data-manosya-pulse-green]')) {
+    style2.setAttribute('data-manosya-pulse-green', '1');
+    document.head.appendChild(style2);
+  }
+}
+
+
+function getMinutesAgo(dateString) {
+  if (!dateString) return null;
+  const diffMs = Date.now() - new Date(dateString).getTime();
+  return Math.floor(diffMs / 60000);
+}
 
 export default function MapPage() {
   const router = useRouter();
   const mapRef = useRef(null);
+  const markersRef = useRef({}); // 🧭 guarda refs de marcadores por user_id
+
 
   const [center, setCenter] = useState([-25.516, -54.616]);
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
@@ -257,7 +320,8 @@ async function fetchWorkers(serviceFilter = null) {
       .from('map_workers_view')
       .select('*')
       .not('lat', 'is', null)
-      .not('lng', 'is', null);
+      .not('lng', 'is', null)
+      .eq('is_active', true); // ✅ Solo muestra trabajadores activos
 
     if (serviceFilter) query = query.ilike('skills', `%${serviceFilter}%`);
 
@@ -276,8 +340,139 @@ async function fetchWorkers(serviceFilter = null) {
 useEffect(() => {
   fetchWorkers();
 }, []);
+// 🛰️ Realtime instantáneo de cambios de estado (busy / available / paused)
+useEffect(() => {
+  const channel = supabase
+    .channel('worker-status-sync')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'worker_profiles' },
+      payload => {
+        const updated = payload.new;
+        if (!updated?.user_id) return;
 
-  useEffect(() => { fetchWorkers(); }, []);
+        setWorkers(prev =>
+          prev.map(w =>
+            w.user_id === updated.user_id
+              ? { 
+                  ...w, 
+                  status: updated.status, 
+                  busy_until: updated.busy_until, 
+                  is_active: updated.is_active 
+                }
+              : w
+          )
+        );
+      }
+    )
+    .subscribe();
+
+  console.log('⚡ Canal realtime worker-status-sync activo');
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
+
+
+  
+/* === 🛰️ Escuchar actualizaciones en tiempo real de los trabajadores (ubicación + datos generales) === */
+useEffect(() => {
+  // Canal 1: actualizaciones de ubicación con animación
+  const channelLocation = supabase
+    .channel('realtime-worker-locations')
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'worker_profiles' },
+      (payload) => {
+        const updated = payload.new;
+        if (!updated?.lat || !updated?.lng) return;
+
+        setWorkers((prev) => {
+          const exists = prev.find((w) => w.user_id === updated.user_id);
+          if (exists) {
+            // 🧭 ANIMACIÓN SUAVE ENTRE POSICIONES
+            const marker = markersRef.current?.[updated.user_id];
+            if (marker && exists.lat && exists.lng) {
+              animateMarkerMove(marker, exists.lat, exists.lng, updated.lat, updated.lng);
+            }
+
+            // 🔄 Actualiza solo la posición
+            return prev.map((w) =>
+              w.user_id === updated.user_id
+                ? {
+                    ...w,
+                    lat: updated.lat,
+                    lng: updated.lng,
+                    updated_at: updated.updated_at,
+                    _justUpdated: true,
+                  }
+                : w
+            );
+          } else {
+            // ➕ Nuevo trabajador agregado dinámicamente
+            return [
+              ...prev,
+              {
+                user_id: updated.user_id,
+                lat: updated.lat,
+                lng: updated.lng,
+                updated_at: updated.updated_at,
+                full_name: updated.full_name || 'Nuevo trabajador',
+                avatar_url: updated.avatar_url || '/avatar-fallback.png',
+                _justUpdated: true,
+              },
+            ];
+          }
+        });
+
+        // 🕒 Eliminar flag visual después de 2 segundos
+        setTimeout(() => {
+          setWorkers((prev) =>
+            prev.map((w) =>
+              w.user_id === updated.user_id ? { ...w, _justUpdated: false } : w
+            )
+          );
+        }, 2000);
+      }
+    )
+    .subscribe();
+
+  console.log('📡 Canal realtime de ubicaciones conectado');
+
+    // Canal 2a: cambios generales del perfil profesional (no-ubicación)
+  const channelGeneralWorker = supabase
+    .channel('realtime-workers-general-worker')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'worker_profiles' },
+      (payload) => {
+        console.log('🟢 Cambio detectado en worker_profiles:', payload);
+        fetchWorkers();
+      }
+    )
+    .subscribe();
+
+  // Canal 2b: cambios del perfil base (nombre, foto)
+  const channelGeneralProfile = supabase
+    .channel('realtime-workers-general-profile')
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'profiles' },
+      (payload) => {
+        console.log('🟣 Cambio detectado en profiles:', payload);
+        fetchWorkers();
+      }
+    )
+    .subscribe();
+
+  // Limpieza al desmontar
+  return () => {
+    supabase.removeChannel(channelLocation);
+    supabase.removeChannel(channelGeneralWorker);
+    supabase.removeChannel(channelGeneralProfile);
+  };
+}, []);
 
   /* === Realtime global jobs (informativo) === */
 useEffect(() => {
@@ -319,64 +514,225 @@ useEffect(() => {
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [jobId]);
+// 🌍 Sincronización global en vivo (workers, jobs, mensajes, perfiles)
+useEffect(() => {
+  const stop = startRealtimeCore((type, data) => {
+    switch (type) {
+      case 'worker': {
+        setWorkers((prev) => {
+          const exists = prev.some((w) => w.user_id === data.user_id);
 
-  /* === Interacciones === */
-  function handleMarkerClick(worker) {
-    setSelected(worker);
-    setShowPrice(false);
+          // 🧹 Si el trabajador se pausó o está inactivo → quitarlo del mapa
+          if (
+            data.is_active === false ||
+            data.status === 'paused' ||
+            data.status === 'inactive'
+          ) {
+            return prev.filter((w) => w.user_id !== data.user_id);
+          }
+
+          // 🟢 Si ya existe → actualizar sus datos (ubicación, estado, etc.)
+          if (exists) {
+            return prev.map((w) =>
+              w.user_id === data.user_id
+                ? { ...w, ...data, _justUpdated: true }
+                : w
+            );
+          }
+
+          // ➕ Si no existe pero está activo → agregarlo
+          if (data.is_active === true || data.status === 'available') {
+            return [...prev, { ...data, _justUpdated: true }];
+          }
+
+          return prev;
+        });
+
+        // ✨ Elimina la marca visual "_justUpdated" después de 2 s
+        setTimeout(() => {
+          setWorkers((prev) =>
+            prev.map((w) =>
+              w.user_id === data.user_id ? { ...w, _justUpdated: false } : w
+            )
+          );
+        }, 2000);
+        break;
+      }
+
+      case 'job': {
+        // 📦 Actualiza pedidos del cliente en tiempo real
+        if (data.client_id === me.id) {
+          setJobStatus(data.status);
+
+          if (data.status === 'cancelled') {
+            toast.warning('🚫 El trabajador canceló el pedido');
+            resetJobState();
+          } else if (data.status === 'completed') {
+            toast.success('✅ Trabajo finalizado');
+            resetJobState();
+          } else {
+            toast.info(`📦 Pedido actualizado: ${data.status}`);
+          }
+        }
+        break;
+      }
+
+      case 'message': {
+  // 💬 Mensajería instantánea (chat)
+  if (data.chat_id === chatId) {
+    setMessages((prev) => {
+      // ✅ Evita duplicar mensajes por ID
+      if (prev.some((m) => m.id === data.id)) return prev;
+      return [...prev, data];
+    });
+    soundRef.current?.play?.();
+  }
+  break;
+}
+
+
+      case 'profile': {
+        // 👤 Actualización de perfil o avatar
+        setWorkers((prev) =>
+          prev.map((w) =>
+            w.user_id === data.id ? { ...w, ...data } : w
+          )
+        );
+        break;
+      }
+
+      default:
+        console.log('Evento realtime desconocido:', type, data);
+    }
+  });
+
+  // 🧹 Limpieza segura al desmontar
+  return () => {
+    stopRealtimeCore();
+  };
+}, [me.id, chatId]);
+
+
+
+
+/* === Interacciones mejoradas === */
+function handleMarkerClick(worker) {
+  // ✅ Si ya hay un pedido activo, evitamos cambiar de trabajador
+  if (jobId && jobStatus !== 'completed' && jobStatus !== 'cancelled') {
+    toast.warning('⚠️ Ya tenés un pedido activo. Finalizalo o cancelalo antes de seleccionar otro.');
+    return;
   }
 
-  function solicitar() {
-    setShowPrice(true);
+  // 🔹 Guardar trabajador seleccionado y activar animación de rebote
+  setWorkers(prev =>
+    prev.map(w => ({
+      ...w,
+      _selected: w.user_id === worker.user_id, // solo este rebota
+    }))
+  );
+
+  // 🎯 Guarda el trabajador seleccionado
+  setSelected(worker);
+
+  // ✨ Efecto visual al hacer clic en marcador
+  if (mapRef.current && worker?.lat && worker?.lng) {
+    mapRef.current.flyTo([worker.lat, worker.lng], 15, {
+      duration: 1.2,
+    });
   }
+
+  // 💬 Cierra cualquier modal de precio si estuviera abierto
+  setShowPrice(false);
+
+  // 🔊 Pequeña alerta visual
+  toast.success(`👷 ${worker.full_name || 'Trabajador'} seleccionado`, {
+    duration: 1500,
+  });
+}
+
+function solicitar() {
+  if (!selected) {
+    toast.error('Seleccioná un trabajador primero');
+    return;
+  }
+
+  // 🎬 Mostrar el modal de precio
+  setShowPrice(true);
+}
+
 
   // ✅ CONFIRMAR — guarda el pedido en Supabase y muestra visualmente el flujo
-  async function confirmarSolicitud() {
-    try {
-      setShowPrice(false);
-      toast.loading('Enviando solicitud...', { id: 'pedido' });
+async function confirmarSolicitud() {
+  try {
+    setShowPrice(false);
+    toast.loading('Enviando solicitud...', { id: 'pedido' });
 
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) throw new Error('Sesión no encontrada');
-      if (!selected || !selected.user_id) throw new Error('No se seleccionó un trabajador válido');
+    // 1) Usuario logueado
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) throw new Error('Sesión no encontrada');
 
-      const { data: inserted, error: insertError } = await supabase
-        .from('jobs')
-        .insert([
-          {
-            title: `Trabajo con ${selected.full_name || 'Trabajador'}`,
-            description: 'Pedido generado desde el mapa',
-            status: 'open',
-            client_id: user.id,
-            worker_id: selected.user_id,
-            client_lat: me.lat,
-            client_lng: me.lon,
-            worker_lat: selected.lat,
-            worker_lng: selected.lng,
-            created_at: new Date().toISOString(),
-          },
-        ])
-        .select('id, status')
-        .single();
-
-      if (insertError) throw insertError;
-
-      setJobId(inserted.id);
-      setJobStatus(inserted.status);
-
-      toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
-      setWorkers([selected]);
-      setRoute([[me.lat, me.lon], [selected.lat, selected.lng]]);
-      if (mapRef.current && me.lat && selected?.lat) {
-        mapRef.current.fitBounds([[me.lat, me.lon], [selected.lat, selected.lng]], { padding: [80, 80] });
-      }
-    } catch (err) {
-      console.error('Error al confirmar solicitud:', err.message);
-      toast.error(err.message || 'No se pudo enviar el pedido', { id: 'pedido' });
+    // 2) Trabajador seleccionado válido
+    if (!selected || !selected.user_id) {
+      throw new Error('No se seleccionó un trabajador válido');
     }
-  }
 
-  // 🔔 Abrir chat (crea/garantiza chat y se suscribe a mensajes)
+    // 3) 🔒 FIX FK: asegurar que exista el perfil del cliente (para jobs.client_id)
+    //    Si tu FK jobs.client_id -> profiles.user_id, esto evita el error "jobs_client_id_fkey".
+    const upsertProfile = await supabase
+      .from('profiles')
+      .upsert({ user_id: user.id }, { onConflict: 'user_id', ignoreDuplicates: false });
+
+    if (upsertProfile.error) {
+      console.warn('No se pudo asegurar el perfil del cliente:', upsertProfile.error);
+      // No frenamos si el perfil ya existe; solo frenamos si es un error real distinto a conflicto
+      // (Supabase ya maneja el onConflict)
+    }
+// 🔒 Asegurar fila en profiles para el cliente (FK jobs.client_id -> profiles.id)
+await supabase
+  .from('profiles')
+  .upsert(
+    { id: user.id, email: user.email ?? null },
+    { onConflict: 'id', ignoreDuplicates: true }
+  );
+
+    // 4) Insertar el pedido
+    const { data: inserted, error: insertError } = await supabase
+      .from('jobs')
+      .insert([{
+        title: `Trabajo con ${selected.full_name || 'Trabajador'}`,
+        description: 'Pedido generado desde el mapa',
+        status: 'open',
+        client_id: user.id,              // ← FK a profiles.user_id (asegurado arriba)
+        worker_id: selected.user_id,
+        client_lat: me.lat,
+        client_lng: me.lon,
+        worker_lat: selected.lat,
+        worker_lng: selected.lng,
+        created_at: new Date().toISOString(),
+      }])
+      .select('id, status')
+      .single();
+
+    if (insertError) throw insertError;
+
+    // 5) Estado local y UI
+    setJobId(inserted.id);
+    setJobStatus(inserted.status);
+
+    toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
+    setWorkers([selected]);
+    setRoute([[me.lat, me.lon], [selected.lat, selected.lng]]);
+    if (mapRef.current && me.lat && selected?.lat) {
+      mapRef.current.fitBounds([[me.lat, me.lon], [selected.lat, selected.lng]], { padding: [80, 80] });
+    }
+  } catch (err) {
+    console.error('Error al confirmar solicitud:', err?.message || err);
+    toast.error(err?.message || 'No se pudo enviar el pedido', { id: 'pedido' });
+  }
+}
+
+
+ // 🔔 Abrir chat (crea/garantiza chat y se suscribe a mensajes)
 async function openChat(forceChatId = null) {
   try {
     if (!jobId || !jobStatus || ['completed', 'cancelled'].includes(jobStatus)) {
@@ -431,7 +787,11 @@ async function openChat(forceChatId = null) {
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${String(cid)}` },
         (payload) => {
           console.log('💬 Nuevo mensaje recibido:', payload.new);
-          setMessages((prev) => [...prev, payload.new]);
+          setMessages((prev) => {
+            // ✅ Evita duplicar mensajes por ID
+            if (prev.some((m) => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
+          });
           if (payload.new.sender_id !== me.id) soundRef.current?.play?.();
           setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
         }
@@ -459,48 +819,37 @@ async function sendMessage() {
     return;
   }
 
-  const { data, error } = await supabase
-    .from('messages')
-    .insert([
-      {
-        chat_id: chatId,
-        sender_id: me.id,
-        text,
-      },
-    ])
-    .select();
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .insert([
+        {
+          chat_id: chatId,
+          sender_id: me.id,
+          text,
+        },
+      ])
+      .select();
 
-  if (error) {
-    console.error('❌ Error enviando mensaje:', error);
+    if (error) {
+      console.error('❌ Error enviando mensaje:', error);
+      toast.error('No se pudo enviar el mensaje');
+    } else {
+      console.log('✅ Mensaje insertado:', data);
+      setMessages((prev) => {
+        // ✅ Evita duplicar el mismo mensaje localmente
+        if (prev.some((m) => m.id === data[0]?.id)) return prev;
+        return [...prev, data[0]];
+      });
+      inputRef.current.value = '';
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+    }
+  } catch (err) {
+    console.error('❌ Error general al enviar mensaje:', err);
     toast.error('No se pudo enviar el mensaje');
-  } else {
-    console.log('✅ Mensaje insertado:', data);
-    setMessages((prev) => [...prev, data[0]]);
-    inputRef.current.value = '';
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
   }
 }
 
-// ❌ Cerrar chat
-function closeChat() {
-  setIsChatOpen(false);
-  if (chatChannelRef.current) {
-    supabase.removeChannel(chatChannelRef.current);
-    chatChannelRef.current = null;
-  }
-}
-// 🧹 Limpiar todo al finalizar o cancelar trabajo
-function resetJobState() {
-  setJobId(null);
-  setJobStatus(null);
-  setChatId(null);
-  setIsChatOpen(false);
-  setSelected(null);
-  setRoute(null);
-  localStorage.removeItem('activeJobChat');
-  fetchWorkers(selectedService || null);
-  toast.info('🧾 Trabajo finalizado. Volviendo al mapa...');
-}
 // ✅ Finalizar pedido — cambia estado en Supabase y limpia todo
 async function finalizarPedido() {
   try {
@@ -607,33 +956,82 @@ async function finalizarPedido() {
     <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
     {route && <Polyline positions={route} color="#10b981" weight={5} />}
 
-    {/* ✅ Bloque corregido para evitar error de lat/lng null */}
-    <MarkerClusterGroup
-      chunkedLoading
-      maxClusterRadius={48}
-      iconCreateFunction={clusterIconCreateFunction}
-    >
-      {workers
-        ?.filter(w => w?.lat !== null && w?.lng !== null)
-        .map(w => (
-          <Marker
-            key={w.user_id}
-            position={[w.lat, w.lng]}
-            icon={avatarIcon(w.avatar_url, w)}
-            eventHandlers={{ click: () => handleMarkerClick(w) }}
-          >
-            <Tooltip>
-              <div className="text-xs">
-                <strong>{w.full_name}</strong>
-                <p>Servicio: {w.main_skill || 'No especificado'}</p>
-                <p>💰 Desde ₲45.000</p>
-              </div>
-            </Tooltip>
-          </Marker>
-        ))}
-    </MarkerClusterGroup>
-  </MapContainer>
+   {/* ✅ Bloque final actualizado — oculta 'paused' y muestra estados dinámicos */}
+<MarkerClusterGroup
+  chunkedLoading
+  maxClusterRadius={48}
+  iconCreateFunction={clusterIconCreateFunction}
+>
+  {workers
+    ?.filter(
+      w =>
+        w?.lat !== null &&
+        w?.lng !== null &&
+        w?.status !== 'paused' // ⬅️ oculta los pausados
+    )
+    .map(w => {
+      const minutesAgo = getMinutesAgo(w.updated_at);
+
+      // 🕒 Calcular texto y color de estado
+      let estadoTexto = 'Disponible ahora';
+      let estadoColor = '#10b981'; // 🟢 verde por defecto
+
+      if (w.status === 'busy') {
+        const busyUntil = w.busy_until ? new Date(w.busy_until) : null;
+        if (busyUntil) {
+          const diffMin = Math.max(
+            0,
+            Math.round((busyUntil.getTime() - Date.now()) / 60000)
+          );
+          estadoTexto =
+            diffMin > 0
+              ? `Ocupado • libre en ${diffMin} min`
+              : 'Ocupado (finalizando)';
+        } else {
+          estadoTexto = 'Ocupado';
+        }
+        estadoColor = '#f97316'; // 🟠 naranja
+      }
+
+      return (
+        <Marker
+          key={w.user_id}
+          position={[w.lat, w.lng]}
+          icon={avatarIcon(w.avatar_url, w)}
+          eventHandlers={{ click: () => handleMarkerClick(w) }}
+        >
+          <Tooltip direction="top">
+            <div className="text-xs leading-tight">
+              <strong className="block text-sm font-semibold">
+                {w.full_name}
+              </strong>
+              <p>Servicio: {w.main_skill || 'No especificado'}</p>
+              <p>💰 Desde ₲45.000</p>
+
+              {/* 🟡 Estado dinámico */}
+              <p
+                className="mt-1 font-semibold"
+                style={{ color: estadoColor }}
+              >
+                {estadoTexto}
+              </p>
+
+              {/* ⏱ tiempo desde última actualización */}
+              {minutesAgo !== null && (
+                <p className="text-[10px] text-gray-500 mt-1">
+                  ⏱ hace {minutesAgo} min
+                </p>
+              )}
+            </div>
+          </Tooltip>
+        </Marker>
+      );
+    })}
+</MarkerClusterGroup>
+</MapContainer>
 </div>
+
+
 
 
       {/* PANEL INFERIOR */}
@@ -693,16 +1091,20 @@ async function finalizarPedido() {
       className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
     >
       <div className="text-center">
+        {/* 🧑 Avatar */}
         <img
           src={selected.avatar_url || '/avatar-fallback.png'}
           className="w-20 h-20 mx-auto rounded-full border-4 border-emerald-500 mb-2"
           alt="avatar"
         />
+
+        {/* 🧾 Nombre y descripción */}
         <h2 className="font-bold text-lg">{selected.full_name}</h2>
         <p className="text-sm italic text-gray-500 mb-2">
           “{selected.bio || 'Sin descripción'}”
         </p>
 
+        {/* ⭐ Calificación */}
         <div className="flex justify-center items-center gap-1 mb-2">
           <Star size={14} className="text-yellow-400 fill-yellow-400" />
           <Star size={14} className="text-yellow-400 fill-yellow-400" />
@@ -712,23 +1114,58 @@ async function finalizarPedido() {
           <span className="text-xs text-gray-500 ml-1">(2)</span>
         </div>
 
+        {/* 🧠 Experiencia dinámica (sincronizada con Supabase) */}
         <p className="text-sm text-gray-600">
-          <Clock3 size={14} className="inline mr-1" /> 12 años de experiencia
+          <Clock3 size={14} className="inline mr-1" />
+          {selected?.years_experience
+            ? `${selected.years_experience} ${selected.years_experience === 1 ? 'año' : 'años'} de experiencia`
+            : 'Sin experiencia registrada'}
         </p>
-        <p className="text-sm text-emerald-600 font-medium mt-1">
-          Frecuente en tu zona
-        </p>
-        <p className="text-xs text-gray-500">Activo hace 12 días</p>
 
-        <div className="mt-3 bg-gray-50 rounded-xl p-2 text-sm text-gray-700">
-          Especialidades: {selected.skills || 'limpieza, plomería, jardinería'}
+        {/* ⏰ Última actividad */}
+        <p className="text-xs text-gray-500 mt-1">
+          {(() => {
+            const mins = getMinutesAgo(selected?.updated_at);
+            if (mins == null) return 'Sin actividad reciente';
+            if (mins < 60) return `Activo hace ${mins} min`;
+            if (mins < 1440) return `Activo hace ${Math.floor(mins / 60)} h`;
+            return `Activo hace ${Math.floor(mins / 1440)} d`;
+          })()}
+        </p>
+
+        {/* 🧰 Especialidades (mejor visual) */}
+        <div className="mt-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Especialidades</h3>
+          <div className="flex flex-wrap justify-center gap-2">
+            {(() => {
+              let skillsList = [];
+
+              if (Array.isArray(selected?.skills)) {
+                skillsList = selected.skills;
+              } else if (typeof selected?.skills === 'string') {
+                skillsList = selected.skills.split(',');
+              } else {
+                skillsList = ['Limpieza', 'Plomería', 'Jardinería'];
+              }
+
+              return skillsList.map((skill, i) => (
+                <span
+                  key={i}
+                  className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium text-sm shadow-sm border border-emerald-200"
+                >
+                  {skill.trim()}
+                </span>
+              ));
+            })()}
+          </div>
         </div>
 
         {/* Estado de pedido si existe */}
         <div className="mt-3">{jobId && <StatusBadge />}</div>
 
+        {/* 🔘 Botones dinámicos */}
         {!route ? (
-          // 🔹 No hay ruta → se muestra "Cerrar" y "Solicitar"
+          // 🔹 No hay ruta → "Cerrar" y "Solicitar"
           <div className="flex justify-center gap-3 mt-5">
             <button
               onClick={() => setSelected(null)}
@@ -746,7 +1183,7 @@ async function finalizarPedido() {
         ) : (
           // 🔹 Hay ruta → depende del estado del pedido
           <div className="flex flex-col items-center gap-3 mt-5">
-            {/* Botón de chat */}
+            {/* 💬 Botón de chat */}
             <button
               onClick={openChat}
               className="px-5 py-3 rounded-xl border flex items-center gap-1"
@@ -754,7 +1191,7 @@ async function finalizarPedido() {
               <MessageCircle size={16} /> Chatear
             </button>
 
-            {/* Mostrar "Finalizar" o "Cancelar" */}
+            {/* 🔄 Finalizar o Cancelar */}
             {(jobStatus === 'accepted' || jobStatus === 'assigned') ? (
               <button
                 onClick={finalizarPedido}
@@ -771,7 +1208,7 @@ async function finalizarPedido() {
               </button>
             )}
 
-            {/* 🔄 Botón de sincronización */}
+            {/* 🔁 Botón de sincronización */}
             <button
               onClick={() => window.location.reload()}
               className="px-5 py-2 rounded-xl border border-emerald-300 text-emerald-700 bg-emerald-50 font-semibold flex items-center gap-1 hover:bg-emerald-100 transition"
@@ -784,6 +1221,8 @@ async function finalizarPedido() {
     </motion.div>
   )}
 </AnimatePresence>
+
+
 
 
       {/* MODAL PRECIO */}
@@ -829,95 +1268,107 @@ async function finalizarPedido() {
       </AnimatePresence>
 
       {/* 💬 CHAT MODAL FLOTANTE */}
-      <AnimatePresence>
-        {isChatOpen && selected && (
-          <motion.div
-            className="fixed inset-0 z-[10020] bg-black/70 flex items-end justify-center"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+<AnimatePresence>
+  {isChatOpen && selected && (
+    <motion.div
+      className="fixed inset-0 z-[10020] bg-black/70 flex items-end justify-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div
+        className="w-full max-w-md bg-white rounded-t-3xl shadow-2xl flex flex-col"
+        initial={{ y: 300 }}
+        animate={{ y: 0 }}
+        exit={{ y: 300 }}
+        transition={{ type: 'spring', stiffness: 120 }}
+      >
+        {/* Header del chat con foto + nombre */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
+          <button
+            onClick={() => {
+              setIsChatOpen(false);
+              setMessages([]);
+              // opcionalmente limpiar el canal:
+              if (chatChannelRef.current) {
+                supabase.removeChannel(chatChannelRef.current);
+                chatChannelRef.current = null;
+              }
+            }}
+            className="flex items-center gap-1 text-gray-600 hover:text-red-500"
           >
-            <motion.div
-              className="w-full max-w-md bg-white rounded-t-3xl shadow-2xl flex flex-col"
-              initial={{ y: 300 }}
-              animate={{ y: 0 }}
-              exit={{ y: 300 }}
-              transition={{ type: 'spring', stiffness: 120 }}
-            >
-              {/* Header del chat con foto + nombre */}
-              <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
-                <button onClick={closeChat} className="flex items-center gap-1 text-gray-600 hover:text-red-500">
-                  <ChevronLeft size={18} /> Volver
-                </button>
-                <div className="flex items-center gap-2">
-                  <img
-                    src={selected.avatar_url || '/avatar-fallback.png'}
-                    alt="avatar"
-                    className="w-8 h-8 rounded-full border"
-                  />
-                  <div className="text-sm">
-                    <p className="font-semibold text-gray-800 leading-4">
-                      {selected.full_name || 'Trabajador'}
-                    </p>
-                    <p className="text-xs text-gray-500 leading-4">
-                      {jobStatus === 'accepted' ? '🟢 En camino' : '💬 Conectado'}
-                    </p>
+            <ChevronLeft size={18} /> Volver
+          </button>
+
+          <div className="flex items-center gap-2">
+            <img
+              src={selected.avatar_url || '/avatar-fallback.png'}
+              alt="avatar"
+              className="w-8 h-8 rounded-full border"
+            />
+            <div className="text-sm">
+              <p className="font-semibold text-gray-800 leading-4">
+                {selected.full_name || 'Trabajador'}
+              </p>
+              <p className="text-xs text-gray-500 leading-4">
+                {jobStatus === 'accepted' ? '🟢 En camino' : '💬 Conectado'}
+              </p>
+            </div>
+          </div>
+          <div className="w-6" />
+        </div>
+
+        {/* 💬 Mensajes */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-white">
+          {messages.length === 0 ? (
+            <p className="text-center text-gray-400 mt-6">No hay mensajes aún 📭</p>
+          ) : (
+            messages.map((m) => {
+              const mine = m.sender_id === me?.id;
+              return (
+                <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm shadow-sm ${
+                      mine ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
+                    {m.text}
                   </div>
                 </div>
-                <div className="w-6" />
-              </div>
-
-              {/* Mensajes */}
-<div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-white">
-  {messages.length === 0 ? (
-    <p className="text-center text-gray-400 mt-6">No hay mensajes aún 📭</p>
-  ) : (
-    messages.map((m) => {
-      const mine = m.sender_id === me?.id;
-      return (
-        <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-          <div
-            className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm shadow-sm ${
-              mine ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-800'
-            }`}
-          >
-            {m.text}
-          </div>
+              );
+            })
+          )}
+          <div ref={bottomRef} />
         </div>
-      );
-    })
+        {/* ✉️ Input para enviar mensajes */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const value = inputRef.current?.value?.trim() || '';
+            if (value) sendMessage(value);
+            if (inputRef.current) inputRef.current.value = '';
+          }}
+          className="flex gap-2 p-3 border-t border-gray-100 bg-gray-50"
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Escribí un mensaje…"
+            className="flex-1 bg-gray-100 rounded-xl px-3 py-3 outline-none focus:ring-2 focus:ring-emerald-400 border border-gray-200"
+          />
+          <button
+            type="submit"
+            disabled={sending}
+            className="px-4 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 transition disabled:opacity-60"
+          >
+            <SendHorizontal size={18} />
+          </button>
+        </form>
+      </motion.div>
+    </motion.div>
   )}
-  <div ref={bottomRef} />
+</AnimatePresence>
 </div>
-
-
-              {/* Input */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const value = inputRef.current?.value || '';
-                  sendMessage(value);
-                  if (inputRef.current) inputRef.current.value = '';
-                }}
-                className="flex gap-2 p-3 border-t border-gray-100 bg-gray-50"
-              >
-                <input
-                  ref={inputRef}
-                  type="text"
-                  placeholder="Escribí un mensaje…"
-                  className="flex-1 bg-gray-100 rounded-xl px-3 py-3 outline-none focus:ring-2 focus:ring-emerald-400 border border-gray-200"
-                />
-                <button
-                  disabled={sending}
-                  className="px-4 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 transition disabled:opacity-60"
-                >
-                  <SendHorizontal size={18} />
-                </button>
-              </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
+);
 }
+

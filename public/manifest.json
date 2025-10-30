@@ -56,5 +56,24 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false,
+  "categories": ["productivity", "business", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Nuevo pedido",
+      "short_name": "Pedido",
+      "description": "Crear un nuevo pedido rápido",
+      "url": "/new-job",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Modo Trabajador",
+      "short_name": "Trabajador",
+      "description": "Abrir el panel del trabajador",
+      "url": "/worker",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    }
   ]
 }
