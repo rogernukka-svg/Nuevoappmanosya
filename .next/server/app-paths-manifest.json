@@ -2,5 +2,5 @@
   "/_not-found/page": "app/_not-found/page.js",
   "/worker/page": "app/worker/page.js",
   "/client/page": "app/client/page.js",
-  "/worker/onboard/page": "app/worker/onboard/page.js"
+  "/client/jobs/page": "app/client/jobs/page.js"
 }

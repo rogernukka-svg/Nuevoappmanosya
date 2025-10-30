@@ -1,13 +1,10 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { getSupabase } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Loader2,
-  SendHorizontal,
-  ChevronLeft,
-  MessageSquare,
   Star,
   CheckCircle2,
   RefreshCw,
@@ -23,32 +20,17 @@ export default function ClientJobsPage() {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Chat
-  const [messages, setMessages] = useState([]);
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [selectedJob, setSelectedJob] = useState(null);
-  const [sending, setSending] = useState(false);
-  const inputRef = useRef(null);
-  const chatChannelRef = useRef(null);
-  const bottomRef = useRef(null);
-  const soundRef = useRef(null);
-
   // Review
   const [showReview, setShowReview] = useState(false);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
+  const [selectedJob, setSelectedJob] = useState(null);
 
   /* === SESIÓN === */
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data?.user) {
-        setUser(data.user);
-        if (typeof Audio !== 'undefined') soundRef.current = new Audio('/notify.mp3');
-      }
+      if (data?.user) setUser(data.user);
     });
-    return () => {
-      if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
-    };
   }, []);
 
   /* === CARGAR PEDIDOS === */
@@ -75,93 +57,6 @@ export default function ClientJobsPage() {
   useEffect(() => {
     if (user?.id) loadJobs();
   }, [user]);
-
-  /* === CHAT === */
-  async function openChat(job) {
-    try {
-      if (!job?.worker_id) return toast('⚠️ Aún no tiene trabajador asignado');
-
-      // ✅ Garantizar chat compartido
-      const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
-        p_job_id: job.id,
-      });
-      if (chatErr) throw chatErr;
-      const chatId = chatIdData;
-
-      // Cargar mensajes previos
-      const { data: msgs } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: true });
-
-      setMessages(msgs || []);
-      setSelectedJob({ ...job, chat_id: chatId });
-      setIsChatOpen(true);
-
-      // 🟢 Realtime sincronizado
-      if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
-
-      const channel = supabase
-        .channel(`chat-${chatId}`, {
-          config: {
-            broadcast: { self: true },
-            presence: { key: user.id },
-          },
-        })
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `chat_id=eq.${chatId}`,
-          },
-          (payload) => {
-            setMessages((prev) => [...prev, payload.new]);
-            if (payload.new.sender_id !== user.id) {
-              soundRef.current?.play?.();
-            }
-            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-          }
-        )
-        .subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            console.log(`✅ Realtime conectado al chat ${chatId}`);
-          }
-        });
-
-      chatChannelRef.current = channel;
-    } catch (e) {
-      console.error('❌ Error abriendo chat:', e);
-      toast.error('No se pudo abrir el chat');
-    }
-  }
-
-  async function sendMessage(content) {
-    const text = (content || '').trim();
-    if (!text || !user?.id || !selectedJob) return;
-    try {
-      setSending(true);
-      const { error } = await supabase
-        .from('messages')
-        .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, content: text }]);
-      if (error) throw error;
-    } catch (err) {
-      toast.error('No se pudo enviar el mensaje');
-    } finally {
-      setSending(false);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-    }
-  }
-
-  function closeChat() {
-    setIsChatOpen(false);
-    if (chatChannelRef.current) {
-      supabase.removeChannel(chatChannelRef.current);
-      chatChannelRef.current = null;
-    }
-  }
 
   /* === REVIEW === */
   async function submitReview(jobId, workerId) {
@@ -297,93 +192,11 @@ export default function ClientJobsPage() {
                     </button>
                   )
                 )}
-
-                {job.worker_id && (
-                  <button
-                    onClick={() => openChat(job)}
-                    className="flex items-center justify-center gap-2 w-full mt-3 bg-gray-100 text-gray-800 py-2 rounded-xl font-semibold hover:bg-gray-200 transition"
-                  >
-                    <MessageSquare size={18} /> Chat con trabajador
-                  </button>
-                )}
               </motion.div>
             );
           })}
         </section>
       )}
-
-      {/* === CHAT MODAL === */}
-      <AnimatePresence>
-        {isChatOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[99999] flex justify-center items-end bg-black/70"
-          >
-            <motion.div
-              initial={{ y: 300 }}
-              animate={{ y: 0 }}
-              exit={{ y: 300 }}
-              transition={{ type: 'spring', stiffness: 120 }}
-              className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl flex flex-col"
-            >
-              <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
-                <button onClick={closeChat} className="flex items-center gap-1 text-gray-600 hover:text-red-500">
-                  <ChevronLeft size={18} /> Volver
-                </button>
-                <h2 className="font-semibold text-gray-800">Chat en vivo 💬</h2>
-                <div className="w-6" />
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-white">
-                {messages.length === 0 ? (
-                  <p className="text-center text-gray-400 mt-6">No hay mensajes aún 📭</p>
-                ) : (
-                  messages.map((m) => {
-                    const mine = m.sender_id === user?.id;
-                    return (
-                      <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                        <div
-                          className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm shadow-sm ${
-                            mine ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {m.content}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                <div ref={bottomRef} />
-              </div>
-
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const value = inputRef.current?.value || '';
-                  await sendMessage(value);
-                  if (inputRef.current) inputRef.current.value = '';
-                }}
-                className="flex gap-2 p-3 border-t border-gray-100 bg-gray-50"
-              >
-                <input
-                  ref={inputRef}
-                  type="text"
-                  placeholder="Escribí un mensaje…"
-                  className="flex-1 bg-gray-100 rounded-xl px-3 py-3 outline-none focus:ring-2 focus:ring-emerald-400 border border-gray-200"
-                />
-                <button
-                  disabled={sending}
-                  className="px-4 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 transition disabled:opacity-60"
-                >
-                  <SendHorizontal size={18} />
-                </button>
-              </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* === REVIEW MODAL === */}
       <AnimatePresence>

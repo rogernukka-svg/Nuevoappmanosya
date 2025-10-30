@@ -27,7 +27,7 @@ import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
 
 import { toast } from 'sonner';
 
-const supabase = getSupabase();
+
 const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
 const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
@@ -167,6 +167,7 @@ function getMinutesAgo(dateString) {
 }
 
 export default function MapPage() {
+  const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
   const markersRef = useRef({}); // 🧭 guarda refs de marcadores por user_id
@@ -181,18 +182,25 @@ export default function MapPage() {
   const [route, setRoute] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
 
-  // ✨ Nuevo: estado del job + chat
-  const [jobId, setJobId] = useState(null);
-  const [jobStatus, setJobStatus] = useState(null); // open | accepted | completed | cancelled | assigned ...
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [chatId, setChatId] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [sending, setSending] = useState(false);
-  const inputRef = useRef(null);
-  const bottomRef = useRef(null);
-  const chatChannelRef = useRef(null);
-  const soundRef = useRef(null);
+ // ✨ Nuevo: estado del job + chat
+const [jobId, setJobId] = useState(null);
+const [jobStatus, setJobStatus] = useState(null); // open | accepted | completed | cancelled | assigned ...
+const [isChatOpen, setIsChatOpen] = useState(false);
+const [chatId, setChatId] = useState(null);
+const [messages, setMessages] = useState([]);
+const [sending, setSending] = useState(false);
+const inputRef = useRef(null);
+const bottomRef = useRef(null);
+const chatChannelRef = useRef(null);
+const soundRef = useRef(null);
+const [rating, setRating] = useState(0);
+const [comment, setComment] = useState('');
 
+// 🧩 Nuevo: indicador de mensajes sin leer
+const [hasUnread, setHasUnread] = useState(false);
+const [statusBanner, setStatusBanner] = useState(null);
+  
+ 
   const services = [
     { id: 'plomería', label: 'Plomería', icon: <Droplets size={18} /> },
     { id: 'electricidad', label: 'Electricidad', icon: <Wrench size={18} /> },
@@ -229,6 +237,24 @@ useEffect(() => {
   }
 }, []);
 
+/* 💬 Banner elegante de estado */
+useEffect(() => {
+  if (jobStatus === 'completed') {
+    setStatusBanner({
+      text: '✅ Trabajo finalizado con éxito',
+      color: 'bg-emerald-500',
+    });
+    setTimeout(() => setStatusBanner(null), 3000);
+  } else if (jobStatus === 'cancelled') {
+    setStatusBanner({
+      text: '🚫 Pedido cancelado',
+      color: 'bg-red-500',
+    });
+    setTimeout(() => setStatusBanner(null), 3000);
+  }
+}, [jobStatus]);
+
+
 /* 💾 Guardar estado actual del pedido y chat */
 useEffect(() => {
   if (isChatOpen && chatId && selected && jobId) {
@@ -246,6 +272,39 @@ useEffect(() => {
   }
 }, [isChatOpen, chatId, selected, jobId, jobStatus]);
 
+
+
+/* 🔴 Estado: indicador de mensaje no leído
+   ---------------------------------------------------
+   Activa una alerta visual y sonora cuando llega un
+   mensaje nuevo y el chat está cerrado.
+   Se limpia automáticamente al abrir el chat.
+*/
+
+// 🪄 Recuperar pedido activo desde Supabase si no hay nada en localStorage
+useEffect(() => {
+  if (jobId || !me?.id) return;
+
+  (async () => {
+    try {
+      const { data: job } = await supabase
+        .from('jobs')
+        .select('id, status, worker_id, worker_lat, worker_lng')
+        .eq('client_id', me.id)
+        .in('status', ['open', 'accepted', 'assigned'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (job) {
+        setJobId(job.id);
+        setJobStatus(job.status);
+      }
+    } catch (err) {
+      console.error('Error recuperando pedido activo:', err);
+    }
+  })();
+}, [jobId, me?.id]);
 
 // 🧩 Recuperar pedido activo desde Supabase si no hay nada en localStorage
 useEffect(() => {
@@ -312,7 +371,7 @@ useEffect(() => {
     return () => watcher && navigator.geolocation.clearWatch(watcher);
   }, []);
 
-  /* === Cargar trabajadores === */
+/* === Cargar trabajadores === */
 async function fetchWorkers(serviceFilter = null) {
   setBusy(true);
   try {
@@ -323,13 +382,26 @@ async function fetchWorkers(serviceFilter = null) {
       .not('lng', 'is', null)
       .eq('is_active', true); // ✅ Solo muestra trabajadores activos
 
-    if (serviceFilter) query = query.ilike('skills', `%${serviceFilter}%`);
+    // ✅ Filtro seguro y compatible con REST
+    if (serviceFilter) {
+      // Normaliza acentos (ej. "plomería" → "plomeria")
+      const normalized = serviceFilter
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // elimina tildes
+        .toLowerCase();
+
+      // 💡 Reemplazamos .or(...) por ilike simple para evitar error 404
+      query = query
+        .not('skills', 'is', null)
+        .ilike('skills', `%${normalized}%`);
+    }
 
     const { data, error } = await query;
     if (error) throw error;
 
     setWorkers(data || []);
-  } catch {
+  } catch (err) {
+    console.error('Error cargando trabajadores:', err.message);
     toast.error('Error cargando trabajadores');
   } finally {
     setBusy(false);
@@ -340,6 +412,7 @@ async function fetchWorkers(serviceFilter = null) {
 useEffect(() => {
   fetchWorkers();
 }, []);
+
 // 🛰️ Realtime instantáneo de cambios de estado (busy / available / paused)
 useEffect(() => {
   const channel = supabase
@@ -559,25 +632,39 @@ useEffect(() => {
         break;
       }
 
-      case 'job': {
-        // 📦 Actualiza pedidos del cliente en tiempo real
-        if (data.client_id === me.id) {
-          setJobStatus(data.status);
+    case 'job': {
+  // 📦 Actualiza pedidos del cliente en tiempo real (con control de estados)
+  if (data.client_id === me.id) {
+    setJobStatus(data.status);
 
-          if (data.status === 'cancelled') {
-            toast.warning('🚫 El trabajador canceló el pedido');
-            resetJobState();
-          } else if (data.status === 'completed') {
-            toast.success('✅ Trabajo finalizado');
-            resetJobState();
-          } else {
-            toast.info(`📦 Pedido actualizado: ${data.status}`);
-          }
-        }
-        break;
-      }
+    // 🟢 Si el trabajador FINALIZA el pedido correctamente
+    if (data.status === 'completed' || data.status === 'worker_completed') {
+      console.log('✅ El trabajador finalizó el pedido. Mostrando modal de reseña...');
+      toast.success('🎉 El trabajador finalizó el trabajo');
+      setJobStatus('worker_completed'); // fuerza abrir el modal de calificación
+    }
 
-      case 'message': {
+    // 🚫 Si el pedido fue cancelado o rechazado
+    else if (['cancelled', 'rejected', 'worker_rejected'].includes(data.status)) {
+      console.log(`🚫 Pedido cancelado (${data.status})`);
+      toast.error('🚫 El trabajador rechazó o canceló el pedido');
+      resetJobState();
+    }
+
+    // 🟢 Si el trabajador acepta el pedido
+    else if (data.status === 'accepted') {
+      toast.success('🟢 El trabajador aceptó tu pedido');
+    }
+
+    // 🔵 Si el pedido se asigna correctamente
+    else if (data.status === 'assigned') {
+      toast.info('📦 Pedido asignado correctamente');
+    }
+  }
+  break;
+}
+
+case 'message': {
   // 💬 Mensajería instantánea (chat)
   if (data.chat_id === chatId) {
     setMessages((prev) => {
@@ -585,34 +672,74 @@ useEffect(() => {
       if (prev.some((m) => m.id === data.id)) return prev;
       return [...prev, data];
     });
-    soundRef.current?.play?.();
+
+    // 🧠 Si llega un mensaje y el chat está cerrado
+    if (!isChatOpen && data.sender_id !== me.id) {
+      toast.info(`💬 ${selected?.full_name || 'El trabajador'} te envió un mensaje`, {
+        duration: 4000,
+      });
+      soundRef.current?.play?.(); // 🔔 notify.mp3
+      setHasUnread(true); // 🔴 activa el punto rojo
+    } 
+    // 🔊 Si el chat está abierto y el mensaje viene del otro
+    else if (isChatOpen && data.sender_id !== me.id) {
+      soundRef.current?.play?.(); // 🔔 notify.mp3
+    }
+    // 💬 Si el mensaje lo enviaste vos → sonido de envío
+    else if (data.sender_id === me.id) {
+      sendSoundRef.current?.play?.(); // 💬 send.mp3
+    }
   }
   break;
 }
 
+case 'profile': {
+  // 👤 Actualización de perfil o avatar
+  setWorkers((prev) =>
+    prev.map((w) =>
+      w.user_id === data.id ? { ...w, ...data } : w
+    )
+  );
+  break;
+}
 
-      case 'profile': {
-        // 👤 Actualización de perfil o avatar
-        setWorkers((prev) =>
-          prev.map((w) =>
-            w.user_id === data.id ? { ...w, ...data } : w
-          )
-        );
-        break;
-      }
+default:
+  console.log('Evento realtime desconocido:', type, data);
+}
+});
 
-      default:
-        console.log('Evento realtime desconocido:', type, data);
-    }
-  });
-
-  // 🧹 Limpieza segura al desmontar
-  return () => {
-    stopRealtimeCore();
-  };
+// 🧹 Limpieza segura al desmontar
+return () => {
+  stopRealtimeCore();
+};
 }, [me.id, chatId]);
+// 🛰️ ESCUCHAR MENSAJES NUEVOS GLOBALES (aunque el chat no esté abierto)
+useEffect(() => {
+  const channelGlobal = supabase
+    .channel('global-messages')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages' },
+      (payload) => {
+        const msg = payload.new;
 
+        // Si el mensaje pertenece a un chat del cliente
+        if (msg.sender_id !== me.id && msg.chat_id) {
+          // 💡 Si el chat NO está abierto
+          if (!isChatOpen) {
+            setHasUnread(true);
+            toast.info('💬 Nuevo mensaje de un profesional');
+            soundRef.current?.play?.();
+          }
+        }
+      }
+    )
+    .subscribe();
 
+  return () => {
+    supabase.removeChannel(channelGlobal);
+  };
+}, [me.id, isChatOpen]);
 
 
 /* === Interacciones mejoradas === */
@@ -667,61 +794,63 @@ async function confirmarSolicitud() {
     setShowPrice(false);
     toast.loading('Enviando solicitud...', { id: 'pedido' });
 
-    // 1) Usuario logueado
+    // 1️⃣ Usuario logueado
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) throw new Error('Sesión no encontrada');
 
-    // 2) Trabajador seleccionado válido
+    // 2️⃣ Trabajador seleccionado válido
     if (!selected || !selected.user_id) {
       throw new Error('No se seleccionó un trabajador válido');
     }
 
-    // 3) 🔒 FIX FK: asegurar que exista el perfil del cliente (para jobs.client_id)
-    //    Si tu FK jobs.client_id -> profiles.user_id, esto evita el error "jobs_client_id_fkey".
+    // 3️⃣ 🔒 FIX FK: asegurar que exista el perfil del cliente (para jobs.client_id)
     const upsertProfile = await supabase
       .from('profiles')
-      .upsert({ user_id: user.id }, { onConflict: 'user_id', ignoreDuplicates: false });
+      .upsert(
+        { user_id: user.id, email: user.email ?? null },
+        { onConflict: 'user_id', ignoreDuplicates: true }
+      )
+      .select()
+      .maybeSingle();
 
-    if (upsertProfile.error) {
-      console.warn('No se pudo asegurar el perfil del cliente:', upsertProfile.error);
-      // No frenamos si el perfil ya existe; solo frenamos si es un error real distinto a conflicto
-      // (Supabase ya maneja el onConflict)
+    if (upsertProfile.error && upsertProfile.error.code !== '23505') {
+      console.error('Error real al asegurar el perfil del cliente:', upsertProfile.error);
     }
-// 🔒 Asegurar fila en profiles para el cliente (FK jobs.client_id -> profiles.id)
-await supabase
-  .from('profiles')
-  .upsert(
-    { id: user.id, email: user.email ?? null },
-    { onConflict: 'id', ignoreDuplicates: true }
-  );
 
-    // 4) Insertar el pedido
-    const { data: inserted, error: insertError } = await supabase
-      .from('jobs')
-      .insert([{
-        title: `Trabajo con ${selected.full_name || 'Trabajador'}`,
-        description: 'Pedido generado desde el mapa',
-        status: 'open',
-        client_id: user.id,              // ← FK a profiles.user_id (asegurado arriba)
-        worker_id: selected.user_id,
-        client_lat: me.lat,
-        client_lng: me.lon,
-        worker_lat: selected.lat,
-        worker_lng: selected.lng,
-        created_at: new Date().toISOString(),
-      }])
-      .select('id, status')
-      .single();
+    // 4️⃣ Insertar el pedido con servicio y precio
+const { data: inserted, error: insertError } = await supabase
+  .from('jobs')
+  .insert([
+    {
+      title: `Trabajo con ${selected.full_name || 'Trabajador'}`,
+      description: `Pedido generado desde el mapa (${selectedService || 'servicio general'})`,
+      status: 'open',
+      client_id: user.id, // ← FK a profiles.user_id (asegurado arriba)
+      worker_id: selected.user_id,
+      client_lat: me.lat,
+      client_lng: me.lon,
+      worker_lat: selected.lat,
+      worker_lng: selected.lng,
+      created_at: new Date().toISOString(),
 
-    if (insertError) throw insertError;
+      // 🧩 Nuevos campos agregados
+      service_type: selectedService || selected?.main_skill || 'servicio general',
+      price: precioEstimado || 0,
+    },
+  ])
+  .select('id, status')
+  .single();
 
-    // 5) Estado local y UI
+if (insertError) throw insertError;
+
+    // 5️⃣ Actualizar estado local y UI
     setJobId(inserted.id);
     setJobStatus(inserted.status);
-
     toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
+
     setWorkers([selected]);
     setRoute([[me.lat, me.lon], [selected.lat, selected.lng]]);
+
     if (mapRef.current && me.lat && selected?.lat) {
       mapRef.current.fitBounds([[me.lat, me.lon], [selected.lat, selected.lng]], { padding: [80, 80] });
     }
@@ -731,7 +860,45 @@ await supabase
   }
 }
 
+// ✅ CANCELAR PEDIDO — cancela en Supabase y limpia todo
+async function cancelarPedido() {
+  try {
+    if (!jobId) {
+      toast.warning('⚠️ No hay pedido activo para cancelar');
+      return;
+    }
 
+    // 🔥 Cambiar el estado en la base de datos
+    const { error } = await supabase
+      .from('jobs')
+      .update({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+      })
+      .eq('id', jobId)
+      .select()
+      .maybeSingle(); // ✅ evita error 406 si no retorna nada
+
+    if (error) throw error;
+
+    toast.success('🚫 Pedido cancelado correctamente');
+
+    // 🧹 Limpiar estado local y UI
+    resetJobState();
+
+    // 📨 Notificar al trabajador (opcional)
+    if (chatId) {
+      await supabase.from('messages').insert([{
+        chat_id: chatId,
+        sender_id: me.id,
+        text: '🚫 El cliente canceló el pedido.',
+      }]);
+    }
+  } catch (err) {
+    console.error('Error al cancelar pedido:', err.message);
+    toast.error('No se pudo cancelar el pedido');
+  }
+}
  // 🔔 Abrir chat (crea/garantiza chat y se suscribe a mensajes)
 async function openChat(forceChatId = null) {
   try {
@@ -806,9 +973,6 @@ async function openChat(forceChatId = null) {
 }
 
 
-
-
-
 // ✉️ Enviar mensaje
 async function sendMessage() {
   const text = inputRef.current?.value?.trim();
@@ -868,7 +1032,6 @@ async function finalizarPedido() {
     toast.success('✅ Pedido finalizado correctamente');
     resetJobState(); // limpia mapa y estado local
 
-    // (opcional) enviar mensaje automático al chat
     if (chatId) {
       await supabase.from('messages').insert([
         {
@@ -883,19 +1046,54 @@ async function finalizarPedido() {
     toast.error('No se pudo finalizar el pedido');
   }
 }
+// 🧹 Limpia todo el estado del pedido y refresca el mapa
+function resetJobState() {
+  console.log('🧹 Limpieza de estado del pedido');
+  setRoute(null);
+  setSelected(null);
+  setJobId(null);
+  setJobStatus(null);
+  setChatId(null);
+  setIsChatOpen(false);
+  setMessages([]);
+  localStorage.removeItem('activeJobChat');
+  fetchWorkers(selectedService || null);
 
-
-
-
-  // ✅ CANCELAR — borra línea y recarga todos los trabajadores
-  function cancelarPedido() {
-    setRoute(null);
-    setSelected(null);
-    setJobId(null);
-    setJobStatus(null);
-    setChatId(null);
-    fetchWorkers(selectedService || null);
+  // 🗺️ Recentrar mapa al cliente con animación suave
+  if (mapRef.current && me?.lat && me?.lon) {
+    mapRef.current.flyTo([me.lat, me.lon], 13, { duration: 1.2 });
   }
+}
+
+
+// ⭐ Guardar reseña del trabajador
+async function confirmarReseña() {
+  try {
+    if (!jobId || !selected?.user_id) return;
+
+    // Insertar reseña en base de datos
+    const { error } = await supabase.from('reviews').insert([
+      {
+        job_id: jobId,
+        worker_id: selected.user_id,
+        client_id: me.id,
+        rating,
+        comment,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    if (error) throw error;
+
+    toast.success('✅ ¡Gracias por tu valoración!');
+    setRating(0);
+    setComment('');
+    resetJobState(); // limpia todo tras enviar
+  } catch (err) {
+    console.error('Error guardando reseña:', err.message);
+    toast.error('No se pudo guardar la valoración');
+  }
+}
 
   function toggleService(id) {
     const next = selectedService === id ? null : id;
@@ -931,6 +1129,84 @@ async function finalizarPedido() {
     }
     return <span className={`${base} bg-emerald-50 text-emerald-700`}>{jobStatus || 'open'}</span>;
   }
+/* 💰 Algoritmo de cálculo de precios dinámico (versión estable y flexible) */
+function calcularPrecio(
+  servicio,
+  distanciaKm,
+  horas = 1,
+  esUrgencia = false,
+  esNocturno = false,
+  worker = null
+) {
+  const tarifas = {
+    plomería:     { tipo: 'fijo', base: 45000, porKm: 2000 },
+    electricidad: { tipo: 'fijo', base: 50000, porKm: 2000 },
+    limpieza:     { tipo: 'hora', hora: 30000, porKm: 1500 },
+    jardinería:   { tipo: 'hora', hora: 25000, porKm: 1500 },
+    mascotas:     { tipo: 'hora', hora: 20000, porKm: 1000 },
+    construcción: { tipo: 'mixto', base: 60000, horaExtra: 25000, porKm: 2500 },
+    emergencia:   { tipo: 'fijo', base: 60000, porKm: 2500, urgencia: 0.3 },
+  };
+
+  let servicioBase = servicio?.toLowerCase();
+
+  // 🧠 Si no hay servicio seleccionado, intentar deducirlo desde worker.skills
+  if (!servicioBase && worker?.skills) {
+    const skillsArray = Array.isArray(worker.skills)
+      ? worker.skills
+      : String(worker.skills).split(',').map((s) => s.trim());
+
+    const posibles = skillsArray
+      .map((s) => s.toLowerCase())
+      .filter((s) => tarifas[s]);
+
+    if (posibles.length > 0) {
+      servicioBase = posibles.sort(
+        (a, b) => (tarifas[a].base || 0) - (tarifas[b].base || 0)
+      )[0];
+    }
+  }
+
+  const t = tarifas[servicioBase || ''];
+  if (!t) return 55000; // precio base por defecto
+
+  let precio = 0;
+  if (t.tipo === 'hora') precio = t.hora * horas;
+  else if (t.tipo === 'fijo') precio = t.base;
+  else if (t.tipo === 'mixto')
+    precio = t.base + Math.max(0, horas - 1) * t.horaExtra;
+
+  if (distanciaKm > 3) precio += (distanciaKm - 3) * t.porKm;
+
+  const horaActual = new Date().getHours();
+  if (horaActual >= 19 || horaActual < 6) precio *= 1.2; // nocturno
+  if (esUrgencia && t.urgencia) precio *= 1 + t.urgencia; // urgencia
+
+  if (precio < 10000) precio = 10000;
+  return Math.round(precio);
+}
+
+/* ⚙️ Estados auxiliares para el cálculo dinámico */
+const [horasTrabajo, setHorasTrabajo] = useState(1);
+const [distanciaKm, setDistanciaKm] = useState(2.5);
+const [precioEstimado, setPrecioEstimado] = useState(55000);
+
+/* 🔁 Recalcular automáticamente el precio */
+useEffect(() => {
+  let nuevoPrecio = 55000;
+
+  // ✅ Si el usuario selecciona un servicio manualmente
+  if (selectedService) {
+    nuevoPrecio = calcularPrecio(selectedService, distanciaKm, horasTrabajo);
+  }
+  // ✅ Si no selecciona servicio pero elige un trabajador (modo búsqueda directa)
+  else if (selected) {
+    nuevoPrecio = calcularPrecio(null, distanciaKm, horasTrabajo, false, false, selected);
+  }
+
+  setPrecioEstimado(nuevoPrecio);
+}, [selectedService, distanciaKm, horasTrabajo, selected]);
+
 
   return (
     <div className="relative min-h-screen bg-white">
@@ -943,6 +1219,14 @@ async function finalizarPedido() {
           Cambiar rol
         </button>
       </div>
+{/* 🔔 Banner elegante de estado */}
+{statusBanner && (
+  <div
+    className={`fixed top-4 left-1/2 -translate-x-1/2 px-5 py-2 text-white text-sm font-semibold rounded-full shadow-lg ${statusBanner.color} z-[20000]`}
+  >
+    {statusBanner.text}
+  </div>
+)}
 
       {/* MAPA */}
 <div className="absolute inset-0 z-0">
@@ -1184,37 +1468,41 @@ async function finalizarPedido() {
           // 🔹 Hay ruta → depende del estado del pedido
           <div className="flex flex-col items-center gap-3 mt-5">
             {/* 💬 Botón de chat */}
-            <button
-              onClick={openChat}
-              className="px-5 py-3 rounded-xl border flex items-center gap-1"
-            >
-              <MessageCircle size={16} /> Chatear
-            </button>
+<button
+  onClick={() => {
+    openChat();
+    setHasUnread(false); // 🔁 limpia el indicador al abrir el chat
+  }}
+  className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
+>
+  <MessageCircle size={18} className="text-emerald-600" />
+  Chatear
+  {hasUnread && (
+    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
+  )}
+  {hasUnread && (
+    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
+  )}
+</button>
 
-            {/* 🔄 Finalizar o Cancelar */}
-            {(jobStatus === 'accepted' || jobStatus === 'assigned') ? (
-              <button
-                onClick={finalizarPedido}
-                className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
-              >
-                <CheckCircle2 size={16} /> Finalizar pedido
-              </button>
-            ) : (
-              <button
-                onClick={cancelarPedido}
-                className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
-              >
-                <XCircle size={16} /> Cancelar pedido
-              </button>
-            )}
 
-            {/* 🔁 Botón de sincronización */}
-            <button
-              onClick={() => window.location.reload()}
-              className="px-5 py-2 rounded-xl border border-emerald-300 text-emerald-700 bg-emerald-50 font-semibold flex items-center gap-1 hover:bg-emerald-100 transition"
-            >
-              🔄 Sincronizar estado
-            </button>
+       {/* 🔄 Finalizar o Cancelar */}
+{jobStatus === 'accepted' || jobStatus === 'assigned' ? (
+  <button
+    onClick={finalizarPedido}
+    className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
+  >
+    <CheckCircle2 size={16} /> Finalizar pedido
+  </button>
+) : jobStatus === 'open' ? (
+  <button
+    onClick={cancelarPedido}
+    className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
+  >
+    <XCircle size={16} /> Cancelar pedido
+  </button>
+) : null}
+
           </div>
         )}
       </div>
@@ -1222,50 +1510,261 @@ async function finalizarPedido() {
   )}
 </AnimatePresence>
 
+    {/* 💵 MODAL PRECIO — versión final (dinámica y adaptativa) */}
+<AnimatePresence>
+  {showPrice && (
+    <motion.div
+      key="modal-precio"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[10010]"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div
+        className="bg-gradient-to-br from-white to-emerald-50 rounded-3xl w-[85%] max-w-md p-7 shadow-2xl text-center border border-emerald-100"
+        initial={{ scale: 0.9, y: 50 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.9, y: 50 }}
+        transition={{ type: 'spring', stiffness: 120, damping: 18 }}
+      >
+        {/* 🧠 Encabezado emocional */}
+        <h3 className="text-lg font-semibold text-emerald-700 mb-1">
+          Estás a un paso de tu solución ✨
+        </h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Confirmá tu pedido y un profesional irá a ayudarte.
+        </p>
 
+        {/* 💰 Precio dinámico central */}
+        <p className="text-4xl font-extrabold text-emerald-700 mb-1 drop-shadow-sm transition-all duration-300">
+          ₲{precioEstimado.toLocaleString('es-PY')}
+        </p>
+        <p className="text-xs text-gray-500 mb-4">Precio estimado total</p>
 
+        {/* ⏱️ Control de horas dinámico (solo si aplica) */}
+        {(() => {
+          const serviciosPorHora = ['limpieza', 'jardinería', 'mascotas'];
+          const esPorHora = serviciosPorHora.includes(selectedService?.toLowerCase?.() || '');
+          return (
+            esPorHora && (
+              <div className="flex items-center justify-center gap-4 mb-5">
+                <button
+                  onClick={() => {
+                    const nuevaHora = Math.max(1, horasTrabajo - 1);
+                    setHorasTrabajo(nuevaHora);
+                    const nuevoPrecio = calcularPrecio(
+                      selectedService,
+                      distanciaKm,
+                      nuevaHora,
+                      false,
+                      false,
+                      selected
+                    );
+                    setPrecioEstimado(nuevoPrecio);
+                  }}
+                  className="w-9 h-9 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full text-xl font-bold text-gray-700 shadow-inner"
+                >
+                  −
+                </button>
 
-      {/* MODAL PRECIO */}
-      <AnimatePresence>
-        {showPrice && (
-          <motion.div
-            key="precio"
-            className="fixed inset-0 bg-black/60 flex items-center justify-center z-[10010]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+                <span className="text-base font-semibold text-gray-800">
+                  {horasTrabajo} hora{horasTrabajo > 1 ? 's' : ''}
+                </span>
+
+                <button
+                  onClick={() => {
+                    const nuevaHora = horasTrabajo + 1;
+                    setHorasTrabajo(nuevaHora);
+                    const nuevoPrecio = calcularPrecio(
+                      selectedService,
+                      distanciaKm,
+                      nuevaHora,
+                      false,
+                      false,
+                      selected
+                    );
+                    setPrecioEstimado(nuevoPrecio);
+                  }}
+                  className="w-9 h-9 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full text-xl font-bold text-gray-700 shadow-inner"
+                >
+                  +
+                </button>
+              </div>
+            )
+          );
+        })()}
+
+        {/* 🌟 Beneficios subconscientes */}
+        <div className="text-sm text-gray-600 space-y-1 mb-6">
+          <p>🚗 Incluye traslado promedio (hasta 3 km)</p>
+          <p>🌙 Urgencias nocturnas o feriados +20%</p>
+          <p>💰 Tarifa mínima garantizada ₲10.000</p>
+        </div>
+
+        {/* 🔘 Botones CTA */}
+        <div className="flex justify-center gap-3">
+          <button
+            onClick={() => setShowPrice(false)}
+            className="py-3 w-1/2 rounded-xl bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition"
           >
-            <motion.div
-              className="bg-white rounded-3xl w-[85%] max-w-md p-6 shadow-lg text-center"
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.9 }}
-            >
-              <h3 className="text-lg font-bold text-emerald-600 mb-2">Precio estimado</h3>
-              <p className="text-2xl font-extrabold text-emerald-700 mb-2">₲55.000</p>
-              <div className="text-sm text-gray-600 space-y-1 mb-4">
-                <p>🚗 Incluye traslado promedio (hasta 3 km)</p>
-                <p>🌙 Urgencias nocturnas o feriados +20%</p>
-                <p>💰 Tarifa mínima de visita ₲10.000</p>
-              </div>
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <button
-                  onClick={() => setShowPrice(false)}
-                  className="py-3 border rounded-xl hover:bg-gray-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={confirmarSolicitud}
-                  className="py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition"
-                >
-                  Confirmar
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            Cancelar
+          </button>
+          <button
+            onClick={confirmarSolicitud}
+            className="py-3 w-1/2 rounded-xl bg-emerald-500 text-white font-semibold shadow-md hover:bg-emerald-600 active:scale-[0.98] transition"
+          >
+            Confirmar pedido
+          </button>
+        </div>
+
+        {/* 💚 Refuerzo psicológico final */}
+        <p className="text-[11px] text-gray-400 mt-5 italic">
+          Tu tranquilidad comienza en minutos 💚
+        </p>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
+
+
+
+{/* 🌟 MODAL DE CALIFICACIÓN (cliente o trabajador finalizan) */}
+<AnimatePresence>
+  {(jobStatus === 'worker_completed' || jobStatus === 'completed') && (
+    <motion.div
+      key="modal-review"
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10020]"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onAnimationStart={() => {
+        // 📱 Vibración leve al abrir
+        if (navigator.vibrate) navigator.vibrate(30);
+        // 🔊 Sonido “pop” al aparecer
+        const audio = new Audio('/sounds/pop.mp3');
+        audio.volume = 0.3;
+        audio.play().catch(() => {});
+      }}
+    >
+      <motion.div
+        className="bg-white rounded-3xl p-6 w-[85%] max-w-md text-center shadow-xl relative"
+        initial={{ scale: 0.9, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.9, y: 40, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 150, damping: 18 }}
+      >
+        {/* ✖️ Cerrar modal manual */}
+        <button
+          onClick={() => {
+            // 🧹 Cierra modal y vuelve al mapa con animación suave
+            setJobStatus(null);
+            setTimeout(() => {
+              resetJobState();
+              if (mapRef.current && me?.lat && me?.lon) {
+                mapRef.current.flyTo([me.lat, me.lon], 13, { duration: 1.2 });
+              }
+            }, 400);
+          }}
+          className="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition"
+        >
+          <XCircle size={20} />
+        </button>
+
+        {/* 👷 Foto y nombre del trabajador */}
+        <div className="flex flex-col items-center mb-4">
+          <img
+            src={selected?.avatar_url || '/avatar-fallback.png'}
+            alt="avatar trabajador"
+            className="w-16 h-16 rounded-full border-4 border-emerald-500 shadow-sm mb-2"
+          />
+          <h2 className="text-lg font-bold text-emerald-600">
+            {selected?.full_name || 'Trabajador'}
+          </h2>
+          <p className="text-xs text-gray-500">
+            ¡Gracias por usar <span className="font-semibold">ManosYA</span>!
+          </p>
+        </div>
+
+        {/* ⭐ Calificación */}
+        <div className="flex justify-center gap-2 mb-4">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <Star
+              key={n}
+              size={28}
+              onClick={() => {
+                setRating(n);
+                // 💫 Vibración mini + click sound
+                if (navigator.vibrate) navigator.vibrate(15);
+                const click = new Audio('/sounds/click.mp3');
+                click.volume = 0.2;
+                click.play().catch(() => {});
+              }}
+              className={`cursor-pointer transition-transform ${
+                n <= rating
+                  ? 'fill-yellow-400 text-yellow-400 scale-110'
+                  : 'text-gray-300 hover:scale-105'
+              }`}
+            />
+          ))}
+        </div>
+
+        {/* 💬 Comentario */}
+        <textarea
+          className="w-full border rounded-xl p-3 text-sm resize-none focus:ring-2 focus:ring-emerald-400"
+          rows={3}
+          placeholder="Comentá cómo fue la atención..."
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+        />
+
+        {/* ⚙️ Botones */}
+        <div className="flex justify-center gap-3 mt-5">
+          {/* Omitir */}
+          <button
+            onClick={() => {
+              toast('Valoración omitida');
+              setJobStatus(null);
+              setTimeout(() => {
+                resetJobState();
+                if (mapRef.current && me?.lat && me?.lon) {
+                  mapRef.current.flyTo([me.lat, me.lon], 13, { duration: 1.2 });
+                }
+              }, 400);
+            }}
+            className="px-5 py-2 rounded-xl border text-gray-600 hover:bg-gray-50"
+          >
+            Omitir
+          </button>
+
+          {/* Finalizar y valorar */}
+          <button
+            onClick={async () => {
+              try {
+                await confirmarReseña();
+                toast.success('Gracias por valorar al profesional 🙌');
+                // 🧹 Limpieza total + zoom animado al mapa
+                setTimeout(() => {
+                  setJobStatus(null);
+                  resetJobState();
+                  if (mapRef.current && me?.lat && me?.lon) {
+                    mapRef.current.flyTo([me.lat, me.lon], 13, { duration: 1.2 });
+                  }
+                }, 600);
+              } catch (err) {
+                console.error('❌ Error al guardar reseña:', err);
+                toast.error('No se pudo guardar la valoración');
+              }
+            }}
+            className="px-6 py-2 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition"
+          >
+            Finalizar y valorar
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
+
 
       {/* 💬 CHAT MODAL FLOTANTE */}
 <AnimatePresence>
