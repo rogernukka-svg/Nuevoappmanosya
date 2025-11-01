@@ -399,6 +399,9 @@ async function fetchWorkers(serviceFilter = null) {
     const { data, error } = await query;
     if (error) throw error;
 
+    // 🧠 Log para verificar qué datos llegan (incluye rating y reviews)
+    console.log('🧠 Trabajadores desde Supabase:', data);
+
     setWorkers(data || []);
   } catch (err) {
     console.error('Error cargando trabajadores:', err.message);
@@ -412,6 +415,7 @@ async function fetchWorkers(serviceFilter = null) {
 useEffect(() => {
   fetchWorkers();
 }, []);
+
 
 // 🛰️ Realtime instantáneo de cambios de estado (busy / available / paused)
 useEffect(() => {
@@ -1375,12 +1379,19 @@ useEffect(() => {
       className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
     >
       <div className="text-center">
-        {/* 🧑 Avatar */}
-        <img
-          src={selected.avatar_url || '/avatar-fallback.png'}
-          className="w-20 h-20 mx-auto rounded-full border-4 border-emerald-500 mb-2"
-          alt="avatar"
-        />
+       {/* 🧑 Avatar con verificación */}
+<div className="relative w-20 h-20 mx-auto mb-2">
+  <img
+    src={selected.avatar_url || '/avatar-fallback.png'}
+    className="w-20 h-20 rounded-full border-4 border-emerald-500 shadow-md"
+    alt="avatar"
+  />
+  {selected.worker_verified && selected.profile_verified && (
+    <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-1.5 border-2 border-white shadow">
+      <CheckCircle2 size={14} className="text-white" />
+    </div>
+  )}
+</div>
 
         {/* 🧾 Nombre y descripción */}
         <h2 className="font-bold text-lg">{selected.full_name}</h2>
@@ -1388,15 +1399,24 @@ useEffect(() => {
           “{selected.bio || 'Sin descripción'}”
         </p>
 
-        {/* ⭐ Calificación */}
-        <div className="flex justify-center items-center gap-1 mb-2">
-          <Star size={14} className="text-yellow-400 fill-yellow-400" />
-          <Star size={14} className="text-yellow-400 fill-yellow-400" />
-          <Star size={14} className="text-yellow-400 fill-yellow-400" />
-          <Star size={14} className="text-yellow-400 fill-yellow-400" />
-          <Star size={14} className="text-gray-300" />
-          <span className="text-xs text-gray-500 ml-1">(2)</span>
-        </div>
+       {/* ⭐ Calificación dinámica */}
+<div className="flex justify-center items-center gap-1 mb-2">
+  {[...Array(5)].map((_, i) => (
+    <Star
+      key={i}
+      size={14}
+      className={
+        i < Math.round(selected.avg_rating)
+          ? 'text-yellow-400 fill-yellow-400'
+          : 'text-gray-300'
+      }
+    />
+  ))}
+  <span className="text-xs text-gray-500 ml-1">
+    ({selected.total_reviews || 0})
+  </span>
+</div>
+
 
         {/* 🧠 Experiencia dinámica (sincronizada con Supabase) */}
         <p className="text-sm text-gray-600">

@@ -44,7 +44,14 @@ export default function WorkerOnboardPage() {
         </p>
       </header>
 
-      <OnboardForm user={user} />
+      {/* ✅ Si el admin ya verificó al trabajador */}
+      {user ? (
+        <OnboardForm user={user} />
+      ) : (
+        <div className="text-center text-gray-500 py-10">
+          Cargando tu perfil...
+        </div>
+      )}
     </div>
   );
 }
@@ -339,49 +346,78 @@ function OnboardForm({ user }) {
       onSubmit={saveAll}
       className="space-y-8 max-w-2xl mx-auto bg-[#f9fafb] py-6 px-3 rounded-2xl"
     >
-      {/* === PERFIL === */}
-      <section className="bg-white border border-gray-200 shadow-sm rounded-xl p-6">
-        <h2 className="font-semibold text-gray-700 border-l-4 border-emerald-500 pl-3 mb-4">
-          Tu perfil
-        </h2>
+     {/* === PERFIL === */}
+<section className="bg-white border border-gray-200 shadow-sm rounded-xl p-6">
+  <h2 className="font-semibold text-gray-700 border-l-4 border-emerald-500 pl-3 mb-4">
+    Tu perfil
+  </h2>
 
-        <div className="flex flex-col items-center gap-3">
-          <img
-            src={avatarUrl || '/avatar-fallback.png'}
-            alt="avatar"
-            className="w-24 h-24 rounded-full border-4 border-emerald-500 object-cover"
-          />
-          <label className="text-sm text-emerald-600 cursor-pointer font-medium">
-            Cambiar foto
-            <input type="file" hidden accept="image/*" onChange={handleAvatar} />
-          </label>
-        </div>
+  {/* 🧑‍🔧 Avatar con verificación azul */}
+  <div className="flex flex-col items-center gap-3 relative">
+    <div className="relative">
+      <img
+        src={avatarUrl || '/avatar-fallback.png'}
+        alt="avatar"
+        className="w-24 h-24 rounded-full border-4 border-emerald-500 object-cover"
+      />
 
-        <div className="mt-4">
-          <label className="text-sm font-semibold text-gray-700 mb-1 block">
-            Nombre y apellido
-          </label>
-          <input
-            className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-emerald-500 outline-none"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            placeholder="Ej: Juan Pérez"
-          />
-        </div>
+      {/* ✅ Check azul estilo redes sociales */}
+      {isVerified && (
+        <span
+          title="Verificado por ManosYA"
+          className="absolute -bottom-1 -right-1 bg-blue-500 text-white rounded-full p-[5px] border-2 border-white shadow-md flex items-center justify-center"
+        >
+          {/* Ícono SVG de verificación */}
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="white"
+            className="w-3.5 h-3.5"
+          >
+            <path
+              fillRule="evenodd"
+              d="M22 12c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2s10 4.477 10 10zm-5.707-3.707a1 1 0 00-1.414 0L10 13.172l-1.879-1.88a1 1 0 00-1.414 1.415l2.586 2.586a1 1 0 001.414 0l5.586-5.586a1 1 0 000-1.415z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </span>
+      )}
+    </div>
 
-        <div className="flex flex-wrap gap-2 mt-3">
-          {isVerified && (
-            <span className="bg-emerald-600/15 text-emerald-700 px-3 py-1 rounded-full text-xs font-semibold">
-              ✓ Perfil verificado
-            </span>
-          )}
-          {avgRating && (
-            <span className="bg-yellow-400/15 text-yellow-700 px-3 py-1 rounded-full text-xs font-semibold">
-              ⭐ {avgRating}/5
-            </span>
-          )}
-        </div>
-      </section>
+    <label className="text-sm text-emerald-600 cursor-pointer font-medium">
+      Cambiar foto
+      <input type="file" hidden accept="image/*" onChange={handleAvatar} />
+    </label>
+  </div>
+
+  {/* 🧾 Campo de nombre */}
+  <div className="mt-4">
+    <label className="text-sm font-semibold text-gray-700 mb-1 block">
+      Nombre y apellido
+    </label>
+    <input
+      className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-emerald-500 outline-none"
+      value={fullName}
+      onChange={(e) => setFullName(e.target.value)}
+      placeholder="Ej: Juan Pérez"
+    />
+  </div>
+
+  {/* 🏅 Badges de verificación y rating */}
+  <div className="flex flex-wrap gap-2 mt-3">
+    {isVerified && (
+      <span className="bg-blue-500/10 text-blue-600 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
+        ✓ Verificado por ManosYA
+      </span>
+    )}
+    {avgRating && (
+      <span className="bg-yellow-400/15 text-yellow-700 px-3 py-1 rounded-full text-xs font-semibold">
+        ⭐ {avgRating}/5
+      </span>
+    )}
+  </div>
+</section>
+
 
       {/* === OFICIOS === */}
       <section className="bg-white border border-gray-200 shadow-sm rounded-xl p-6">

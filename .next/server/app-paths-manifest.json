@@ -1,6 +1,9 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/worker/page": "app/worker/page.js",
+  "/role-selector/page": "app/role-selector/page.js",
+  "/admin/workers/page": "app/admin/workers/page.js",
   "/client/page": "app/client/page.js",
-  "/client/jobs/page": "app/client/jobs/page.js"
+  "/worker/page": "app/worker/page.js",
+  "/(auth)/login/page": "app/(auth)/login/page.js",
+  "/worker/onboard/page": "app/worker/onboard/page.js"
 }

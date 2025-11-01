@@ -1,21 +1,22 @@
 {
   "pages": {
-    "/worker/page": [
+    "/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/worker/page.js"
+      "static/css/app/layout.css",
+      "static/chunks/app/layout.js"
+    ],
+    "/worker/onboard/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/css/app/worker/onboard/page.css",
+      "static/chunks/app/worker/onboard/page.js"
     ],
     "/worker/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/css/app/worker/layout.css",
       "static/chunks/app/worker/layout.js"
-    ],
-    "/layout": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/css/app/layout.css",
-      "static/chunks/app/layout.js"
     ],
     "/client/page": [
       "static/chunks/webpack.js",
@@ -29,10 +30,53 @@
       "static/css/app/client/layout.css",
       "static/chunks/app/client/layout.js"
     ],
+    "/worker/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/worker/page.js"
+    ],
     "/client/jobs/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/client/jobs/page.js"
+    ],
+    "/admin/workers/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/css/app/admin/workers/page.css",
+      "static/chunks/app/admin/workers/page.js"
+    ],
+    "/admin/analytics/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/analytics/page.js"
+    ],
+    "/admin/analytics/layout": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/css/app/admin/analytics/layout.css",
+      "static/chunks/app/admin/analytics/layout.js"
+    ],
+    "/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/page.js"
+    ],
+    "/role-selector/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/role-selector/page.js"
+    ],
+    "/(auth)/login/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(auth)/login/page.js"
+    ],
+    "/(auth)/layout": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/css/app/(auth)/layout.css",
+      "static/chunks/app/(auth)/layout.js"
     ],
     "/_not-found/page": [
       "static/chunks/webpack.js",
