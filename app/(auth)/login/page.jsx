@@ -16,6 +16,10 @@ export default function LoginManosYA() {
   const [busy, setBusy] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
 
+  // 🌟 Estados nuevos para la instalación PWA
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+
   // 🔍 Verificar sesión activa
   useEffect(() => {
     const checkSession = async () => {
@@ -29,6 +33,29 @@ export default function LoginManosYA() {
     };
     checkSession();
   }, [router]);
+
+  // 📱 Detectar si se puede instalar la app
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      setShowInstallBanner(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  // 🚀 Instalar la app
+  async function handleInstall() {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      toast.success('¡Gracias por instalar ManosYA! 🎉');
+    }
+    setInstallPrompt(null);
+    setShowInstallBanner(false);
+  }
 
   // 🚀 Login
   async function handleLogin(e) {
@@ -171,11 +198,47 @@ export default function LoginManosYA() {
           )}
         </div>
       </div>
+<p className="text-xs text-gray-500 text-center mt-4 leading-snug">
+  Al continuar, estás de acuerdo con nuestras{' '}
+  <a
+    href="/terms-of-use"
+    target="_blank"
+    className="text-emerald-600 hover:text-emerald-700 font-medium"
+  >
+    condiciones de uso
+  </a>{' '}
+  y nuestros{' '}
+  <a
+    href="/privacy-policy"
+    target="_blank"
+    className="text-emerald-600 hover:text-emerald-700 font-medium"
+  >
+    cuidados de privacidad
+  </a>.
+</p>
+
 
       {/* Footer */}
       <p className="text-xs text-gray-400 mt-8 text-center max-w-xs">
         🌎 En ManosYA, cada persona tiene algo valioso que ofrecer.
       </p>
+
+      {/* 📲 Banner de instalación PWA */}
+      {showInstallBanner && (
+        <div className="fixed bottom-5 inset-x-0 flex justify-center z-50">
+          <div className="bg-white border border-emerald-200 shadow-lg rounded-2xl p-4 w-[90%] max-w-sm text-center animate-bounce">
+            <p className="text-emerald-700 font-semibold mb-3">
+              📱 ¡Instalá <span className="text-emerald-500 font-bold">ManosYA</span> en tu pantalla!
+            </p>
+            <button
+              onClick={handleInstall}
+              className="px-4 py-2 bg-emerald-500 text-white rounded-full hover:bg-emerald-600 transition font-medium"
+            >
+              Instalar ahora
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

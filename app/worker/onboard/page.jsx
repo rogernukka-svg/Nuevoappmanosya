@@ -88,6 +88,10 @@ function OnboardForm({ user }) {
   const [holderName, setHolderName] = useState('');
   const [holderDoc, setHolderDoc] = useState('');
 
+  // Política de privacidad
+const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+  
+
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [err, setErr] = useState(null);
@@ -283,7 +287,15 @@ function OnboardForm({ user }) {
     setMsg(null);
     setErr(null);
     try {
-      await supabase.from('profiles').update({ full_name: fullName }).eq('id', user.id);
+      await supabase
+  .from('profiles')
+  .update({
+    full_name: fullName,
+    accepted_privacy: acceptedPrivacy,
+    privacy_accepted_at: acceptedPrivacy ? new Date().toISOString() : null,
+  })
+  .eq('id', user.id);
+
 
       await supabase.from('worker_profiles').upsert(
         {
@@ -711,6 +723,28 @@ function OnboardForm({ user }) {
 
       {msg && <div className="text-emerald-600 text-sm">{msg}</div>}
       {err && <div className="text-red-500 text-sm">{err}</div>}
+{/* === POLÍTICA DE PRIVACIDAD === */}
+<div className="text-sm text-gray-600 flex items-start gap-2 mt-4">
+  <input
+    type="checkbox"
+    required
+    id="privacy"
+    checked={acceptedPrivacy}
+    onChange={(e) => setAcceptedPrivacy(e.target.checked)}
+    className="mt-1 accent-emerald-600"
+  />
+  <label htmlFor="privacy" className="leading-snug">
+    Declaro haber leído y aceptado la{' '}
+    <a
+      href="/privacy-policy"
+      target="_blank"
+      className="text-emerald-600 underline hover:text-emerald-700"
+    >
+      Política de Privacidad
+    </a>.
+  </label>
+</div>
+
 
       <button
         type="submit"
@@ -722,3 +756,4 @@ function OnboardForm({ user }) {
     </form>
   );
 }
+ 

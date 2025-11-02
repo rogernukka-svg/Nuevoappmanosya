@@ -1,4 +1,4 @@
-// ✅ next.config.js — versión final corregida para Vercel + PWA + alias
+// ✅ next.config.js — versión final para Vercel + PWA + Bundle Analyzer + alias
 const withPWA = require('next-pwa')({
   dest: 'public',
   register: true,
@@ -7,16 +7,17 @@ const withPWA = require('next-pwa')({
   buildExcludes: [/app-build-manifest\.json$/], // 👈 evita errores de build PWA
 });
 
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+});
+
+/** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
 
-  // ✅ Ignora errores de tipo y eslint durante el build
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // ✅ Ignora errores de tipo y eslint durante el build (útil para deploy rápido)
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
 
   // ✅ Permite usar alias "@/"
   webpack: (config) => {
@@ -25,4 +26,5 @@ const nextConfig = {
   },
 };
 
-module.exports = withPWA(nextConfig);
+// ✅ Combina PWA y Bundle Analyzer
+module.exports = withBundleAnalyzer(withPWA(nextConfig));

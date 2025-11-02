@@ -20,6 +20,7 @@ import { getSupabase } from '@/lib/supabase';
 import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
 
 
+
 const supabase = getSupabase();
 
 /* === Crear perfil si no existe === */
@@ -994,6 +995,7 @@ async function sendMessage() {
     )}
     <span>Chats</span>
   </button>
+  
 
   {/* 👤 Perfil */}
   <button
@@ -1003,8 +1005,364 @@ async function sendMessage() {
     <User2 size={18} /> <span>Perfil</span>
   </button>
 </div>
+{/* 🐾 Rodolfo Supervisor */}
+<RodolfoBot
+  stats={{
+    totalWorkers: jobs.length,
+    jobsCompleted: jobs.filter((j) => j.status === 'completed').length,
+    efficiency:
+      jobs.length > 0
+        ? jobs.filter((j) => j.status === 'completed').length / jobs.length
+        : 0,
+  }}
+  workerStatus={status}
+/>
 
 {/* 👇 cierres del contenedor principal */}
 </motion.div>
 );
+}
+/* === 🐾 RODOLFOBOT v11 — Coach Paraguayo de ManosYA === */
+function RodolfoBot({ stats = {}, workerStatus = 'available' }) {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [typing, setTyping] = useState(false);
+  const [mode, setMode] = useState('motivador');
+  const [showParty, setShowParty] = useState(false);
+
+  // 🧠 Memoria simple pero fiel
+  const memoryRef = useRef({
+    greeted: false,
+    lastTopic: null,
+    motivationCount: 0,
+    lastSummary: null,
+  });
+
+  /* 🎨 Colores según modo */
+  const COLORS = {
+    motivador: 'from-emerald-500 to-emerald-600',
+    analitico: 'from-sky-500 to-blue-600',
+    zen: 'from-lime-400 to-emerald-500',
+    humoristico: 'from-pink-400 to-rose-600',
+  };
+
+  /* 📚 Biblioteca de frases paraguayizadas */
+  const MESSAGES = {
+    motivador: [
+      '💪 Che ra’a, cada día que salís a laburar, estás construyendo tu propio futuro.',
+      '🔥 Ñandejára bendice al que trabaja con el corazón. ¡Vos estás dejando huella!',
+      '🌞 Aunque no te digan, tu esfuerzo se nota. Rodolfo te ve, y te aplaude desde su teclado 🐾.',
+      '🐾 No aflojés, que la suerte llega a los que no se rinden.',
+      '💚 No hay trabajo chico cuando se hace con ganas. Vos sos grande.',
+    ],
+    humoristico: [
+      '😹 Si trabajar fuera delito, ya tendrías cadena perpetua con tereré libre.',
+      '🙀 Con ese ritmo te contrata Itaipú directo.',
+      '😼 “Modo leyenda” activado: ¡rendimiento nivel guaraní power! 💥',
+      '🐾 Rodolfo vio tus números y dijo: “ha upéicha mismo, mi héroe del esfuerzo”.',
+    ],
+    consejos: [
+      '🧠 Consejo del día: saludá siempre con una sonrisa, eso vale más que mil currículums.',
+      '🌱 No corras, che amigo, lo importante es avanzar constante. El que apura, tropieza.',
+      '💬 Escuchá bien al cliente, y tratale como te gustaría que te traten.',
+      '🚀 Mantenete visible, respondé rápido, y los pedidos van a venir solitos.',
+      '💡 Recordá: el descanso también es parte del trabajo. Ñembohasa un rato y después volvemos con todo.',
+    ],
+  };
+
+  /* 🕹️ Modo emocional según hora y estado */
+  useEffect(() => {
+    let newMode = 'motivador';
+    const hour = new Date().getHours();
+    if (workerStatus === 'busy') newMode = 'analitico';
+    else if (workerStatus === 'paused') newMode = 'zen';
+    else if (hour >= 19) newMode = 'zen';
+    else if (stats?.jobsCompleted > 10) newMode = 'analitico';
+    else if (stats?.jobsCompleted > 20) newMode = 'humoristico';
+    setMode(newMode);
+  }, [workerStatus, stats]);
+
+  /* 🎉 Fiesta automática cada meta */
+  useEffect(() => {
+    if (stats?.jobsCompleted && stats.jobsCompleted % 10 === 0 && stats.jobsCompleted > 0) {
+      setShowParty(true);
+      simulateBotTyping(`🎉 ¡Epa che! Ya hiciste ${stats.jobsCompleted} trabajos. Rodolfo está bailando polka en tu honor 💃🐾`);
+      const timer = setTimeout(() => setShowParty(false), 7000);
+      return () => clearTimeout(timer);
+    }
+  }, [stats.jobsCompleted]);
+
+  /* ✍️ Simular escritura */
+  function simulateBotTyping(text, delay = 1000) {
+    setTyping(true);
+    setTimeout(() => {
+      setTyping(false);
+      setMessages((m) => [...m, { from: 'bot', text }]);
+    }, delay);
+  }
+
+/* 👋 Saludo inicial según estado y hora — versión corta, motivadora y con reconocimiento */
+const hasWelcomedRef = useRef(false);
+useEffect(() => {
+  if (hasWelcomedRef.current) return;
+  hasWelcomedRef.current = true;
+
+  const hour = new Date().getHours();
+  let saludo = '';
+  let cierre = '';
+  let extra = '';
+
+  // Frases según hora
+  if (hour < 12) {
+    saludo = '☀️ Buen día, compa. A empezar con el mate y buena energía ☕';
+    cierre = 'Hoy es un buen día para avanzar 💪';
+  } else if (hour < 18) {
+    saludo = '🧉 Buenas tardes, che. Con tereré en mano seguimos firmes.';
+    cierre = 'Cada trabajo te acerca más a tus metas 💚';
+  } else {
+    saludo = '🌙 Buenas noches, trabajador/a del alma.';
+    cierre = 'Descansá bien, mañana seguimos con todo 🌿';
+  }
+
+  // Personalización por estado
+  if (workerStatus === 'available')
+    saludo += ' Estás disponible, listo/a para ayudar y ganar 💚';
+  else if (workerStatus === 'busy')
+    saludo += ' Estás ocupado, pero Rodolfo te acompaña en cada paso 🔧';
+  else if (workerStatus === 'paused')
+    saludo += ' Estás en pausa, tomá un respiro y recargá energía 🧉';
+
+  // Reconocimiento según cantidad de trabajos
+  const jobs = stats?.jobsCompleted || 0;
+  if (jobs === 0) {
+    extra = '🌱 Todavía no arrancaste, pero cada conexión ya es un paso adelante.';
+  } else if (jobs < 5) {
+    extra = `💪 Ya completaste ${jobs} trabajo${jobs > 1 ? 's' : ''}. Buen comienzo, seguí así.`;
+  } else if (jobs < 15) {
+    extra = `🔥 Llevás ${jobs} trabajos hechos, se nota el compromiso.`;
+  } else if (jobs < 30) {
+    extra = `🚀 ${jobs} trabajos completados. Estás dejando huella, che.`;
+  } else {
+    extra = `🏆 ${jobs} trabajos… ¡una máquina total! Rodolfo te aplaude con las patitas 👏🐾`;
+  }
+
+  // Enviar en secuencia natural
+  simulateBotTyping(saludo, 600);
+  setTimeout(() => simulateBotTyping(extra, 1400), 1000);
+  setTimeout(() => simulateBotTyping(cierre, 2000), 1600);
+
+  // Guía inicial breve y clara
+  setTimeout(() => {
+    simulateBotTyping(`📋 Podés decirme:
+• "¿Cuántos trabajos hice?"
+• "¿Cómo voy?"
+• "Mi último trabajo"
+• "Cuánto gané"
+• "Necesito motivación"
+• "Dame un consejo"`);
+  }, 3200);
+}, [workerStatus]);
+
+
+  /* 💬 Procesamiento principal */
+  function handleInput() {
+    if (!input.trim()) return;
+    const q = input.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    setMessages((m) => [...m, { from: 'user', text: input }]);
+    setInput('');
+    memoryRef.current.lastTopic = q;
+
+    // === SALUDOS ===
+    if (q.includes('hola') || q.includes('buenas') || q.includes('rodolfo')) {
+      simulateBotTyping('😸 ¡Hola che! Rodolfo al servicio. Listo para darte empuje y ánimo 💪.');
+      return;
+    }
+
+    // === PROGRESO DE TRABAJOS ===
+    if (q.includes('trabajo') && (q.includes('cuanto') || q.includes('hice') || q.includes('complet'))) {
+      const total = stats?.jobsCompleted || 0;
+      const msg =
+        total === 0
+          ? '😺 Todavía sin trabajos completados, pero tranquilo, que el primer pedido siempre llega.'
+          : `📋 Llevás ${total} trabajo${total !== 1 ? 's' : ''} completado${total !== 1 ? 's' : ''}. Rodolfo está feliz por vos 🐾.`;
+      simulateBotTyping(msg);
+      return;
+    }
+
+    // === ANÁLISIS DE RENDIMIENTO ===
+    if (q.includes('como voy') || q.includes('rendimiento') || q.includes('eficiencia')) {
+      const eff = ((stats?.efficiency || 0) * 100).toFixed(1);
+      let msg = `📊 Tu eficiencia actual es del ${eff}%. `;
+      if (eff > 85) msg += '🔥 Sos ejemplo de compromiso, los clientes te van a recomendar fijo.';
+      else if (eff > 50) msg += '💪 Buen ritmo, che. Seguí así y pronto vas a ser top worker.';
+      else msg += '🌱 No pasa nada, campeón. Lo importante es mantener la cabeza en alto.';
+      simulateBotTyping(msg);
+      return;
+    }
+
+    // === ÚLTIMO TRABAJO ===
+    if (q.includes('ultimo') || q.includes('último') || q.includes('cliente')) {
+      const last = stats?.lastJob;
+      if (!last) {
+        simulateBotTyping('📋 Aún no registré tu último trabajo, pero pronto vas a tener tus datos completos.');
+      } else {
+        simulateBotTyping(`🧾 Último trabajo:
+• Cliente: ${last.client_name}
+• Servicio: ${last.service_name}
+• Pago: ₲${last.amount.toLocaleString('es-PY')}
+• Fecha: ${new Date(last.date).toLocaleDateString('es-PY')}
+🐾 Orgulloso de vos, che ra’a.`);
+      }
+      return;
+    }
+
+    // === GANANCIAS ===
+    if (q.includes('gane') || q.includes('ganancia') || q.includes('plata') || q.includes('dinero')) {
+      const earn = stats?.earnings || 0;
+      simulateBotTyping(`💰 Hasta ahora juntaste ₲${earn.toLocaleString('es-PY')}.  
+🔥 ¡El bolsillo se llena, pero lo que más vale es tu experiencia!`);
+      return;
+    }
+
+    // === MOTIVACIÓN ===
+    if (q.includes('motivacion') || q.includes('frase') || q.includes('animo')) {
+      const frases = [...MESSAGES.motivador, ...MESSAGES.humoristico];
+      const frase = frases[Math.floor(Math.random() * frases.length)];
+      simulateBotTyping(frase);
+      memoryRef.current.motivationCount++;
+      return;
+    }
+
+    // === CONSEJO ===
+    if (q.includes('consejo') || q.includes('mejorar')) {
+      const consejo = MESSAGES.consejos[Math.floor(Math.random() * MESSAGES.consejos.length)];
+      simulateBotTyping(consejo);
+      return;
+    }
+
+    // === PROGRESO SEMANAL ===
+    if (q.includes('progreso') || q.includes('semana')) {
+      const total = stats?.jobsCompleted || 0;
+      const eff = ((stats?.efficiency || 0) * 100).toFixed(1);
+      const earn = stats?.earnings || 0;
+      simulateBotTyping(
+        `📆 Esta semana hiciste ${total} trabajo${total !== 1 ? 's' : ''}, con una eficiencia del ${eff}%.  
+💰 Ganancia total: ₲${earn.toLocaleString('es-PY')}.
+👏 ¡Seguimos creciendo, paso a paso!`
+      );
+      return;
+    }
+
+    // === DESCANSO ===
+    if (q.includes('descanso') || q.includes('pausa') || q.includes('cansado')) {
+      simulateBotTyping('😺 Está bien tomarte un descanso. Tomá aire, estirá los brazos y volvé con pilas nuevas. 🌿');
+      return;
+    }
+
+    // === RESPUESTA DESCONOCIDA ===
+    const fallback = [
+      '🐾 No entendí del todo, pero sé que sos un luchador nato.',
+      '💚 A veces no hay que hablar mucho, solo seguir metiéndole ganas.',
+      '😸 Si querés ver tu resumen o progreso, escribí "mi rendimiento" o "progreso".',
+    ];
+    simulateBotTyping(fallback[Math.floor(Math.random() * fallback.length)]);
+  }
+
+  /* 🎨 Interfaz visual */
+  return (
+    <div className="fixed bottom-24 right-5 z-[60]">
+      {showParty && (
+        <div className="fixed inset-0 bg-emerald-100/70 backdrop-blur-sm flex flex-col items-center justify-center z-[70] animate-fade-in">
+          <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} transition={{ duration: 0.6 }} className="text-center">
+            <div className="text-5xl mb-2">🎊</div>
+            <div className="text-2xl font-bold text-emerald-700">¡Rodolfo está orgulloso!</div>
+            <p className="text-emerald-600 font-medium mt-1">Tu esfuerzo deja huella, trabajador del alma 💚</p>
+          </motion.div>
+        </div>
+      )}
+
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-full p-4 shadow-lg hover:scale-105 transition flex items-center gap-2"
+        >
+          <motion.span animate={{ rotate: [0, 10, 0, -10, 0] }} transition={{ repeat: Infinity, duration: 2 }}>
+            🐱
+          </motion.span>
+          <span className="font-semibold">RodolfoBot</span>
+        </button>
+      )}
+
+      {open && (
+        <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-80 h-[470px] flex flex-col overflow-hidden">
+          <div className={`p-3 bg-gradient-to-r ${COLORS[mode]} text-white font-semibold rounded-t-2xl flex justify-between items-center`}>
+            <div className="flex items-center gap-2">
+              <motion.span animate={{ rotate: [0, 10, 0, -10, 0] }} transition={{ repeat: Infinity, duration: 3 }}>
+                🐾
+              </motion.span>
+              <span>RodolfoBot</span>
+            </div>
+            <button onClick={() => setOpen(false)} className="hover:opacity-80">✕</button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-3 bg-gradient-to-b from-gray-50 to-white space-y-2 text-sm">
+            {messages.map((m, i) => (
+              <div
+                key={i}
+                className={`px-3 py-2 rounded-xl max-w-[85%] ${
+                  m.from === 'bot'
+                    ? 'bg-emerald-50 text-gray-800'
+                    : 'bg-emerald-500 text-white self-end ml-auto'
+                }`}
+              >
+                {m.text}
+              </div>
+            ))}
+            {typing && <div className="italic text-gray-400 text-xs animate-pulse">Rodolfo está escribiendo...</div>}
+          </div>
+
+          <div className="flex items-center border-t bg-gray-50 p-2">
+            <input
+              className="flex-1 text-sm border rounded-lg px-2 py-2 outline-none focus:ring-2 focus:ring-emerald-400"
+              placeholder="Decile algo a Rodolfo..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleInput()}
+            />
+            <button onClick={handleInput} className="ml-2 bg-emerald-500 text-white rounded-lg p-2 hover:bg-emerald-600">
+              <SendHorizontal size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+  /* 📊 Mini analizador de rendimiento (seguro y sin romper) */
+useEffect(() => {
+  try {
+    if (!open) return; // solo si el chat está abierto
+    if (!stats || typeof stats !== 'object') return; // validación defensiva
+    if (!memoryRef.current) return; // si la memoria aún no se inicializó
+
+    const alreadyShown = memoryRef.current.lastSummary;
+    if (stats.jobsCompleted > 0 && !alreadyShown) {
+      const eff = ((stats.efficiency || 0) * 100).toFixed(1);
+      const earn = stats.earnings || 0;
+
+      simulateBotTyping(
+        `📊 Resumen rápido de tu rendimiento:
+• Trabajos completados: ${stats.jobsCompleted}
+• Eficiencia: ${eff}%
+• Ganancias: ₲${earn.toLocaleString('es-PY')}
+🐾 Rodolfo dice: “Seguimos metiendo garra, compa 💪”`
+      );
+
+      updateMemory({ lastSummary: new Date().toISOString() });
+    }
+  } catch (err) {
+    console.warn('Error en mini analizador:', err);
+  }
+}, [open, stats]);
+
 }

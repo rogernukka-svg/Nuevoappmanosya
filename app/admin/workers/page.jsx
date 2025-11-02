@@ -23,60 +23,42 @@ export default function AdminWorkersPage() {
   const [selected, setSelected] = useState(null);
 
   // 📡 Cargar todos los trabajadores (pendientes y verificados)
-async function fetchAll() {
-  setLoading(true);
-  try {
-    const { data, error } = await supabase
-      .from('admin_workers_view') // 👈 cambiamos la vista
-      .select('*')
-      .order('updated_at', { ascending: false });
+  async function fetchAll() {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('admin_workers_view')
+        .select('*')
+        .order('updated_at', { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    // 🟥 Pendientes: no aprobados o inactivos
-    setPending(
-      data.filter(
-        (w) => !w.worker_verified || !w.profile_verified || !w.is_active
-      )
-    );
+      // 🟥 Pendientes: no aprobados o inactivos
+      setPending(data.filter((w) => !w.worker_verified || !w.is_active));
 
-    // 🟩 Activos: aprobados y activos
-    setVerified(
-      data.filter(
-        (w) => w.worker_verified && w.profile_verified && w.is_active
-      )
-    );
-  } catch (err) {
-    console.error(err);
-    toast.error('⚠️ Error cargando trabajadores');
-  } finally {
-    setLoading(false);
+      // 🟩 Activos: aprobados y activos
+      setVerified(data.filter((w) => w.worker_verified && w.is_active));
+    } catch (err) {
+      console.error(err);
+      toast.error('⚠️ Error cargando trabajadores');
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
-useEffect(() => {
-  fetchAll();
-}, []);
+  useEffect(() => {
+    fetchAll();
+  }, []);
 
-  // ✅ Aprobar / rechazar trabajador
+  // ✅ Aprobar / rechazar trabajador con RPC
   async function handleVerify(userId, approve) {
     setBusy(userId);
     try {
-      const { error: wpError } = await supabase
-        .from('worker_profiles')
-        .update({
-          is_verified: approve,
-          is_active: approve,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', userId);
-      if (wpError) throw wpError;
-
-      const { error: profError } = await supabase
-        .from('profiles')
-        .update({ is_verified: approve })
-        .eq('id', userId);
-      if (profError) throw profError;
+      const { error } = await supabase.rpc('admin_approve_worker', {
+        target_user: userId,
+        approve,
+      });
+      if (error) throw error;
 
       toast.success(
         approve
@@ -217,6 +199,7 @@ function Section({ title, color, list, onSelect }) {
     </section>
   );
 }
+
 /* ============================================================ */
 /* 🧩 MODAL DETALLE */
 
@@ -429,9 +412,7 @@ function WorkerDetailModal({ worker, onClose, onVerify, busy }) {
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-gray-500">
-                Sin cuenta bancaria cargada
-              </p>
+              <p className="text-sm text-gray-500">Sin cuenta bancaria cargada</p>
             )}
 
             {/* ✅ BOTONES DE ACCIÓN */}
@@ -495,4 +476,4 @@ function WorkerDetailModal({ worker, onClose, onVerify, busy }) {
       </div>
     </div>
   );
-}  
+}

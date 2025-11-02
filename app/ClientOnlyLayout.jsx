@@ -3,12 +3,11 @@
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import ClientRoot from './ClientRoot';
-import InstallPrompt from '@/components/InstallPrompt'; // 👈 nuevo banner PWA
 
 /**
- * 🌐 ClientOnlyLayout actualizado
+ * 🌐 ClientOnlyLayout limpio (sin banner PWA manual)
  * - Mantiene tu control de rutas (login, worker, business)
- * - Añade el banner de instalación PWA (Android)
+ * - Deja que el navegador muestre el botón nativo de instalación
  */
 export default function ClientOnlyLayout({ children }) {
   const pathname = usePathname();
@@ -36,30 +35,19 @@ export default function ClientOnlyLayout({ children }) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white text-gray-900">
         {children}
-        {/* 📲 Banner PWA también visible en auth si aplica */}
-        <InstallPrompt />
       </div>
     );
   }
 
   // 🔹 Worker o Business → render directo (sin layout global)
   if (isIsolated) {
-    return (
-      <>
-        {children}
-        {/* 📲 Banner PWA visible aquí también */}
-        <InstallPrompt />
-      </>
-    );
+    return <>{children}</>;
   }
 
   // 🔹 Resto de páginas → usan ClientRoot (layout normal)
   return (
     <div className="flex flex-col min-h-screen bg-[#F9FAFB] text-gray-900">
       <ClientRoot>{children}</ClientRoot>
-
-      {/* 📲 Banner “Instalar ManosYA” */}
-      <InstallPrompt />
     </div>
   );
 }
