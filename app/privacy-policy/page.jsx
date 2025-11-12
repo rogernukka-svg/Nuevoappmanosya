@@ -12,7 +12,7 @@ export default function PrivacyPolicyPage() {
       </p>
 
       <p className="mb-4 leading-relaxed">
-        En <b>ManosYA S.A.</b> (“ManosYA”, “nosotros” o “la plataforma”) valoramos la confianza de
+        En <b>ManosYA E.A.S.</b> (“ManosYA”, “nosotros” o “la plataforma”) valoramos la confianza de
         nuestros usuarios y nos comprometemos a proteger su información personal. Esta Política de
         Privacidad explica cómo recopilamos, usamos, almacenamos y protegemos los datos personales
         de las personas que utilizan nuestra aplicación y nuestros servicios, de conformidad con la{' '}
@@ -22,13 +22,16 @@ export default function PrivacyPolicyPage() {
 
       <h2 className="text-xl font-bold mt-8 mb-2 text-emerald-700">1. Responsable del tratamiento</h2>
       <p className="text-gray-700 mb-4">
-        El responsable del tratamiento de los datos personales es <b>ManosYA S.A.</b>, con domicilio
+        El responsable del tratamiento de los datos personales es <b>ManosYA E.A.S.</b>, con domicilio
         en Ciudad del Este, Paraguay.  
         Para consultas o ejercicio de derechos, podés escribirnos a{' '}
-        <a href="mailto:soporte@manosya.com" className="text-emerald-600 underline">
-          soporte@manosya.com
-        </a>
-        .
+        <a href="mailto:isaacminho6@gmail.com" className="text-emerald-600 underline">
+          isaacminho6@gmail.com
+        </a>{' '}
+        o comunicarte al{' '}
+        <a href="tel:+595984921024" className="text-emerald-600 underline">
+          +595 984 921 024
+        </a>.
       </p>
 
       <h2 className="text-xl font-bold mt-8 mb-2 text-emerald-700">2. Datos personales que recopilamos</h2>
@@ -108,10 +111,13 @@ export default function PrivacyPolicyPage() {
 
       <p className="text-gray-700 mt-2 mb-4">
         Para ejercer estos derechos, podés escribir a{' '}
-        <a href="mailto:soporte@manosya.com" className="text-emerald-600 underline">
-          soporte@manosya.com
-        </a>
-        , adjuntando una copia de tu documento de identidad.
+        <a href="mailto:isaacminho6@gmail.com" className="text-emerald-600 underline">
+          isaacminho6@gmail.com
+        </a>{' '}
+        o comunicarte al{' '}
+        <a href="tel:+595984921024" className="text-emerald-600 underline">
+          +595 984 921 024
+        </a>.
       </p>
 
       <h2 className="text-xl font-bold mt-8 mb-2 text-emerald-700">10. Modificaciones a esta política</h2>
@@ -129,7 +135,7 @@ export default function PrivacyPolicyPage() {
       </p>
 
       <p className="mt-10 text-center text-gray-400 text-sm">
-        © {new Date().getFullYear()} ManosYA S.A. — Todos los derechos reservados.
+        © {new Date().getFullYear()} ManosYA E.A.S. — Todos los derechos reservados.
       </p>
     </div>
   );
