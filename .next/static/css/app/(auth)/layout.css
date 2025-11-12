@@ -924,6 +924,9 @@ a:hover {
 .h-\[280px\] {
   height: 280px;
 }
+.h-\[300px\] {
+  height: 300px;
+}
 .h-\[320px\] {
   height: 320px;
 }
@@ -1028,6 +1031,9 @@ a:hover {
 }
 .w-\[280px\] {
   width: 280px;
+}
+.w-\[300px\] {
+  width: 300px;
 }
 .w-\[80vw\] {
   width: 80vw;
@@ -1537,6 +1543,9 @@ a:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(16 185 129 / var(--tw-bg-opacity, 1));
 }
+.bg-emerald-500\/20 {
+  background-color: rgb(16 185 129 / 0.2);
+}
 .bg-emerald-500\/30 {
   background-color: rgb(16 185 129 / 0.3);
 }
@@ -1641,6 +1650,9 @@ a:hover {
 }
 .bg-zinc-900\/90 {
   background-color: rgb(24 24 27 / 0.9);
+}
+.bg-\[radial-gradient\(circle_at_center\2c rgba\(0\2c 255\2c 200\2c 0\.05\)_0\%\2c transparent_70\%\)\] {
+  background-image: radial-gradient(circle at center,rgba(0,255,200,0.05) 0%,transparent 70%);
 }
 .bg-\[radial-gradient\(ellipse_at_30\%_20\%\2c rgba\(20\2c 184\2c 166\2c 0\.08\)\2c transparent_70\%\)\] {
   background-image: radial-gradient(ellipse at 30% 20%,rgba(20,184,166,0.08),transparent 70%);
