@@ -1,8 +1,14 @@
 {
-  "app\\worker\\[id]\\page.jsx -> react-leaflet": {
-    "id": "app\\worker\\[id]\\page.jsx -> react-leaflet",
+  "app\\client\\page.jsx -> react-leaflet": {
+    "id": "app\\client\\page.jsx -> react-leaflet",
     "files": [
       "static/chunks/_app-pages-browser_node_modules_react-leaflet_lib_index_js.js"
+    ]
+  },
+  "app\\client\\page.jsx -> react-leaflet-cluster": {
+    "id": "app\\client\\page.jsx -> react-leaflet-cluster",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_react-leaflet-cluster_dist_index_js.js"
     ]
   },
   "node_modules\\@supabase\\auth-js\\dist\\module\\lib\\helpers.js -> @supabase/node-fetch": {

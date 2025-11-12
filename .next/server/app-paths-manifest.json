@@ -2,5 +2,6 @@
   "/_not-found/page": "app/_not-found/page.js",
   "/role-selector/page": "app/role-selector/page.js",
   "/worker/page": "app/worker/page.js",
-  "/worker/onboard/page": "app/worker/onboard/page.js"
+  "/(auth)/login/page": "app/(auth)/login/page.js",
+  "/client/page": "app/client/page.js"
 }

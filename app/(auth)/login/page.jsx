@@ -26,7 +26,7 @@ export default function LoginManosYA() {
       const { data } = await supabase.auth.getSession();
       if (data?.session?.user) {
         toast.success('Bienvenido 👋 Redirigiendo...');
-        router.push('/role-selector');
+        router.push('/role-selector'); // ✅ ruta corregida
       } else {
         setCheckingSession(false);
       }
@@ -57,7 +57,7 @@ export default function LoginManosYA() {
     setShowInstallBanner(false);
   }
 
-  // 🚀 Login
+  // 🚀 Login normal
   async function handleLogin(e) {
     e.preventDefault();
     setBusy(true);
@@ -68,7 +68,7 @@ export default function LoginManosYA() {
       });
       if (error) throw error;
       toast.success('Inicio de sesión exitoso 🎉');
-      router.push('/role-selector');
+      router.push('/role-selector'); // ✅ ruta corregida
     } catch (err) {
       toast.error('Correo o contraseña incorrectos.');
     } finally {
@@ -99,11 +99,29 @@ export default function LoginManosYA() {
       }
 
       toast.success('Cuenta creada correctamente ✅');
-      router.push('/role-selector');
+      router.push('/role-selector'); // ✅ ruta corregida
     } catch (err) {
       toast.error('No se pudo crear la cuenta.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  // 🚀 Login con Google
+  async function handleLoginWithGoogle() {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo:
+            process.env.NODE_ENV === 'development'
+              ? 'http://localhost:3000/role-selector' // ✅ funciona local
+              : 'https://www.manosya.app/role-selector', // ✅ dominio final
+        },
+      });
+      if (error) throw error;
+    } catch (err) {
+      toast.error('Error al conectar con Google.');
     }
   }
 
@@ -132,7 +150,10 @@ export default function LoginManosYA() {
 
       {/* Formulario */}
       <div className="w-full max-w-sm bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-        <form onSubmit={mode === 'login' ? handleLogin : handleSignup} className="space-y-3">
+        <form
+          onSubmit={mode === 'login' ? handleLogin : handleSignup}
+          className="space-y-3"
+        >
           {mode === 'signup' && (
             <input
               type="text"
@@ -173,6 +194,21 @@ export default function LoginManosYA() {
           </button>
         </form>
 
+        {/* 🚀 Login con Google */}
+        <div className="mt-4">
+          <button
+            onClick={handleLoginWithGoogle}
+            className="w-full flex items-center justify-center gap-2 py-3 border border-gray-300 hover:bg-gray-50 rounded-xl transition text-gray-700 font-medium"
+          >
+            <img
+              src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+              alt="Google"
+              className="w-5 h-5"
+            />
+            Continuar con Google
+          </button>
+        </div>
+
         {/* Cambiar modo */}
         <div className="mt-4 text-sm text-gray-600 text-center">
           {mode === 'login' ? (
@@ -198,25 +234,25 @@ export default function LoginManosYA() {
           )}
         </div>
       </div>
-<p className="text-xs text-gray-500 text-center mt-4 leading-snug">
-  Al continuar, estás de acuerdo con nuestras{' '}
-  <a
-    href="/terms-of-use"
-    target="_blank"
-    className="text-emerald-600 hover:text-emerald-700 font-medium"
-  >
-    condiciones de uso
-  </a>{' '}
-  y nuestros{' '}
-  <a
-    href="/privacy-policy"
-    target="_blank"
-    className="text-emerald-600 hover:text-emerald-700 font-medium"
-  >
-    cuidados de privacidad
-  </a>.
-</p>
 
+      <p className="text-xs text-gray-500 text-center mt-4 leading-snug">
+        Al continuar, estás de acuerdo con nuestras{' '}
+        <a
+          href="/terms-of-use"
+          target="_blank"
+          className="text-emerald-600 hover:text-emerald-700 font-medium"
+        >
+          condiciones de uso
+        </a>{' '}
+        y nuestros{' '}
+        <a
+          href="/privacy-policy"
+          target="_blank"
+          className="text-emerald-600 hover:text-emerald-700 font-medium"
+        >
+          cuidados de privacidad
+        </a>.
+      </p>
 
       {/* Footer */}
       <p className="text-xs text-gray-400 mt-8 text-center max-w-xs">
@@ -228,7 +264,9 @@ export default function LoginManosYA() {
         <div className="fixed bottom-5 inset-x-0 flex justify-center z-50">
           <div className="bg-white border border-emerald-200 shadow-lg rounded-2xl p-4 w-[90%] max-w-sm text-center animate-bounce">
             <p className="text-emerald-700 font-semibold mb-3">
-              📱 ¡Instalá <span className="text-emerald-500 font-bold">ManosYA</span> en tu pantalla!
+              📱 ¡Instalá{' '}
+              <span className="text-emerald-500 font-bold">ManosYA</span> en tu
+              pantalla!
             </p>
             <button
               onClick={handleInstall}
