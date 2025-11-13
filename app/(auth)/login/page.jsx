@@ -26,7 +26,7 @@ export default function LoginManosYA() {
       const { data } = await supabase.auth.getSession();
       if (data?.session?.user) {
         toast.success('Bienvenido 👋 Redirigiendo...');
-        router.push('/role-selector'); // ✅ ruta corregida
+        router.push('/role-selector');
       } else {
         setCheckingSession(false);
       }
@@ -68,7 +68,7 @@ export default function LoginManosYA() {
       });
       if (error) throw error;
       toast.success('Inicio de sesión exitoso 🎉');
-      router.push('/role-selector'); // ✅ ruta corregida
+      router.push('/role-selector');
     } catch (err) {
       toast.error('Correo o contraseña incorrectos.');
     } finally {
@@ -99,7 +99,7 @@ export default function LoginManosYA() {
       }
 
       toast.success('Cuenta creada correctamente ✅');
-      router.push('/role-selector'); // ✅ ruta corregida
+      router.push('/role-selector');
     } catch (err) {
       toast.error('No se pudo crear la cuenta.');
     } finally {
@@ -107,19 +107,27 @@ export default function LoginManosYA() {
     }
   }
 
-  // 🚀 Login con Google
+  // 🚀 Login con Google (FIX para Android + PWA + WebView)
   async function handleLoginWithGoogle() {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo:
             process.env.NODE_ENV === 'development'
-              ? 'http://localhost:3000/role-selector' // ✅ funciona local
-              : 'https://www.manosya.app/role-selector', // ✅ dominio final
+              ? 'http://localhost:3000/(auth)/callback'
+              : 'https://www.manosya.app/(auth)/callback',
+
+          flow: 'pkce',
+          skipBrowserRedirect: true,
         },
       });
+
       if (error) throw error;
+
+      // 🔥 Para Android / PWA / WebView: abrir Chrome sí o sí
+      if (data?.url) window.location.href = data.url;
+
     } catch (err) {
       toast.error('Error al conectar con Google.');
     }
