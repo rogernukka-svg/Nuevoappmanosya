@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { Loader2, LogOut, UserRound, Wrench } from 'lucide-react';
+import { Loader2, LogOut, UserRound, Wrench, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const supabase = getSupabase();
@@ -150,8 +150,17 @@ export default function RoleSelectorPage() {
         </motion.button>
       </div>
 
+      {/* ⚙️ Gestión de cuenta */}
+      <button
+        onClick={() => router.push('/settings/account')}
+        className="mt-6 flex items-center gap-2 justify-center text-sm text-gray-500 hover:text-emerald-600 transition"
+      >
+        <Settings className="w-4 h-4 opacity-70" />
+        Gestión de mi cuenta
+      </button>
+
       {/* ⚙️ Footer */}
-      <div className="mt-10 text-center">
+      <div className="mt-6 text-center">
         <button
           onClick={handleLogout}
           className="flex items-center gap-2 justify-center text-sm text-gray-500 hover:text-emerald-600 transition"
