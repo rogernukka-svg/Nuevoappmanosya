@@ -18,10 +18,12 @@ export default function RoleSelectorPage() {
   useEffect(() => {
     const checkSession = async () => {
       const { data } = await supabase.auth.getSession();
+
       if (!data?.session?.user) {
-        router.replace('/login');
+        router.replace('/auth/login'); // ✅ CORREGIDO
         return;
       }
+
       setLoading(false);
     };
     checkSession();
@@ -34,9 +36,10 @@ export default function RoleSelectorPage() {
 
     const { data } = await supabase.auth.getSession();
     const userId = data?.session?.user?.id;
+
     if (!userId) {
       toast.error('Sesión expirada.');
-      router.replace('/login');
+      router.replace('/auth/login'); // ✅ CORREGIDO
       return;
     }
 
@@ -53,6 +56,7 @@ export default function RoleSelectorPage() {
 
     localStorage.setItem('app_role', role);
     toast.success(role === 'worker' ? 'Modo Trabajador activado 💪' : 'Modo Cliente activado 🤝');
+
     router.push(`/${role}`);
   };
 
@@ -61,7 +65,7 @@ export default function RoleSelectorPage() {
     await supabase.auth.signOut();
     localStorage.removeItem('app_role');
     toast.success('Hasta pronto 👋 Tu cuenta queda segura.');
-    router.replace('/login');
+    router.replace('/auth/login'); // ✅ CORREGIDO
   };
 
   /* ⏳ Pantalla de carga */
@@ -176,7 +180,7 @@ export default function RoleSelectorPage() {
       {/* 📜 Info legal */}
       <p className="text-[11px] text-gray-400 mt-6 text-center max-w-xs leading-relaxed">
         Al continuar, confirmás que entendés cómo cuidamos tus datos y cómo funciona{' '}
-        <span className="text-emerald-600 font-medium">ManosYA</span>.  
+        <span className="text-emerald-600 font-medium">ManosYA</span>.
         <br />
         <a
           href="/terms-of-use"
