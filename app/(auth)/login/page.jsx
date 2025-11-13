@@ -107,7 +107,7 @@ export default function LoginManosYA() {
     }
   }
 
-  // 🚀 Login con Google
+  // 🚀 Login con Google — **RUTAS CORRECTAS**
   async function handleLoginWithGoogle() {
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -115,8 +115,8 @@ export default function LoginManosYA() {
         options: {
           redirectTo:
             process.env.NODE_ENV === 'development'
-              ? 'http://localhost:3000/(auth)/callback'
-              : 'https://www.manosya.app/(auth)/callback',
+              ? 'http://localhost:3000/auth/callback'
+              : 'https://manosya.app/auth/callback',
 
           flow: 'pkce',
           skipBrowserRedirect: true,
@@ -265,7 +265,7 @@ export default function LoginManosYA() {
         🌎 En ManosYA, cada persona tiene algo valioso que ofrecer.
       </p>
 
-      {/* 📲 Banner de instalación PWA — versión elegante */}
+      {/* 📲 Banner PWA */}
       {showInstallBanner && (
         <div className="fixed bottom-4 inset-x-0 flex justify-center z-50 animate-fadeIn">
           <div className="backdrop-blur-md bg-white/90 border border-gray-200 shadow-xl rounded-2xl px-5 py-4 w-[90%] max-w-sm text-center">
