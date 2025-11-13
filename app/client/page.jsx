@@ -1242,7 +1242,18 @@ useEffect(() => {
   >
     <ChangeView center={center} />
     <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
-    {route && <Polyline positions={route} color="#10b981" weight={5} />}
+   {Array.isArray(route) &&
+  route.length === 2 &&
+  Array.isArray(route[0]) &&
+  Array.isArray(route[1]) &&
+  Number(route[0][0]) &&
+  Number(route[0][1]) &&
+  Number(route[1][0]) &&
+  Number(route[1][1]) && (
+    <Polyline positions={route} color="#10b981" weight={5} />
+  )
+}
+
 
    {/* ✅ Bloque final actualizado — oculta 'paused' y muestra estados dinámicos */}
 <MarkerClusterGroup

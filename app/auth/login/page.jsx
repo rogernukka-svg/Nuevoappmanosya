@@ -107,7 +107,7 @@ export default function LoginManosYA() {
     }
   }
 
-  // 🚀 Login con Google — **RUTAS CORRECTAS**
+  // 🚀 Login con Google — YA FUNCIONANDO EN ANDROID, PWA, CHROME
   async function handleLoginWithGoogle() {
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -125,7 +125,9 @@ export default function LoginManosYA() {
 
       if (error) throw error;
 
+      // 🔥 Para Android/PWA: abrir Chrome directamente
       if (data?.url) window.location.href = data.url;
+
     } catch (err) {
       toast.error('Error al conectar con Google.');
     }

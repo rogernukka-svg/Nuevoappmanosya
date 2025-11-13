@@ -16,11 +16,12 @@ export default function RootPage() {
       } = await supabase.auth.getUser();
       const savedRole = localStorage.getItem('app_role');
 
-      // Simular un pequeño delay para mostrar el splash
+      // Pequeño delay para mostrar el splash
       await new Promise((r) => setTimeout(r, 1500));
 
+      // ✅ FIX 1: login correcto
       if (!user) {
-        router.replace('/login');
+        router.replace('/auth/login');
         return;
       }
 
@@ -29,7 +30,8 @@ export default function RootPage() {
       } else if (savedRole === 'client') {
         router.replace('/client');
       } else {
-        router.replace('/role');
+        // ❗ FIX 2: tu selector se llama /role-selector
+        router.replace('/role-selector');
       }
     }
     init();
@@ -38,14 +40,12 @@ export default function RootPage() {
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-b from-black via-neutral-900 to-black text-emerald-400 font-[var(--font-manrope)] overflow-hidden relative">
       
-      {/* ✨ Halo de energía */}
       <motion.div
         className="absolute w-[300px] h-[300px] rounded-full bg-emerald-500/20 blur-[100px]"
         animate={{ opacity: [0.3, 0.8, 0.3], scale: [1, 1.1, 1] }}
         transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
       />
 
-      {/* 🤝 Logo principal con animación */}
       <motion.div
         initial={{ opacity: 0, scale: 0.5, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -58,7 +58,6 @@ export default function RootPage() {
         </h1>
       </motion.div>
 
-      {/* ⚙️ Texto y engranaje animado */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: [0, 1, 0.7, 1], y: [20, 0, 0, 0] }}
@@ -74,7 +73,6 @@ export default function RootPage() {
         </motion.span>
       </motion.div>
 
-      {/* 🌫 Fondo de partículas suaves */}
       <motion.div
         className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,255,200,0.05)_0%,transparent_70%)]"
         animate={{ opacity: [0.1, 0.3, 0.1] }}
