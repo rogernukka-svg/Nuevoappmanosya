@@ -107,7 +107,7 @@ export default function LoginManosYA() {
     }
   }
 
-  // 🚀 Login con Google (FIX para Android + PWA + WebView)
+  // 🚀 Login con Google
   async function handleLoginWithGoogle() {
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -125,9 +125,7 @@ export default function LoginManosYA() {
 
       if (error) throw error;
 
-      // 🔥 Para Android / PWA / WebView: abrir Chrome sí o sí
       if (data?.url) window.location.href = data.url;
-
     } catch (err) {
       toast.error('Error al conectar con Google.');
     }
@@ -267,22 +265,39 @@ export default function LoginManosYA() {
         🌎 En ManosYA, cada persona tiene algo valioso que ofrecer.
       </p>
 
-      {/* 📲 Banner de instalación PWA */}
+      {/* 📲 Banner de instalación PWA — versión elegante */}
       {showInstallBanner && (
-        <div className="fixed bottom-5 inset-x-0 flex justify-center z-50">
-          <div className="bg-white border border-emerald-200 shadow-lg rounded-2xl p-4 w-[90%] max-w-sm text-center animate-bounce">
-            <p className="text-emerald-700 font-semibold mb-3">
-              📱 ¡Instalá{' '}
-              <span className="text-emerald-500 font-bold">ManosYA</span> en tu
-              pantalla!
+        <div className="fixed bottom-4 inset-x-0 flex justify-center z-50 animate-fadeIn">
+          <div className="backdrop-blur-md bg-white/90 border border-gray-200 shadow-xl rounded-2xl px-5 py-4 w-[90%] max-w-sm text-center">
+            <p className="text-gray-700 font-semibold mb-1">
+              📱 Instalá <span className="text-emerald-600 font-bold">ManosYA</span>
+            </p>
+            <p className="text-xs text-gray-500 mb-3">
+              Agregalo a tu pantalla para acceso rápido
             </p>
             <button
               onClick={handleInstall}
-              className="px-4 py-2 bg-emerald-500 text-white rounded-full hover:bg-emerald-600 transition font-medium"
+              className="px-4 py-2 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition font-medium text-sm"
             >
-              Instalar ahora
+              Instalar
             </button>
           </div>
+
+          <style jsx>{`
+            .animate-fadeIn {
+              animation: fadeIn 0.35s ease-out;
+            }
+            @keyframes fadeIn {
+              from {
+                opacity: 0;
+                transform: translateY(12px);
+              }
+              to {
+                opacity: 1;
+                transform: translateY(0);
+              }
+            }
+          `}</style>
         </div>
       )}
     </div>
