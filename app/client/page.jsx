@@ -273,7 +273,6 @@ useEffect(() => {
 }, [isChatOpen, chatId, selected, jobId, jobStatus]);
 
 
-
 /* 🔴 Estado: indicador de mensaje no leído
    ---------------------------------------------------
    Activa una alerta visual y sonora cuando llega un
@@ -281,30 +280,8 @@ useEffect(() => {
    Se limpia automáticamente al abrir el chat.
 */
 
-// 🪄 Recuperar pedido activo desde Supabase si no hay nada en localStorage
-useEffect(() => {
-  if (jobId || !me?.id) return;
 
-  (async () => {
-    try {
-      const { data: job } = await supabase
-        .from('jobs')
-        .select('id, status, worker_id, worker_lat, worker_lng')
-        .eq('client_id', me.id)
-        .in('status', ['open', 'accepted', 'assigned'])
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
 
-      if (job) {
-        setJobId(job.id);
-        setJobStatus(job.status);
-      }
-    } catch (err) {
-      console.error('Error recuperando pedido activo:', err);
-    }
-  })();
-}, [jobId, me?.id]);
 
 // 🧩 Recuperar pedido activo desde Supabase si no hay nada en localStorage
 useEffect(() => {
@@ -763,14 +740,18 @@ function handleMarkerClick(worker) {
   );
 
   // 🎯 Guarda el trabajador seleccionado
-  setSelected(worker);
+setSelected(worker);
 
-  // ✨ Efecto visual al hacer clic en marcador
-  if (mapRef.current && worker?.lat && worker?.lng) {
-    mapRef.current.flyTo([worker.lat, worker.lng], 15, {
-      duration: 1.2,
-    });
-  }
+// 🚫 NO generar ruta aquí (solo cuando el cliente presiona "Solicitar")
+setRoute(null);
+
+// ✨ Efecto visual al hacer clic en marcador
+if (mapRef.current && worker?.lat && worker?.lng) {
+  mapRef.current.flyTo([worker.lat, worker.lng], 15, {
+    duration: 1.2,
+  });
+}
+
 
   // 💬 Cierra cualquier modal de precio si estuviera abierto
   setShowPrice(false);
@@ -820,6 +801,30 @@ async function confirmarSolicitud() {
     if (upsertProfile.error && upsertProfile.error.code !== '23505') {
       console.error('Error real al asegurar el perfil del cliente:', upsertProfile.error);
     }
+    // 🔒 VALIDACIÓN DE RUTA — blindado 100%
+const canMakeRoute =
+  Number(me?.lat) &&
+  Number(me?.lon) &&
+  Number(selected?.lat) &&
+  Number(selected?.lng);
+
+if (!canMakeRoute) {
+  toast.error("No se puede crear el pedido. Coordenadas incompletas.");
+  console.warn("❌ Ruta inválida — coordenadas incompletas:", {
+    meLat: me?.lat,
+    meLon: me?.lon,
+    workerLat: selected?.lat,
+    workerLng: selected?.lng,
+  });
+  return;
+}
+
+// ✔ Generar ruta ANTES de crear pedido
+setRoute([
+  [me.lat, me.lon],
+  [selected.lat, selected.lng]
+]);
+
 
     // 4️⃣ Insertar el pedido con servicio y precio
 const { data: inserted, error: insertError } = await supabase
@@ -871,6 +876,7 @@ async function cancelarPedido() {
       toast.warning('⚠️ No hay pedido activo para cancelar');
       return;
     }
+    
 
     // 🔥 Cambiar el estado en la base de datos
     const { error } = await supabase
@@ -1214,15 +1220,17 @@ useEffect(() => {
 
   return (
     <div className="relative min-h-screen bg-white">
-      {/* Header */}
-      <div className="absolute top-4 left-4 z-[1000]">
-        <button
-          onClick={() => router.push('/role-selector')}
-          className="bg-white border text-emerald-600 font-medium px-3 py-1.5 rounded-xl shadow-sm hover:bg-gray-50 transition"
-        >
-          Cambiar rol
-        </button>
-      </div>
+      {/* Header centrado visible */}
+<div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
+  <button
+    onClick={() => router.push('/role-selector')}
+    className="bg-emerald-500 text-white font-semibold px-5 py-2 rounded-xl shadow-md 
+               hover:bg-emerald-600 active:scale-95 transition"
+  >
+    Cambiar rol
+  </button>
+</div>
+
 {/* 🔔 Banner elegante de estado */}
 {statusBanner && (
   <div
@@ -1264,9 +1272,10 @@ useEffect(() => {
   {workers
     ?.filter(
       w =>
-        w?.lat !== null &&
-        w?.lng !== null &&
-        w?.status !== 'paused' // ⬅️ oculta los pausados
+  Number(w?.lat) &&
+  Number(w?.lng) &&
+  w?.status !== 'paused'
+ // ⬅️ oculta los pausados
     )
     .map(w => {
       const minutesAgo = getMinutesAgo(w.updated_at);

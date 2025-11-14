@@ -65,6 +65,8 @@ function OnboardForm({ user }) {
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [isVerified, setIsVerified] = useState(false);
   const [avgRating, setAvgRating] = useState(null);
+  const [phone, setPhone] = useState('');
+  const [openAvatar, setOpenAvatar] = useState(false);
 
   // Profesional
   const [active, setActive] = useState(true);
@@ -104,7 +106,9 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
       try {
         const { data: p } = await supabase
           .from('profiles')
-          .select('full_name, avatar_url, is_verified')
+          .select('full_name, avatar_url, is_verified, phone')
+
+
           .eq('id', user.id)
           .maybeSingle();
 
@@ -112,6 +116,7 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
           setFullName(p.full_name || '');
           setAvatarUrl(p.avatar_url || null);
           setIsVerified(!!p.is_verified);
+           setPhone(p.phone || ''); // 👈 AGREGADO
         }
 
         const { data: reviews } = await supabase
@@ -291,6 +296,7 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   .from('profiles')
   .update({
     full_name: fullName,
+     phone: phone, // 👈 GUARDAR TELÉFONO
     accepted_privacy: acceptedPrivacy,
     privacy_accepted_at: acceptedPrivacy ? new Date().toISOString() : null,
   })
@@ -370,16 +376,29 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
       <img
         src={avatarUrl || '/avatar-fallback.png'}
         alt="avatar"
-        className="w-24 h-24 rounded-full border-4 border-emerald-500 object-cover"
+        onClick={() => setOpenAvatar(true)}
+        className="w-24 h-24 rounded-full border-4 border-emerald-500 object-cover cursor-pointer hover:opacity-80 transition"
       />
 
-      {/* ✅ Check azul estilo redes sociales */}
+      {/* Modal para ver foto grande */}
+      {openAvatar && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
+          onClick={() => setOpenAvatar(false)}
+        >
+          <img
+            src={avatarUrl || '/avatar-fallback.png'}
+            className="w-72 h-72 rounded-2xl border-4 border-white object-cover shadow-xl"
+          />
+        </div>
+      )}
+
+      {/* Verificado */}
       {isVerified && (
         <span
           title="Verificado por ManosYA"
           className="absolute -bottom-1 -right-1 bg-blue-500 text-white rounded-full p-[5px] border-2 border-white shadow-md flex items-center justify-center"
         >
-          {/* Ícono SVG de verificación */}
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
@@ -402,7 +421,7 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
     </label>
   </div>
 
-  {/* 🧾 Campo de nombre */}
+  {/* 🧾 Nombre */}
   <div className="mt-4">
     <label className="text-sm font-semibold text-gray-700 mb-1 block">
       Nombre y apellido
@@ -415,7 +434,20 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
     />
   </div>
 
-  {/* 🏅 Badges de verificación y rating */}
+  {/* 📱 Teléfono */}
+  <div className="mt-4">
+    <label className="text-sm font-semibold text-gray-700 mb-1 block">
+      Número de teléfono
+    </label>
+    <input
+      className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-emerald-500 outline-none"
+      value={phone}
+      onChange={(e) => setPhone(e.target.value)}
+      placeholder="Ej: 0984 123 456"
+    />
+  </div>
+
+  {/* 🏅 Badges */}
   <div className="flex flex-wrap gap-2 mt-3">
     {isVerified && (
       <span className="bg-blue-500/10 text-blue-600 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">

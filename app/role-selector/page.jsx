@@ -20,7 +20,7 @@ export default function RoleSelectorPage() {
       const { data } = await supabase.auth.getSession();
 
       if (!data?.session?.user) {
-        router.replace('/auth/login'); // ✅ CORREGIDO
+        router.replace('/auth/login');
         return;
       }
 
@@ -39,7 +39,7 @@ export default function RoleSelectorPage() {
 
     if (!userId) {
       toast.error('Sesión expirada.');
-      router.replace('/auth/login'); // ✅ CORREGIDO
+      router.replace('/auth/login');
       return;
     }
 
@@ -55,17 +55,17 @@ export default function RoleSelectorPage() {
     }
 
     localStorage.setItem('app_role', role);
-    toast.success(role === 'worker' ? 'Modo Trabajador activado 💪' : 'Modo Cliente activado 🤝');
+    toast.success(role === 'worker' ? 'Modo Trabajador activado 💼' : 'Modo Cliente activado 🙌');
 
     router.push(`/${role}`);
   };
 
-  /* 🚪 Salida suave */
+  /* 🚪 Salida */
   const handleLogout = async () => {
     await supabase.auth.signOut();
     localStorage.removeItem('app_role');
-    toast.success('Hasta pronto 👋 Tu cuenta queda segura.');
-    router.replace('/auth/login'); // ✅ CORREGIDO
+    toast.success('Cerraste sesión correctamente.');
+    router.replace('/auth/login');
   };
 
   /* ⏳ Pantalla de carga */
@@ -80,121 +80,96 @@ export default function RoleSelectorPage() {
 
   /* 🌈 UI principal */
   return (
-    <div className="relative min-h-screen flex flex-col items-center justify-center px-6 text-gray-800 font-[var(--font-manrope)] bg-gradient-to-b from-white via-emerald-50 to-cyan-50 overflow-hidden">
-      
-      {/* ✨ Halo de energía */}
-      <motion.div
-        className="absolute top-[25%] left-1/2 w-[280px] h-[280px] rounded-full bg-emerald-400/15 blur-[100px] -translate-x-1/2"
-        animate={{ opacity: [0.3, 0.7, 0.3], scale: [1, 1.05, 1] }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-      />
+    <div className="min-h-screen flex flex-col items-center justify-center px-6 text-gray-800 font-[var(--font-manrope)] bg-white">
 
-      {/* 👋 Saludo inicial */}
+      {/* LOGO */}
       <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7 }}
-        className="text-center mb-6"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.6 }}
+        className="text-center mb-10"
       >
-        <h2 className="text-sm text-gray-500 font-medium">
-          👋 Hola, bienvenido a <span className="text-emerald-600 font-semibold">ManosYA</span>
-        </h2>
-        <p className="text-[13px] text-gray-400 mt-1">
-          Tu ayuda al instante, cerca de vos 💚
+        <h1 className="text-4xl font-extrabold tracking-tight">
+          <span className="text-[#111827]">Manos</span>
+          <span className="text-emerald-600">YA</span>
+        </h1>
+        <p className="text-gray-500 text-sm mt-1">
+          Tu ayuda al instante.
         </p>
       </motion.div>
 
-      {/* 🤝 Logo con latido */}
-      <motion.div
-        animate={{ scale: [1, 1.08, 1] }}
-        transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-        className="text-6xl mb-4"
+      {/* TITULO */}
+      <motion.h2
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="text-lg font-semibold text-gray-700 mb-6 text-center"
       >
-        🤝
-      </motion.div>
+        Elegí cómo querés usar ManosYA
+      </motion.h2>
 
-      {/* Título */}
-      <h1 className="text-4xl font-extrabold tracking-tight text-center">
-        <span className="text-[#111827]">Manos</span>
-        <span className="text-emerald-600">YA</span>
-      </h1>
+      {/* 🔘 Opciones */}
+      <div className="w-full max-w-xs flex flex-col gap-4">
 
-      <p className="text-gray-600 text-[15px] mt-3 text-center max-w-sm">
-        Conectamos personas que se ayudan, trabajan y hacen que las cosas pasen.
-      </p>
-
-      {/* 🔘 Opciones de acción */}
-      <div className="w-full max-w-xs flex flex-col gap-4 mt-10">
+        {/* BOTÓN TRABAJADOR (Primario) */}
         <motion.button
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.98 }}
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={() => handleSelectRole('worker')}
+          className={`flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-white shadow-md transition-all 
+          ${selectedRole === 'worker'
+            ? 'bg-emerald-600'
+            : 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700'
+          }`}
+        >
+          <Wrench className="w-5 h-5" />
+          Quiero trabajar y ganar dinero
+        </motion.button>
+
+        {/* BOTÓN CLIENTE */}
+        <motion.button
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
           onClick={() => handleSelectRole('client')}
           className={`flex items-center justify-center gap-2 py-3 rounded-full font-semibold shadow-sm transition-all ${
             selectedRole === 'client'
-              ? 'bg-emerald-600 text-white'
-              : 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white'
-          }`}
-        >
-          <UserRound className="w-5 h-5" />
-          Quiero pedir ayuda
-        </motion.button>
-
-        <motion.button
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => handleSelectRole('worker')}
-          className={`flex items-center justify-center gap-2 py-3 rounded-full font-semibold shadow-sm transition-all ${
-            selectedRole === 'worker'
               ? 'bg-cyan-600 text-white'
               : 'bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white'
           }`}
         >
-          <Wrench className="w-5 h-5" />
-          Quiero ofrecer mi servicio
+          <UserRound className="w-5 h-5" />
+          Quiero pedir un servicio
         </motion.button>
       </div>
 
-      {/* ⚙️ Gestión de cuenta */}
-      <button
-        onClick={() => router.push('/settings/account')}
-        className="mt-6 flex items-center gap-2 justify-center text-sm text-gray-500 hover:text-emerald-600 transition"
-      >
-        <Settings className="w-4 h-4 opacity-70" />
-        Gestión de mi cuenta
-      </button>
-
-      {/* ⚙️ Footer */}
-      <div className="mt-6 text-center">
+      {/* ⚙️ ACCESOS SECUNDARIOS */}
+      <div className="mt-8 text-center">
         <button
-          onClick={handleLogout}
+          onClick={() => router.push('/settings/account')}
           className="flex items-center gap-2 justify-center text-sm text-gray-500 hover:text-emerald-600 transition"
         >
-          <LogOut className="w-4 h-4 opacity-70" />
-          Salir por ahora
+          <Settings className="w-4 h-4 opacity-70" />
+          Gestión de mi cuenta
         </button>
-        <p className="text-xs text-gray-400 mt-2">
-          Podés volver en cualquier momento. Tu cuenta queda segura 💚
-        </p>
+
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2 justify-center text-sm text-gray-500 hover:text-emerald-600 transition mt-3"
+        >
+          <LogOut className="w-4 h-4 opacity-70" />
+          Cerrar sesión
+        </button>
       </div>
 
-      {/* 📜 Info legal */}
-      <p className="text-[11px] text-gray-400 mt-6 text-center max-w-xs leading-relaxed">
-        Al continuar, confirmás que entendés cómo cuidamos tus datos y cómo funciona{' '}
-        <span className="text-emerald-600 font-medium">ManosYA</span>.
+      {/* 📜 Legal */}
+      <p className="text-[11px] text-gray-400 mt-8 text-center max-w-xs leading-relaxed">
+        Al continuar aceptás nuestras políticas.  
         <br />
-        <a
-          href="/terms-of-use"
-          target="_blank"
-          className="text-emerald-600 hover:text-emerald-700 underline"
-        >
+        <a href="/terms-of-use" className="text-emerald-600 underline" target="_blank">
           Condiciones de Uso
         </a>{' '}
         ·{' '}
-        <a
-          href="/privacy-policy"
-          target="_blank"
-          className="text-emerald-600 hover:text-emerald-700 underline"
-        >
+        <a href="/privacy-policy" className="text-emerald-600 underline" target="_blank">
           Privacidad
         </a>
       </p>

@@ -54,6 +54,8 @@ export default function WorkerPage() {
   const [sending, setSending] = useState(false);
   const [isActive, setIsActive] = useState(true);
   const [hasUnread, setHasUnread] = useState(false);
+  const [clientTyping, setClientTyping] = useState(false);
+
 
 
   const inputRef = useRef(null);
@@ -580,6 +582,19 @@ async function openChat(job) {
           setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
         }
       )
+      .on(
+  'broadcast',
+  { event: 'typing' },
+  (payload) => {
+    if (payload?.sender_id !== user.id) {
+      setClientTyping(true);
+
+      // desaparecer después de 2 segundos sin escribir
+      setTimeout(() => setClientTyping(false), 2000);
+    }
+  }
+)
+
       .subscribe();
 
     chatChannelRef.current = ch;
@@ -646,15 +661,17 @@ async function sendMessage() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="container max-w-screen-md mx-auto px-4 pb-28 bg-white text-gray-900 min-h-screen"
-    >{/* === BANNER DE ESTADO DEL TRABAJADOR === */}
+    >{/* === BANNER DE ESTADO DEL TRABAJADOR (MINIMALISTA) === */}
 <motion.div
   initial={{ opacity: 0, y: -10 }}
   animate={{ opacity: 1, y: 0 }}
-  transition={{ duration: 0.3 }}
-  className="mb-6"
+  transition={{ duration: 0.25 }}
+  className="mb-6 px-2"
 >
   <div
-    className={`flex flex-col items-center text-center rounded-2xl p-5 shadow-md border backdrop-blur-md bg-white/60 transition-all duration-300 ${
+    className={`w-full rounded-xl p-4 shadow-sm border bg-white transition-all duration-300
+    flex flex-col items-center text-center gap-3
+    ${
       status === 'available'
         ? 'border-emerald-300 text-emerald-700'
         : status === 'paused'
@@ -662,60 +679,60 @@ async function sendMessage() {
         : 'border-blue-300 text-blue-700'
     }`}
   >
-    {/* Estado visual */}
-    <div className="flex items-center gap-2 mb-1">
-      {status === 'available' && <Power className="text-emerald-500" size={18} />}
-      {status === 'paused' && <Power className="text-red-400" size={18} />}
-      {status === 'busy' && <Loader2 className="text-blue-500 animate-spin" size={18} />}
-      <span className="font-bold text-lg tracking-tight">
+    {/* Estado general */}
+    <div className="flex flex-col items-center gap-1">
+      <div className="flex items-center gap-2">
+        {status === 'available' && <Power className="text-emerald-500" size={20} />}
+        {status === 'paused' && <Power className="text-red-400" size={20} />}
+        {status === 'busy' && <Loader2 className="text-blue-500 animate-spin" size={20} />}
+
+        <span className="font-bold text-lg">
+          {status === 'available'
+            ? 'Estás disponible'
+            : status === 'paused'
+            ? 'Estás en pausa'
+            : 'Estás ocupado'}
+        </span>
+      </div>
+
+      {/* Descripción */}
+      <p className="text-sm opacity-70 leading-snug max-w-xs">
         {status === 'available'
-          ? 'Estás DISPONIBLE'
+          ? 'Podés recibir pedidos nuevos en tiempo real.'
           : status === 'paused'
-          ? 'Estás en PAUSA'
-          : 'Estás OCUPADO'}
-      </span>
+          ? 'No vas a recibir pedidos hasta reactivarte.'
+          : 'Finalizá tu trabajo actual para recibir nuevos.'}
+      </p>
     </div>
 
-    {/* Descripción */}
-    <p className="text-sm mb-4 opacity-80 leading-snug">
-      {status === 'available'
-        ? 'Recibís solicitudes de nuevos clientes en tiempo real.'
-        : status === 'paused'
-        ? 'No recibirás nuevos pedidos hasta que te reactives.'
-        : 'Terminá tu trabajo actual antes de aceptar nuevos.'}
-    </p>
-
     {/* Botones */}
-    <div className="flex gap-2 flex-wrap justify-center">
+    <div className="flex gap-2 mt-1">
       <button
         onClick={toggleStatus}
-        className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-sm font-semibold shadow-sm hover:bg-gray-50 transition"
+        className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-sm font-semibold hover:bg-gray-50 transition shadow-sm"
       >
         Cambiar estado
       </button>
 
       <button
         onClick={() => router.push('/role-selector')}
-        className="px-4 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm font-semibold hover:bg-gray-200 transition"
+        className="px-4 py-2 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 transition shadow-sm"
       >
         Volver
       </button>
     </div>
 
     {/* Indicador de conexión */}
-    <div className="mt-4">
-      <span
-        className={`text-xs font-medium px-3 py-1 rounded-full ${
-          isConnected
-            ? 'bg-emerald-100 text-emerald-700'
-            : 'bg-red-100 text-red-600'
-        }`}
-      >
-        {isConnected ? '🟢 Conectado a tiempo real' : '🔴 Sin conexión'}
-      </span>
-    </div>
+    <span
+      className={`mt-1 text-xs font-medium px-3 py-1 rounded-full ${
+        isConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'
+      }`}
+    >
+      {isConnected ? '🟢 Conectado' : '🔴 Sin conexión'}
+    </span>
   </div>
 </motion.div>
+
 
       {/* LISTA DE TRABAJOS */}
 {jobs.length === 0 ? (
@@ -860,27 +877,48 @@ async function sendMessage() {
         transition={{ type: 'spring', damping: 18 }}
         className="bg-white rounded-t-3xl w-full max-w-md shadow-xl"
       >
-        {/* 🔹 Encabezado del chat */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
-          <button
-            onClick={() => setIsChatOpen(false)}
-            className="flex items-center gap-1 text-gray-600 hover:text-red-500"
-          >
-            <ChevronLeft size={18} /> Volver
-          </button>
-          <h2 className="font-semibold text-gray-800">Chat con cliente</h2>
-          <button
-            onClick={() =>
-              window.open(
-                `https://www.google.com/maps/dir/?api=1&destination=${selectedJob.client_lat},${selectedJob.client_lng}`,
-                '_blank'
-              )
-            }
-            className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800 text-sm font-semibold"
-          >
-            <Map size={16} /> Mapa
-          </button>
-        </div>
+       {/* 🔹 Encabezado del chat (actualizado) */}
+<div className="flex flex-col border-b border-gray-100 bg-gray-50">
+  
+  {/* Parte superior */}
+  <div className="flex items-center justify-between px-4 py-3">
+    
+    {/* Botón volver */}
+    <button
+      onClick={() => setIsChatOpen(false)}
+      className="flex items-center gap-1 text-gray-600 hover:text-red-500"
+    >
+      <ChevronLeft size={18} /> Volver
+    </button>
+
+    {/* Nombre del cliente */}
+    <h2 className="font-semibold text-gray-800 text-center">
+      {selectedJob?.client_name || "Cliente"}
+    </h2>
+
+    {/* Botón mapa */}
+    <button
+      onClick={() =>
+        window.open(
+          `https://www.google.com/maps/dir/?api=1&destination=${selectedJob.client_lat},${selectedJob.client_lng}`,
+          '_blank'
+        )
+      }
+      className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800 text-sm font-semibold"
+    >
+      <Map size={16} /> Mapa
+    </button>
+
+  </div>
+
+  {/* 🔵 Indicador “Cliente está escribiendo…” */}
+  {clientTyping && (
+    <div className="px-4 pb-2 text-xs text-gray-500 italic animate-pulse">
+      {selectedJob?.client_name || "El cliente"} está escribiendo…
+    </div>
+  )}
+
+</div>
 
         {/* 💰 Info del servicio y precio por hora */}
         {(selectedJob?.service_type || selectedJob?.price) && (
