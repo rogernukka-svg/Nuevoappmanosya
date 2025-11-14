@@ -173,7 +173,7 @@ export default function MapPage() {
   const markersRef = useRef({}); // 🧭 guarda refs de marcadores por user_id
 
 
-  const [center, setCenter] = useState([-25.516, -54.616]);
+  const [center, setCenter] = useState(null);
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
   const [workers, setWorkers] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -181,6 +181,14 @@ export default function MapPage() {
   const [showPrice, setShowPrice] = useState(false);
   const [route, setRoute] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
+  // 🟢 Panel estilo Uber (3 niveles)
+const [panelLevel, setPanelLevel] = useState("mid"); 
+// niveles: "mini" | "mid" | "full"
+
+const togglePanel = (level) => {
+  setPanelLevel(level);
+};
+
 
  // ✨ Nuevo: estado del job + chat
 const [jobId, setJobId] = useState(null);
@@ -332,21 +340,55 @@ useEffect(() => {
     })();
   }, [router]);
 
-  /* === Geoloc === */
-  useEffect(() => {
-    if (!navigator.geolocation) return;
-    const watcher = navigator.geolocation.watchPosition(
-      pos => {
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
+/* === Geoloc optimizada estilo Uber — versión PRO === */
+useEffect(() => {
+  if (!navigator.geolocation) {
+    setCenter([-25.516, -54.616]); // fallback CDE
+    return;
+  }
+
+  let firstFixDone = false;
+
+  const watcher = navigator.geolocation.watchPosition(
+    pos => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+
+      // 🔒 Evitar coordenadas inválidas
+      if (!Number(lat) || !Number(lon)) return;
+
+      // Siempre actualizamos la posición del cliente
+      setMe(prev => ({ ...prev, lat, lon }));
+
+      // 🎯 CENTRADO SOLO UNA VEZ AL ENTRAR
+      if (!firstFixDone) {
+        firstFixDone = true;
+
         setCenter([lat, lon]);
-        setMe(prev => ({ ...prev, lat, lon }));
-      },
-      () => {},
-      { enableHighAccuracy: true }
-    );
-    return () => watcher && navigator.geolocation.clearWatch(watcher);
-  }, []);
+
+        if (mapRef.current) {
+          mapRef.current.setView([lat, lon], 15, { animate: true });
+        }
+      }
+
+      // 💨 Movimiento suave opcional
+      // mapRef.current?.panTo([lat, lon], { animate: true });
+    },
+    err => {
+      console.warn("GPS error:", err);
+      setCenter([-25.516, -54.616]);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 2000,
+      timeout: 10000
+    }
+  );
+
+  return () => navigator.geolocation.clearWatch(watcher);
+}, []);
+
+
 
 /* === Cargar trabajadores === */
 async function fetchWorkers(serviceFilter = null) {
@@ -380,6 +422,38 @@ async function fetchWorkers(serviceFilter = null) {
     console.log('🧠 Trabajadores desde Supabase:', data);
 
     setWorkers(data || []);
+ // ⭐ Auto-ajustar mapa estilo Uber
+if (mapRef.current) {
+  const bounds = [];
+
+  // agregar trabajadores válidos
+  data.forEach(w => {
+    if (Number(w.lat) && Number(w.lng)) {
+      bounds.push([w.lat, w.lng]);
+    }
+  });
+
+  // agregar tu ubicación si existe
+  if (me?.lat && me?.lon) {
+    bounds.push([me.lat, me.lon]);
+  }
+
+  // si hay algo que mostrar
+  if (bounds.length > 0) {
+    if (bounds.length === 1) {
+      // solo un punto → centrar directo
+      mapRef.current.setView(bounds[0], 15, { animate: true });
+    } else {
+      // varios puntos → encuadrar todo
+      mapRef.current.fitBounds(bounds, {
+        padding: [80, 80],
+        animate: true
+      });
+    }
+  }
+}
+
+    
   } catch (err) {
     console.error('Error cargando trabajadores:', err.message);
     toast.error('Error cargando trabajadores');
@@ -1342,50 +1416,89 @@ useEffect(() => {
 
 
 
-      {/* PANEL INFERIOR */}
-      <div
-        className="fixed left-0 right-0 bottom-0 z-[9999] bg-white rounded-t-3xl border-t border-gray-200 overflow-y-auto"
-        style={{ maxHeight: '45vh' }}
+     {/* ===========================
+     PANEL FLOTANTE ESTILO UBER
+     =========================== */}
+<motion.div
+  animate={{
+    y:
+      panelLevel === "mini" ? 260 :
+      panelLevel === "mid" ? 100 :
+      0,
+  }}
+  transition={{ type: "spring", stiffness: 150, damping: 20 }}
+  className="fixed left-0 right-0 bottom-0 z-[9999]
+             bg-white rounded-t-3xl shadow-xl border-t border-gray-200"
+  style={{ height: "50vh" }}
+>
+  {/* Handle para arrastrar / tocar */}
+  <div
+    onClick={() =>
+      togglePanel(
+        panelLevel === "mid" ? "full" :
+        panelLevel === "full" ? "mini" :
+        "mid"
+      )
+    }
+    className="w-full flex justify-center py-3 cursor-pointer"
+  >
+    <div className="h-1.5 w-12 bg-gray-300 rounded-full"></div>
+  </div>
+
+  {/* Contenido */}
+  <div className="px-5 pb-6 overflow-y-auto h-full">
+    <h2 className="text-center text-lg font-bold text-emerald-600 mb-4">
+      ManosYA
+    </h2>
+
+    <div className="grid grid-cols-3 gap-3 mb-5">
+      <button
+        onClick={() => fetchWorkers(selectedService)}
+        className="bg-emerald-500 text-white font-semibold py-3 rounded-xl"
       >
-        <div className="flex justify-center items-center py-3">
-          <div className="h-1.5 w-12 rounded-full bg-emerald-500"></div>
-        </div>
-        <div className="px-5 pb-8">
-          <h2 className="text-center text-lg font-bold text-emerald-600 mb-3">ManosYA</h2>
-          <div className="grid grid-cols-3 gap-3 mb-5">
-            <button onClick={() => fetchWorkers(selectedService)} className="bg-emerald-500 text-white font-semibold py-3 rounded-xl">
-              🚀 Buscar Pros
-            </button>
-            <button onClick={() => router.push('/client/jobs')} className="bg-white border font-semibold py-3 rounded-xl">
-              📦 Mis pedidos
-            </button>
-            <button onClick={() => router.push('/client/new')} className="bg-white border font-semibold py-3 rounded-xl">
-              🏢 Empresarial
-            </button>
-          </div>
+        🚀 Buscar Pros
+      </button>
 
-          <div className="grid grid-cols-3 gap-2 text-sm mb-4">
-            {services.map(s => (
-              <button
-                key={s.id}
-                onClick={() => toggleService(s.id)}
-                className={`flex items-center justify-center gap-1 px-2 py-2 rounded-lg border ${
-                  selectedService === s.id
-                    ? 'bg-emerald-500 text-white border-emerald-500'
-                    : 'bg-gray-50 text-gray-700 border-gray-200'
-                }`}
-              >
-                {s.icon}
-                <span className="capitalize">{s.label}</span>
-              </button>
-            ))}
-          </div>
+      <button
+        onClick={() => router.push('/client/jobs')}
+        className="bg-white border font-semibold py-3 rounded-xl"
+      >
+        📦 Mis pedidos
+      </button>
 
-          <p className="text-xs text-gray-500 italic text-center">
-            {busy ? 'Buscando trabajadores cerca…' : `${workers.length} trabajadores activos cerca`}
-          </p>
-        </div>
-      </div>
+      <button
+        onClick={() => router.push('/client/new')}
+        className="bg-white border font-semibold py-3 rounded-xl"
+      >
+        🏢 Empresarial
+      </button>
+    </div>
+
+    <div className="grid grid-cols-3 gap-2 text-sm mb-4">
+      {services.map(s => (
+        <button
+          key={s.id}
+          onClick={() => toggleService(s.id)}
+          className={`flex items-center justify-center gap-1 px-2 py-2 rounded-lg border ${
+            selectedService === s.id
+              ? "bg-emerald-500 text-white border-emerald-500"
+              : "bg-gray-50 text-gray-700 border-gray-200"
+          }`}
+        >
+          {s.icon}
+          <span className="capitalize">{s.label}</span>
+        </button>
+      ))}
+    </div>
+
+    <p className="text-xs text-gray-500 italic text-center">
+      {busy
+        ? "Buscando trabajadores cerca…"
+        : `${workers.length} trabajadores activos cerca`}
+    </p>
+  </div>
+</motion.div>
+
 
       {/* PERFIL DEL TRABAJADOR */}
 <AnimatePresence>
