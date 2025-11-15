@@ -181,17 +181,25 @@ function Section({ title, color, list, onSelect }) {
                 </div>
               </div>
               <p className="text-sm text-gray-700 mb-2">
-                {w.bio || 'Sin descripción'}
-              </p>
-              <p className="text-xs text-gray-500 mb-2">
-                Experiencia: {w.years_experience || 0} años
-              </p>
-              <p className="text-xs text-gray-500">
-                📍{' '}
-                {w.lat && w.lng
-                  ? `${w.lat.toFixed(3)}, ${w.lng.toFixed(3)}`
-                  : 'Sin ubicación'}
-              </p>
+  {w.bio || 'Sin descripción'}
+</p>
+
+<p className="text-xs text-gray-500 mb-2">
+  Experiencia: {w.years_experience || 0} años
+</p>
+
+{/* 🏙️ CIUDAD */}
+<p className="text-xs text-gray-500 mb-2">
+  🏙️ Ciudad: {w.city || 'No seleccionado'}
+</p>
+
+<p className="text-xs text-gray-500">
+  📍{' '}
+  {w.lat && w.lng
+    ? `${w.lat.toFixed(3)}, ${w.lng.toFixed(3)}`
+    : 'Sin ubicación'}
+</p>
+
             </button>
           ))}
         </div>
@@ -214,10 +222,10 @@ function WorkerDetailModal({ worker, onClose, onVerify, busy }) {
       setLoading(true);
       try {
         const { data: profile } = await supabase
-          .from('profiles')
-          .select('email, full_name, created_at')
-          .eq('id', worker.user_id)
-          .maybeSingle();
+  .from('profiles')
+  .select('email, full_name, phone, created_at')
+  .eq('id', worker.user_id)
+  .maybeSingle();
 
         const { data: docs } = await supabase
           .from('documents')
@@ -296,6 +304,13 @@ function WorkerDetailModal({ worker, onClose, onVerify, busy }) {
                 <p className="text-sm text-gray-600">
                   {details?.profile?.email || 'Sin email'}
                 </p>
+                <p className="text-sm text-gray-600">
+  📱 {details?.profile?.phone || 'Sin número'}
+</p>
+<p className="text-sm text-gray-600">
+  🏙️ Ciudad: {worker.city || 'No seleccionado'}
+</p>
+
                 <p className="text-xs text-gray-400">
                   Registrado:{' '}
                   {details?.profile?.created_at

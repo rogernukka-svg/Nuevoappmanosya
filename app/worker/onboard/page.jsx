@@ -76,6 +76,9 @@ function OnboardForm({ user }) {
   const [bio, setBio] = useState('');
   const [yearsExp, setYearsExp] = useState('');
 
+  // Ciudad
+const [city, setCity] = useState('');
+
   // Documentación (KYC)
   const [docType, setDocType] = useState('CI');
   const [docNumber, setDocNumber] = useState('');
@@ -131,12 +134,13 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
         }
 
         const { data: wp } = await supabase
-          .from('worker_profiles')
-          .select(
-            'is_active, radius_km, bio, years_experience, last_lat, last_lon, skills'
-          )
-          .eq('user_id', user.id)
-          .maybeSingle();
+  .from('worker_profiles')
+  .select(
+    'is_active, radius_km, bio, years_experience, last_lat, last_lon, skills, city'
+  )
+  .eq('user_id', user.id)
+  .maybeSingle();
+
 
         if (wp) {
           setActive(wp.is_active ?? true);
@@ -313,6 +317,7 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
           last_lat: coords?.lat ?? null,
           last_lon: coords?.lon ?? null,
           skills,
+          city, // 👈 FALTABA
         },
         { onConflict: 'user_id' }
       );
@@ -574,6 +579,114 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
         </div>
       </section>
 
+      {/* === UBICACIÓN / CIUDAD === */}
+   
+
+<section className="bg-white border border-gray-200 shadow-sm rounded-xl p-6">
+  <h2 className="font-semibold text-gray-700 border-l-4 border-emerald-500 pl-3 mb-4">
+    Ciudad donde trabajás
+  </h2>
+<select
+  className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-emerald-500"
+  value={city}
+  onChange={(e) => setCity(e.target.value)}
+>
+  <option value="">Seleccioná una ciudad</option>
+
+    {/* === CAPITAL === */}
+    <option value="asuncion">Asunción</option>
+
+    {/* === DEPARTAMENTO CENTRAL === */}
+    <optgroup label="Central">
+      <option value="sanlorenzo">San Lorenzo</option>
+      <option value="luque">Luque</option>
+      <option value="fernando">Fernando de la Mora</option>
+      <option value="lambare">Lambaré</option>
+      <option value="nemby">Ñemby</option>
+      <option value="capiata">Capiatá</option>
+      <option value="itaugua">Itauguá</option>
+      <option value="villaelisa">Villa Elisa</option>
+      <option value="limpio">Limpio</option>
+      <option value="mariano">Mariano Roque Alonso</option>
+    </optgroup>
+
+    {/* === ALTO PARANÁ === */}
+    <optgroup label="Alto Paraná">
+      <option value="cde">Ciudad del Este</option>
+      <option value="minga">Minga Guazú</option>
+      <option value="hernandarias">Hernandarias</option>
+      <option value="pfranco">Presidente Franco</option>
+      <option value="itambe">Itambé</option>
+    </optgroup>
+
+    {/* === ITAPÚA === */}
+    <optgroup label="Itapúa">
+      <option value="encarnacion">Encarnación</option>
+      <option value="cambyreta">Cambyretá</option>
+      <option value="hnaguazu">Hohenau</option>
+      <option value="obligado">Obligado</option>
+      <option value="bella-vista">Bella Vista</option>
+    </optgroup>
+
+    {/* === CAAGUAZÚ === */}
+    <optgroup label="Caaguazú">
+      <option value="coroneloviedo">Coronel Oviedo</option>
+      <option value="jidominguez">J. Eulogio Estigarribia</option>
+      <option value="repatriacion">Repatriación</option>
+      <option value="raul-pena">Raúl Peña</option>
+    </optgroup>
+
+    {/* === CORDILLERA === */}
+    <optgroup label="Cordillera">
+      <option value="caacupe">Caacupé</option>
+      <option value="sanber">San Bernardino</option>
+      <option value="eusebio-ayala">Eusebio Ayala</option>
+    </optgroup>
+
+    {/* === GUAIRÁ === */}
+    <optgroup label="Guairá">
+      <option value="villarrica">Villarrica</option>
+    </optgroup>
+
+    {/* === PARAGUARÍ === */}
+    <optgroup label="Paraguarí">
+      <option value="paraguari">Paraguarí</option>
+      <option value="itas">Ybycuí</option>
+    </optgroup>
+
+    {/* === MISIONES === */}
+    <optgroup label="Misiones">
+      <option value="sanjuan">San Juan Bautista</option>
+    </optgroup>
+
+    {/* === CONCEPCIÓN === */}
+    <optgroup label="Concepción">
+      <option value="concepcion">Concepción</option>
+      <option value="horqueta">Horqueta</option>
+    </optgroup>
+
+    {/* === AMAMBAY === */}
+    <optgroup label="Amambay">
+      <option value="pedrojuan">Pedro Juan Caballero</option>
+      <option value="capitan-bado">Capitán Bado</option>
+    </optgroup>
+
+    {/* === PRESIDENTE HAYES === */}
+    <optgroup label="Presidente Hayes">
+      <option value="villa-hayes">Villa Hayes</option>
+      <option value="benjamin-aceval">Benjamín Aceval</option>
+    </optgroup>
+
+    {/* === BOQUERÓN === */}
+    <optgroup label="Boquerón">
+      <option value="filadelfia">Filadelfia</option>
+      <option value="loma-plata">Loma Plata</option>
+      <option value="neuland">Neuland</option>
+    </optgroup>
+  </select>
+</section>
+
+
       {/* === DOCUMENTACIÓN === */}
       <section className="bg-white border border-gray-200 shadow-sm rounded-xl p-6">
         <h2 className="font-semibold text-gray-700 border-l-4 border-emerald-500 pl-3 mb-4">
@@ -788,4 +901,3 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
     </form>
   );
 }
- 
