@@ -89,8 +89,18 @@ function avatarIcon(url, worker) {
         border:3px solid ${color};
         filter:drop-shadow(0 0 8px ${color}40);"></div>
       <img src="${url || '/avatar-fallback.png'}"
-           style="position:absolute;inset:0;width:100%;height:100%;
-           object-fit:cover;border-radius:50%;" />
+  onerror="this.src='/avatar-fallback.png'"
+  style="
+    position:absolute;
+    top:0; left:0;
+    width:100%; height:100%;
+    object-fit:cover;
+    object-position:center;
+    border-radius:50%;
+    aspect-ratio: 1/1;
+  "
+/>
+
     </div>`;
 
   return L.divIcon({ html, iconSize: [size, size], className: '' });
@@ -217,6 +227,9 @@ const [statusBanner, setStatusBanner] = useState(null);
     { id: 'jardinería', label: 'Jardinería', icon: <Leaf size={18} /> },
     { id: 'mascotas', label: 'Mascotas', icon: <PawPrint size={18} /> },
     { id: 'emergencia', label: 'Emergencia', icon: <Flame size={18} /> },
+    { id: 'car detailing', label: 'Car Detailing', icon: <Sparkles size={18} /> },
+
+
   ];
 /* 🧠 Restaurar estado completo (pedido + chat) desde localStorage */
 useEffect(() => {
@@ -1230,8 +1243,9 @@ function calcularPrecio(
     mascotas:     { tipo: 'hora', hora: 20000, porKm: 1000 },
     construcción: { tipo: 'mixto', base: 60000, horaExtra: 25000, porKm: 2500 },
     emergencia:   { tipo: 'fijo', base: 60000, porKm: 2500, urgencia: 0.3 },
-  };
-
+    // ⭐ Nuevo
+  'car detailing': { tipo: 'fijo', base: 70000, porKm: 2000 },
+};
   let servicioBase = servicio?.toLowerCase();
 
   // 🧠 Si no hay servicio seleccionado, intentar deducirlo desde worker.skills
@@ -1515,10 +1529,15 @@ useEffect(() => {
        {/* 🧑 Avatar con verificación */}
 <div className="relative w-20 h-20 mx-auto mb-2">
   <img
-    src={selected.avatar_url || '/avatar-fallback.png'}
-    className="w-20 h-20 rounded-full border-4 border-emerald-500 shadow-md"
-    alt="avatar"
-  />
+  src={selected.avatar_url || '/avatar-fallback.png'}
+  onError={(e) => { e.currentTarget.src = '/avatar-fallback.png' }}
+  className="
+    w-20 h-20 rounded-full border-4 border-emerald-500 shadow-md
+    object-cover object-center
+  "
+  alt="avatar"
+/>
+
   {selected.worker_verified && selected.profile_verified && (
     <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-1.5 border-2 border-white shadow">
       <CheckCircle2 size={14} className="text-white" />

@@ -149,6 +149,8 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
           setYearsExp(wp.years_experience ?? '');
           if (wp.last_lat && wp.last_lon) setCoords({ lat: wp.last_lat, lon: wp.last_lon });
           if (wp.skills) setSkills(Array.isArray(wp.skills) ? wp.skills : wp.skills?.split?.(',') || []);
+          if (wp.city) setCity(wp.city);
+
         }
 
         const { data: docs } = await supabase
