@@ -1,0 +1,52 @@
+{
+  "packageId": "app.manosya.client",
+  "host": "www.manosya.app",
+  "name": "ManosYA",
+  "launcherName": "ManosYA",
+  "display": "standalone",
+  "themeColor": "#FF14B8",
+  "themeColorDark": "#000000",
+  "navigationColor": "#000000",
+  "navigationColorDark": "#000000",
+  "navigationDividerColor": "#000000",
+  "navigationDividerColorDark": "#000000",
+  "backgroundColor": "#F9FAFB",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://www.manosya.app/icons/icon-512x512.png",
+  "maskableIconUrl": "https://www.manosya.app/icons/icon-512-maskable.png",
+  "monochromeIconUrl": "https://www.manosya.app/icons/icon-512-monochrome.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "D:\\CARPETA ROGER\\CONESTESOYBILLONARIOYALOSOY\\jobs-mvp-next-pro-main\\android.keystore",
+    "alias": "android"
+  },
+  "appVersionName": "1",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://www.manosya.app/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {
+    "locationDelegation": {
+      "enabled": true
+    }
+  },
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://www.manosya.app/",
+  "minSdkVersion": 21,
+  "orientation": "portrait",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": [],
+  "launchHandlerClientMode": "",
+  "displayOverride": [],
+  "appVersion": "1"
+}
