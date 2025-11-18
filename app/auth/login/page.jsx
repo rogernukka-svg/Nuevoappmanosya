@@ -77,7 +77,7 @@ export default function LoginManosYA() {
     }
   }
 
-  // 🚀 Login con Google — Corregido para evitar error 403 disallowed_useragent
+  // 🚀 Login con Google — Fix definitivo error 403 disallowed_useragent
   async function handleLoginWithGoogle() {
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -89,15 +89,20 @@ export default function LoginManosYA() {
               : 'https://manosya.app/auth/callback',
 
           flow: 'pkce',
-          queryParams: { prompt: 'select_account' }
+          queryParams: { prompt: 'select_account' },
+          skipBrowserRedirect: true
         },
       });
 
       if (error) throw error;
 
-      if (data?.url) window.location.href = data.url;
+      // ⭐ Evita el bloqueo de Google: se abre Chrome externo
+      if (data?.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+      }
 
     } catch (err) {
+      console.error(err);
       toast.error('Error al conectar con Google.');
     }
   }
