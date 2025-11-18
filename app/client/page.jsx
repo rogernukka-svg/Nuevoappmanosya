@@ -1337,7 +1337,12 @@ useEffect(() => {
     whenCreated={(map) => (mapRef.current = map)}
   >
     <ChangeView center={center} />
-    <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+    <TileLayer
+  attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+  url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+/>
+
+
    {Array.isArray(route) &&
   route.length === 2 &&
   Array.isArray(route[0]) &&
