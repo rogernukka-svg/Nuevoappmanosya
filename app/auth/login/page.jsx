@@ -77,36 +77,6 @@ export default function LoginManosYA() {
     }
   }
 
-  // 🚀 Login con Google — Fix definitivo error 403 disallowed_useragent
-  async function handleLoginWithGoogle() {
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo:
-            process.env.NODE_ENV === 'development'
-              ? 'http://localhost:3000/auth/callback'
-              : 'https://manosya.app/auth/callback',
-
-          flow: 'pkce',
-          queryParams: { prompt: 'select_account' },
-          skipBrowserRedirect: true
-        },
-      });
-
-      if (error) throw error;
-
-      // ⭐ Evita el bloqueo de Google: se abre Chrome externo
-      if (data?.url) {
-        window.open(data.url, '_blank', 'noopener,noreferrer');
-      }
-
-    } catch (err) {
-      console.error(err);
-      toast.error('Error al conectar con Google.');
-    }
-  }
-
   if (checkingSession) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white text-emerald-600">
@@ -171,20 +141,6 @@ export default function LoginManosYA() {
               : 'Crear cuenta'}
           </button>
         </form>
-
-        <div className="mt-4">
-          <button
-            onClick={handleLoginWithGoogle}
-            className="w-full flex items-center justify-center gap-2 py-3 border border-gray-300 hover:bg-gray-50 rounded-xl transition text-gray-700 font-medium"
-          >
-            <img
-              src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
-              alt="Google"
-              className="w-5 h-5"
-            />
-            Continuar con Google
-          </button>
-        </div>
 
         <div className="mt-4 text-sm text-gray-600 text-center">
           {mode === 'login' ? (
