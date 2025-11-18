@@ -56,17 +56,29 @@ export default function ClientRoot({ children }) {
     }
 
     // 🧠 Listener global de sesión Supabase
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === "SIGNED_IN" && session?.user) {
-          console.log("✅ Sesión activa:", session.user.email);
-        }
-        if (event === "SIGNED_OUT") {
-          console.log("🚪 Sesión cerrada → redirigiendo a /login");
-          router.replace("/login");
-        }
+   const { data: { subscription } } = supabase.auth.onAuthStateChange(
+  async (event, session) => {
+    if (event === "SIGNED_IN" && session?.user) {
+      console.log("🟢 Sesión activa:", session.user.email);
+
+      // 🛎 Intentar registrar la suscripción PUSH
+      try {
+        const { registerPushSubscription } = await import("@/lib/pushSubscription");
+
+        await registerPushSubscription(session.user.id);
+        console.log("🔔 Push subscription registrada");
+      } catch (err) {
+        console.warn("⚠ No se pudo registrar push subscription:", err);
       }
-    );
+    }
+
+    if (event === "SIGNED_OUT") {
+      console.log("🚪 Sesión cerrada → redirigiendo a /login");
+      router.replace("/login");
+    }
+  }
+);
+
 
     return () => {
       subscription.unsubscribe();

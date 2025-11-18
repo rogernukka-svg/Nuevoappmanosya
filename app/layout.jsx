@@ -76,7 +76,8 @@ export default function RootLayout({ children }) {
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
                   navigator.serviceWorker
-                    .register('/sw.js')
+  .register('/service-worker.js')
+
                     .then(() => console.log('🟢 Service Worker ManosYA activo'))
                     .catch(err => console.error('❌ Error registrando SW:', err));
                 });

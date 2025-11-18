@@ -16,11 +16,6 @@ export default function LoginManosYA() {
   const [busy, setBusy] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
 
-  // 🌟 Estados nuevos para la instalación PWA
-  const [installPrompt, setInstallPrompt] = useState(null);
-  const [showInstallBanner, setShowInstallBanner] = useState(false);
-
-  // 🔍 Verificar sesión activa
   useEffect(() => {
     const checkSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -34,30 +29,6 @@ export default function LoginManosYA() {
     checkSession();
   }, [router]);
 
-  // 📱 Detectar si se puede instalar la app
-  useEffect(() => {
-    const handler = (e) => {
-      e.preventDefault();
-      setInstallPrompt(e);
-      setShowInstallBanner(true);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  // 🚀 Instalar la app
-  async function handleInstall() {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') {
-      toast.success('¡Gracias por instalar ManosYA! 🎉');
-    }
-    setInstallPrompt(null);
-    setShowInstallBanner(false);
-  }
-
-  // 🚀 Login normal
   async function handleLogin(e) {
     e.preventDefault();
     setBusy(true);
@@ -76,7 +47,6 @@ export default function LoginManosYA() {
     }
   }
 
-  // 🧩 Registro
   async function handleSignup(e) {
     e.preventDefault();
     setBusy(true);
@@ -107,7 +77,7 @@ export default function LoginManosYA() {
     }
   }
 
-  // 🚀 Login con Google — YA FUNCIONANDO EN ANDROID, PWA, CHROME
+  // 🚀 Login con Google — Corregido para evitar error 403 disallowed_useragent
   async function handleLoginWithGoogle() {
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -119,13 +89,12 @@ export default function LoginManosYA() {
               : 'https://manosya.app/auth/callback',
 
           flow: 'pkce',
-          skipBrowserRedirect: true,
+          queryParams: { prompt: 'select_account' }
         },
       });
 
       if (error) throw error;
 
-      // 🔥 Para Android/PWA: abrir Chrome directamente
       if (data?.url) window.location.href = data.url;
 
     } catch (err) {
@@ -133,7 +102,6 @@ export default function LoginManosYA() {
     }
   }
 
-  // 🕓 Cargando sesión
   if (checkingSession) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white text-emerald-600">
@@ -142,10 +110,8 @@ export default function LoginManosYA() {
     );
   }
 
-  // 💎 UI limpia
   return (
     <div className="min-h-screen flex flex-col justify-center items-center px-6 bg-gradient-to-b from-white to-emerald-50 font-[var(--font-manrope)]">
-      {/* Logo */}
       <div className="text-center mb-8">
         <h1 className="text-4xl font-extrabold tracking-tight">
           <span className="text-[#111827]">Manos</span>
@@ -156,7 +122,6 @@ export default function LoginManosYA() {
         </p>
       </div>
 
-      {/* Formulario */}
       <div className="w-full max-w-sm bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <form
           onSubmit={mode === 'login' ? handleLogin : handleSignup}
@@ -202,7 +167,6 @@ export default function LoginManosYA() {
           </button>
         </form>
 
-        {/* 🚀 Login con Google */}
         <div className="mt-4">
           <button
             onClick={handleLoginWithGoogle}
@@ -217,7 +181,6 @@ export default function LoginManosYA() {
           </button>
         </div>
 
-        {/* Cambiar modo */}
         <div className="mt-4 text-sm text-gray-600 text-center">
           {mode === 'login' ? (
             <>
@@ -245,63 +208,17 @@ export default function LoginManosYA() {
 
       <p className="text-xs text-gray-500 text-center mt-4 leading-snug">
         Al continuar, estás de acuerdo con nuestras{' '}
-        <a
-          href="/terms-of-use"
-          target="_blank"
-          className="text-emerald-600 hover:text-emerald-700 font-medium"
-        >
+        <a href="/terms-of-use" target="_blank" className="text-emerald-600 hover:text-emerald-700 font-medium">
           condiciones de uso
-        </a>{' '}
-        y nuestros{' '}
-        <a
-          href="/privacy-policy"
-          target="_blank"
-          className="text-emerald-600 hover:text-emerald-700 font-medium"
-        >
+        </a>{' '}y nuestros{' '}
+        <a href="/privacy-policy" target="_blank" className="text-emerald-600 hover:text-emerald-700 font-medium">
           cuidados de privacidad
         </a>.
       </p>
 
-      {/* Footer */}
       <p className="text-xs text-gray-400 mt-8 text-center max-w-xs">
         🌎 En ManosYA, cada persona tiene algo valioso que ofrecer.
       </p>
-
-      {/* 📲 Banner PWA */}
-      {showInstallBanner && (
-        <div className="fixed bottom-4 inset-x-0 flex justify-center z-50 animate-fadeIn">
-          <div className="backdrop-blur-md bg-white/90 border border-gray-200 shadow-xl rounded-2xl px-5 py-4 w-[90%] max-w-sm text-center">
-            <p className="text-gray-700 font-semibold mb-1">
-              📱 Instalá <span className="text-emerald-600 font-bold">ManosYA</span>
-            </p>
-            <p className="text-xs text-gray-500 mb-3">
-              Agregalo a tu pantalla para acceso rápido
-            </p>
-            <button
-              onClick={handleInstall}
-              className="px-4 py-2 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition font-medium text-sm"
-            >
-              Instalar
-            </button>
-          </div>
-
-          <style jsx>{`
-            .animate-fadeIn {
-              animation: fadeIn 0.35s ease-out;
-            }
-            @keyframes fadeIn {
-              from {
-                opacity: 0;
-                transform: translateY(12px);
-              }
-              to {
-                opacity: 1;
-                transform: translateY(0);
-              }
-            }
-          `}</style>
-        </div>
-      )}
     </div>
   );
 }
