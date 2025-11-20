@@ -1,7 +1,8 @@
 import "./globals.css";
 import { Inter, Manrope } from "next/font/google";
 import { Toaster } from "sonner";
-import ClientOnlyLayout from "./ClientOnlyLayout"; // 👈 lógica cliente (roles, rutas, etc.)
+import ClientOnlyLayout from "./ClientOnlyLayout";
+import GlobalAudio from "@/components/GlobalAudio";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
@@ -33,16 +34,19 @@ export default function RootLayout({ children }) {
         <meta name="theme-color" content="#14B8A6" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
         <meta name="apple-mobile-web-app-title" content="ManosYA" />
         <meta name="application-name" content="ManosYA" />
 
-        {/* ✅ Favicon / Icons / Manifest */}
+        {/* Icons */}
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="apple-touch-icon" href="/icons/icon-512x512.png" />
         <link rel="manifest" href="/manifest.json" />
 
-        {/* ✅ Evita FOUC (flash blanco antes de hidratar) */}
+        {/* Evita FOUC */}
         <style>{`html:not(.hydrated){visibility:hidden}`}</style>
         <script
           dangerouslySetInnerHTML={{
@@ -66,6 +70,9 @@ export default function RootLayout({ children }) {
         {/* 🌟 Sistema global de notificaciones */}
         <Toaster position="top-center" richColors />
 
+        {/* 🎧 AUDIO GLOBAL — Persistente en TODA la app */}
+        <GlobalAudio />
+
         {/* ⚙️ Layout dinámico para roles y navegación */}
         <ClientOnlyLayout>{children}</ClientOnlyLayout>
 
@@ -76,12 +83,25 @@ export default function RootLayout({ children }) {
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
                   navigator.serviceWorker
-  .register('/service-worker.js')
-
+                    .register('/service-worker.js')
                     .then(() => console.log('🟢 Service Worker ManosYA activo'))
                     .catch(err => console.error('❌ Error registrando SW:', err));
                 });
               }
+            `,
+          }}
+        />
+
+        {/* 🎵 Habilitar audio al primer toque del usuario */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              document.addEventListener("click", () => {
+                const audio = document.querySelector("audio");
+                if (audio && audio.paused) {
+                  audio.play().catch(()=>{});
+                }
+              }, { once: true });
             `,
           }}
         />

@@ -10,41 +10,37 @@ export default function RootPage() {
   const router = useRouter();
 
   useEffect(() => {
+    // 🔊 Forzar que el audio global suene desde el primer segundo del splash
+    setTimeout(() => {
+      const audio = document.querySelector("audio");
+      if (audio) {
+        audio.volume = 1;
+        audio.play().catch(() => {});
+      }
+    }, 100); // empieza casi instantáneo
+
     async function init() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
       const savedRole = localStorage.getItem('app_role');
 
-      // Delay para mostrar el splash (animación + audio)
+      // ⏳ Duración visible del splash
       await new Promise((r) => setTimeout(r, 2500));
 
-      if (!user) {
-        router.replace('/auth/login');
-        return;
-      }
+      if (!user) return router.replace('/auth/login');
+      if (savedRole === 'worker') return router.replace('/worker');
+      if (savedRole === 'client') return router.replace('/client');
 
-      if (savedRole === 'worker') {
-        router.replace('/worker');
-      } else if (savedRole === 'client') {
-        router.replace('/client');
-      } else {
-        router.replace('/role-selector');
-      }
+      router.replace('/role-selector');
     }
+
     init();
   }, [router]);
 
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-black text-emerald-400 font-[var(--font-manrope)] overflow-hidden relative">
-
-      {/* 🎵 AUDIO DE FONDO */}
-      <audio
-        src="/audios/manosya_intro.mp3" 
-        autoPlay
-        playsInline
-        className="hidden"
-      />
 
       {/* 💠 Luz suave estilo Apple */}
       <motion.div
@@ -64,7 +60,7 @@ export default function RootPage() {
         <span className="text-emerald-400">YA</span>
       </motion.h1>
 
-      {/* ✨ Mensaje corto neuromarketing */}
+      {/* ✨ Mensaje neuromarketing */}
       <motion.p
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -74,7 +70,7 @@ export default function RootPage() {
         Bienvenido. Estamos preparando todo para enero.
       </motion.p>
 
-      {/* ⏳ Indicador minimalista */}
+      {/* ⏳ Indicador */}
       <motion.div
         initial={{ scaleX: 0 }}
         animate={{ scaleX: 1 }}
@@ -82,7 +78,7 @@ export default function RootPage() {
         className="w-40 h-[2px] bg-emerald-400/40 mt-8 origin-left rounded-full"
       />
 
-      {/* 🌫️ Brillo de ambiente */}
+      {/* 🌫️ Ambiente suave */}
       <motion.div
         className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,255,200,0.06)_0%,transparent_70%)]"
         animate={{ opacity: [0.05, 0.15, 0.05] }}
