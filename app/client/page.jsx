@@ -313,6 +313,7 @@ useEffect(() => {
   (async () => {
     try {
       const { data: job } = await supabase
+
         .from('jobs')
         .select('id, status, worker_id, worker_lat, worker_lng')
         .eq('client_id', me.id)

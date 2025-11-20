@@ -14,6 +14,19 @@
   --accent2: #06b6d4;      /* Cian eléctrico */
   --text-main: #111827;    /* Texto gris oscuro */
   --text-muted: #6b7280;   /* Texto gris claro */
+
+  /* === SAFE AREAS (iPhone / Android notch) === */
+  --safe-area-top: env(safe-area-inset-top);
+  --safe-area-bottom: env(safe-area-inset-bottom);
+}
+
+/* === Utilidades Safe Area === */
+.safe-top {
+  padding-top: max(var(--safe-area-top), 12px);
+}
+
+.safe-bottom {
+  padding-bottom: max(var(--safe-area-bottom), 12px);
 }
 
 /* === Reset base === */
@@ -154,6 +167,11 @@ html, body {
   transition: all .3s ease;
 }
 
+/* Seguro en notch */
+.site-header.safe-top {
+  padding-top: max(var(--safe-area-top), 6px);
+}
+
 .site-header__inner {
   max-width: 1120px;
   margin: 0 auto;
@@ -192,6 +210,9 @@ html, body {
   grid-template-columns: repeat(4, 1fr);
   text-align: center;
   z-index: 40;
+
+  /* Safe area abajo */
+  padding-bottom: max(env(safe-area-inset-bottom), 10px);
 }
 
 .site-tabs button {
@@ -261,6 +282,7 @@ html, body {
   max-height: 88vh;
   overflow-y: auto;
   animation: slideUp .4s ease;
+  padding-bottom: max(env(safe-area-inset-bottom), 12px);
 }
 @keyframes slideUp {
   from { transform: translateY(40px); opacity: 0; }
