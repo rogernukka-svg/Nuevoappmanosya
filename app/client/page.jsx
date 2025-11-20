@@ -180,10 +180,11 @@ export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
-  const markersRef = useRef({}); // 🧭 guarda refs de marcadores por user_id
+  const markersRef = useRef({}); // guarda refs de marcadores por user_id
 
 
-  const [center, setCenter] = useState(null);
+  const DEFAULT_CENTER = [-23.4437, -58.4400]; // Centro real del país
+  const [center, setCenter] = useState(DEFAULT_CENTER);
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
   const [workers, setWorkers] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -192,7 +193,7 @@ export default function MapPage() {
   const [route, setRoute] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
   // 🟢 Panel estilo Uber (3 niveles)
-const [panelLevel, setPanelLevel] = useState("mid"); 
+const [panelLevel, setPanelLevel] = useState("hidden"); 
 // niveles: "mini" | "mid" | "full"
 
 const togglePanel = (level) => {
@@ -210,9 +211,10 @@ const [sending, setSending] = useState(false);
 const inputRef = useRef(null);
 const bottomRef = useRef(null);
 const chatChannelRef = useRef(null);
+const sendSoundRef = useRef(null);
 const soundRef = useRef(null);
 const [rating, setRating] = useState(0);
-const [comment, setComment] = useState('');
+const [comment, setComment] = useState('') 
 
 // 🧩 Nuevo: indicador de mensajes sin leer
 const [hasUnread, setHasUnread] = useState(false);
@@ -353,53 +355,48 @@ useEffect(() => {
     })();
   }, [router]);
 
-/* === Geoloc optimizada estilo Uber — versión PRO === */
+/* === GEOLOC OPTIMIZADA — MAPA RÁPIDO COMO UBER === */
 useEffect(() => {
-  if (!navigator.geolocation) {
-    setCenter([-25.516, -54.616]); // fallback CDE
-    return;
-  }
+  // 1️⃣ MOSTRAR MAPA INSTANTÁNEO
+  setCenter([-23.4437, -58.4400]); // centro del país (rápido)
 
-  let firstFixDone = false;
+  if (!navigator.geolocation) return;
+
+  let firstFix = false;
 
   const watcher = navigator.geolocation.watchPosition(
-    pos => {
+    (pos) => {
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
 
-      // 🔒 Evitar coordenadas inválidas
       if (!Number(lat) || !Number(lon)) return;
 
-      // Siempre actualizamos la posición del cliente
-      setMe(prev => ({ ...prev, lat, lon }));
+      // actualizar mi ubicación SIEMPRE
+      setMe((prev) => ({ ...prev, lat, lon }));
 
-      // 🎯 CENTRADO SOLO UNA VEZ AL ENTRAR
-      if (!firstFixDone) {
-        firstFixDone = true;
-
+      // 2️⃣ SOLO CENTRAR UNA VEZ (no mover cada vez)
+      if (!firstFix) {
+        firstFix = true;
         setCenter([lat, lon]);
 
         if (mapRef.current) {
           mapRef.current.setView([lat, lon], 15, { animate: true });
         }
       }
-
-      // 💨 Movimiento suave opcional
-      // mapRef.current?.panTo([lat, lon], { animate: true });
     },
-    err => {
+    (err) => {
       console.warn("GPS error:", err);
-      setCenter([-25.516, -54.616]);
     },
     {
       enableHighAccuracy: true,
-      maximumAge: 2000,
-      timeout: 10000
+      maximumAge: 3000,
+      timeout: 5000,
     }
   );
 
   return () => navigator.geolocation.clearWatch(watcher);
 }, []);
+
 
 
 
@@ -475,10 +472,11 @@ if (mapRef.current) {
   }
 } // ✅ cierre correcto de fetchWorkers
 
-// Ejecutar automáticamente al cargar la página
+// ⚡ Cargar trabajadores DESPUÉS del mapa (mejora la velocidad)
 useEffect(() => {
-  fetchWorkers();
+  setTimeout(() => fetchWorkers(), 350);
 }, []);
+
 
 
 // 🛰️ Realtime instantáneo de cambios de estado (busy / available / paused)
@@ -1328,19 +1326,36 @@ useEffect(() => {
   </div>
 )}
 
-      {/* MAPA */}
+{/* MAPA */}
 <div className="absolute inset-0 z-0">
   <MapContainer
-    center={center}
-    zoom={13}
+    center={[-24.8, -56.5]}   // 🎯 Centro óptimo: Paraguay visible completo
+    zoom={7}                  // 🔎 Zoom que muestra el país entero
+    minZoom={5}
+    maxZoom={19}
     style={{ height: '100%', width: '100%' }}
     whenCreated={(map) => (mapRef.current = map)}
   >
-    <ChangeView center={center} />
+
+
+    {/* 🗺️ CARTO Light (mapa blanco minimalista) */}
     <TileLayer
-  attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-  url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-/>
+      url="https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+      attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+      updateWhenIdle={true}
+      updateWhenZooming={false}
+      keepBuffer={2}
+    />
+
+
+
+
+
+
+
+
+
+
 
 
    {Array.isArray(route) &&
@@ -1435,88 +1450,126 @@ useEffect(() => {
 
 
 
-     {/* ===========================
-     PANEL FLOTANTE ESTILO UBER
-     =========================== */}
+    {/* ===========================
+     PANEL MINI PROFESIONAL
+   =========================== */}
 <motion.div
-  animate={{
-    y:
-      panelLevel === "mini" ? 260 :
-      panelLevel === "mid" ? 100 :
-      0,
-  }}
+  animate={{ y: 0 }}
   transition={{ type: "spring", stiffness: 150, damping: 20 }}
   className="fixed left-0 right-0 bottom-0 z-[9999]
              bg-white rounded-t-3xl shadow-xl border-t border-gray-200"
-  style={{ height: "50vh" }}
+  style={{ height: "150px" }}
 >
-  {/* Handle para arrastrar / tocar */}
-  <div
-    onClick={() =>
-      togglePanel(
-        panelLevel === "mid" ? "full" :
-        panelLevel === "full" ? "mini" :
-        "mid"
-      )
-    }
-    className="w-full flex justify-center py-3 cursor-pointer"
-  >
+
+  {/* Handle minimal */}
+  <div className="w-full flex justify-center py-1 select-none">
     <div className="h-1.5 w-12 bg-gray-300 rounded-full"></div>
   </div>
 
-  {/* Contenido */}
-  <div className="px-5 pb-6 overflow-y-auto h-full">
-    <h2 className="text-center text-lg font-bold text-emerald-600 mb-4">
-      ManosYA
-    </h2>
+  {/* TITULO */}
+  <h2 className="text-center text-[17px] font-bold text-emerald-600 mb-2 tracking-tight">
+    ManosYA
+  </h2>
 
-    <div className="grid grid-cols-3 gap-3 mb-5">
-      <button
-        onClick={() => fetchWorkers(selectedService)}
-        className="bg-emerald-500 text-white font-semibold py-3 rounded-xl"
-      >
-        🚀 Buscar Pros
-      </button>
+  {/* BOTONES PRINCIPALES */}
+  <div className="flex justify-center gap-2 mb-2">
+    <button
+      onClick={() => fetchWorkers(selectedService)}
+      className="bg-emerald-500 text-white font-semibold px-3 py-2 rounded-lg text-sm shadow-sm active:scale-95 transition"
+    >
+      🚀 Buscar Pros
+    </button>
 
-      <button
-        onClick={() => router.push('/client/jobs')}
-        className="bg-white border font-semibold py-3 rounded-xl"
-      >
-        📦 Mis pedidos
-      </button>
+    <button
+      onClick={() => router.push('/client/jobs')}
+      className="bg-white border font-semibold px-3 py-2 rounded-lg text-sm shadow-sm active:scale-95 transition"
+    >
+      📦 Mis pedidos
+    </button>
 
-      <button
-        onClick={() => router.push('/client/new')}
-        className="bg-white border font-semibold py-3 rounded-xl"
-      >
-        🏢 Empresarial
-      </button>
+    <button
+      onClick={() => router.push('/client/new')}
+      className="bg-white border font-semibold px-3 py-2 rounded-lg text-sm shadow-sm active:scale-95 transition"
+    >
+      🏢 Empresarial
+    </button>
+  </div>
+
+  {/* ===========================
+        CARRUSEL PROFESIONAL
+     =========================== */}
+  <div className="relative px-2 pb-1">
+
+    {/* ➤ Flecha Izquierda (solo si NO está al inicio) */}
+    <div
+      id="arrowLeft"
+      className="hidden absolute left-1 top-1/2 -translate-y-1/2 z-10"
+    >
+      <div className="bg-emerald-500 w-7 h-7 rounded-full flex items-center justify-center shadow-md">
+        <svg xmlns="http://www.w3.org/2000/svg" height="18" width="18"
+          viewBox="0 0 24 24" stroke="white" fill="none" strokeWidth="2">
+          <path d="M19 12H5m6-6-6 6 6 6" />
+        </svg>
+      </div>
     </div>
 
-    <div className="grid grid-cols-3 gap-2 text-sm mb-4">
-      {services.map(s => (
-        <button
+    {/* ➤ Flecha Derecha (siempre visible al inicio) */}
+    <div
+      id="arrowRight"
+      className="absolute right-1 top-1/2 -translate-y-1/2 z-10"
+    >
+      <div className="bg-emerald-500 w-7 h-7 rounded-full flex items-center justify-center shadow-md">
+        <svg xmlns="http://www.w3.org/2000/svg" height="18" width="18"
+          viewBox="0 0 24 24" stroke="white" fill="none" strokeWidth="2">
+          <path d="M5 12h14m-6-6 6 6-6 6" />
+        </svg>
+      </div>
+    </div>
+
+    {/* CARRUSEL */}
+    <div
+      id="servicesScroll"
+      className="flex gap-3 overflow-x-auto pb-1 no-scrollbar scroll-smooth"
+      onScroll={(e) => {
+        const el = e.target;
+        const leftArrow = document.getElementById("arrowLeft");
+        const rightArrow = document.getElementById("arrowRight");
+
+        if (el.scrollLeft <= 10) {
+          leftArrow.style.display = "none";
+        } else {
+          leftArrow.style.display = "block";
+        }
+
+        if (el.scrollLeft + el.clientWidth >= el.scrollWidth - 10) {
+          rightArrow.style.display = "none";
+        } else {
+          rightArrow.style.display = "block";
+        }
+      }}
+    >
+      {services.map((s) => (
+        <div
           key={s.id}
           onClick={() => toggleService(s.id)}
-          className={`flex items-center justify-center gap-1 px-2 py-2 rounded-lg border ${
-            selectedService === s.id
-              ? "bg-emerald-500 text-white border-emerald-500"
-              : "bg-gray-50 text-gray-700 border-gray-200"
-          }`}
+          className={`
+            flex items-center gap-2 px-4 py-2 rounded-xl border text-[15px] font-medium
+            whitespace-nowrap cursor-pointer transition-all
+            ${selectedService === s.id
+              ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
+              : "bg-gray-50 text-gray-700 border-gray-200"}
+          `}
+          style={{ minWidth: "150px", justifyContent: "center" }}
         >
           {s.icon}
-          <span className="capitalize">{s.label}</span>
-        </button>
+          <span>{s.label}</span>
+        </div>
       ))}
     </div>
-
-    <p className="text-xs text-gray-500 italic text-center">
-      {busy
-        ? "Buscando trabajadores cerca…"
-        : `${workers.length} trabajadores activos cerca`}
-    </p>
   </div>
+
 </motion.div>
+
 
 
       {/* PERFIL DEL TRABAJADOR */}
