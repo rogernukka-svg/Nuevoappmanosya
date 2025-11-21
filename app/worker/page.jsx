@@ -19,9 +19,15 @@ import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
 
+/* === Leaflet Map === */
+import dynamic from "next/dynamic";
 
-
+const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
+const Marker = dynamic(() => import("react-leaflet").then(m => m.Marker), { ssr: false });
+const Popup = dynamic(() => import("react-leaflet").then(m => m.Popup), { ssr: false });
 const supabase = getSupabase();
+
 
 /* === Crear perfil si no existe === */
 async function ensureWorkerProfile(userId) {
@@ -42,7 +48,63 @@ async function ensureWorkerProfile(userId) {
     console.error('Error creando worker_profile:', err.message);
   }
 }
+const HOTSPOTS = [
+  // ======= CIUDAD DEL ESTE =======
+  { name: "Shopping Paris", lat: -25.5093, lng: -54.6111, intensity: 9 },
+  { name: "Shopping China", lat: -25.5091, lng: -54.6102, intensity: 9 },
+  { name: "Monalisa", lat: -25.5101, lng: -54.6120, intensity: 8 },
+  { name: "Microcentro CDE", lat: -25.5160, lng: -54.6118, intensity: 10 },
+  { name: "Km 4", lat: -25.5039, lng: -54.6350, intensity: 7 },
+  { name: "Km 7", lat: -25.4812, lng: -54.6250, intensity: 8 },
+  { name: "Km 8", lat: -25.4750, lng: -54.6350, intensity: 6 },
+  { name: "Km 9 Monday", lat: -25.4670, lng: -54.6420, intensity: 6 },
+  { name: "Barrio Boquerón", lat: -25.5290, lng: -54.6078, intensity: 7 },
+  { name: "Barrio Obrero", lat: -25.5247, lng: -54.6172, intensity: 6 },
 
+  // ======= MINGA GUAZÚ =======
+  { name: "Área 1 Minga", lat: -25.4974, lng: -54.6621, intensity: 8 },
+  { name: "Área 2 Minga", lat: -25.5020, lng: -54.6710, intensity: 7 },
+  { name: "Km 14 Monday", lat: -25.4370, lng: -54.7120, intensity: 6 },
+  { name: "Centro Minga", lat: -25.5085, lng: -54.6398, intensity: 7 },
+  { name: "Aviación Minga", lat: -25.4950, lng: -54.6480, intensity: 7 },
+
+  // ======= HERNANDARIAS =======
+  { name: "Costanera Hernandarias", lat: -25.4052, lng: -54.6424, intensity: 7 },
+  { name: "Centro Hernandarias", lat: -25.4062, lng: -54.6400, intensity: 8 },
+  { name: "UNINTER Hernandarias", lat: -25.4300, lng: -54.6350, intensity: 6 },
+  { name: "Itaipú Acceso 1", lat: -25.4105, lng: -54.5895, intensity: 8 },
+
+  // ======= PRESIDENTE FRANCO =======
+  { name: "Centro Franco", lat: -25.5580, lng: -54.6130, intensity: 7 },
+  { name: "Río Monday", lat: -25.5540, lng: -54.6200, intensity: 6 },
+  { name: "Fracción San Agustín", lat: -25.5480, lng: -54.5950, intensity: 7 },
+
+  // ======= ASUNCIÓN =======
+  { name: "Shopping del Sol", lat: -25.2914, lng: -57.5802, intensity: 10 },
+  { name: "Shopping Mariscal", lat: -25.2989, lng: -57.5889, intensity: 9 },
+  { name: "Villa Morra", lat: -25.2972, lng: -57.5820, intensity: 8 },
+  { name: "Las Lomas", lat: -25.2849, lng: -57.5660, intensity: 7 },
+  { name: "Centro Asunción", lat: -25.2836, lng: -57.6359, intensity: 9 },
+  { name: "Avenida Eusebio Ayala", lat: -25.3026, lng: -57.5837, intensity: 9 },
+  { name: "San Lorenzo Centro", lat: -25.3401, lng: -57.5078, intensity: 8 },
+  { name: "Universidad Nacional (UNA)", lat: -25.3385, lng: -57.5088, intensity: 7 },
+  { name: "Luque Centro", lat: -25.3204, lng: -57.4906, intensity: 7 },
+  { name: "Aeropuerto Silvio Pettirossi", lat: -25.2401, lng: -57.5139, intensity: 10 },
+
+  // ======= FERNANDO DE LA MORA =======
+  { name: "Zona Norte - Fdo", lat: -25.3070, lng: -57.5270, intensity: 7 },
+  { name: "Zona Sur - Fdo", lat: -25.3250, lng: -57.5310, intensity: 6 },
+
+  // ======= LAMBARÉ =======
+  { name: "Lambaré Centro", lat: -25.3450, lng: -57.6060, intensity: 7 },
+  { name: "Yacht y Golf Club", lat: -25.3647, lng: -57.6004, intensity: 8 },
+
+  // ======= ÑEMBY =======
+  { name: "Ñemby Centro", lat: -25.3940, lng: -57.5350, intensity: 7 },
+
+  // ======= LIMPIO =======
+  { name: "Limpio Centro", lat: -25.1590, lng: -57.4850, intensity: 6 },
+]; 
 export default function WorkerPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -55,6 +117,8 @@ export default function WorkerPage() {
   const [isActive, setIsActive] = useState(true);
   const [hasUnread, setHasUnread] = useState(false);
   const [clientTyping, setClientTyping] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [workerLocation, setWorkerLocation] = useState(null);
 
 
 
@@ -165,6 +229,8 @@ useEffect(() => {
     async (pos) => {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
+      setWorkerLocation({ lat, lng });
+
 
       const now = Date.now();
       const movedEnough =
@@ -313,6 +379,15 @@ useEffect(() => {
   loadJobs();
 }, [user?.id, status]);
 
+/* === FIX MAPA DEFORMADO EN MODAL === */
+useEffect(() => {
+  if (mapOpen) {
+    setTimeout(() => {
+      const map = document.querySelector('.leaflet-container');
+      if (map) window.dispatchEvent(new Event('resize'));
+    }, 300);
+  }
+}, [mapOpen]);
 
 
   
@@ -1043,6 +1118,89 @@ async function sendMessage() {
     <User2 size={18} /> <span>Perfil</span>
   </button>
 </div>
+{/* BOTÓN FLOTANTE PARA MAPA */}
+<button
+  onClick={() => router.push('/worker/map')}
+  className="fixed bottom-24 left-4 bg-emerald-600 text-white px-4 py-3 rounded-full shadow-lg flex items-center gap-2 z-50"
+>
+  <Map size={18} />
+  Zonas
+</button>
+
+{/* MODAL DEL MAPA */}
+<AnimatePresence>
+  {mapOpen && (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/50 z-[90] flex justify-center items-end"
+    >
+      <motion.div
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 18 }}
+        className="bg-white rounded-t-3xl w-full max-w-md shadow-xl p-2"
+      >
+        {/* ENCABEZADO */}
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <h3 className="font-semibold text-gray-800">Zonas activas</h3>
+          <button
+            onClick={() => setMapOpen(false)}
+            className="text-gray-600 hover:text-red-500"
+          >
+            <ChevronLeft className="rotate-180" size={20} />
+          </button>
+        </div>
+
+        {/* MAPA */}
+        <div
+  className="w-full rounded-xl overflow-hidden mt-2"
+  style={{
+    height: "70vh",
+    minHeight: "380px",
+    position: "relative"
+  }}
+>
+
+         <MapContainer
+  whenReady={(map) => {
+    setTimeout(() => {
+      map.target.invalidateSize();
+    }, 350);
+  }}
+  center={[-25.5093, -54.6111]}
+  zoom={12}
+  scrollWheelZoom={true}
+  style={{ height: "100%", width: "100%" }}
+>
+  {/* TILE BLANCO PREMIUM (Stadia Maps Light) */}
+  <TileLayer
+    url="https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png"
+    attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>'
+  />
+
+  {/* ICONO DEFAULT SIN ARCHIVOS – SIN ERRORES */}
+  {HOTSPOTS.map((p) => (
+    <Marker 
+      key={p.name} 
+      position={[p.lat, p.lng]}
+    >
+      <Popup>
+        <b>{p.name}</b><br />
+        Intensidad: {p.intensity}/10
+      </Popup>
+    </Marker>
+  ))}
+</MapContainer>
+
+        </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
+
 {/* 🐾 Rodolfo Supervisor */}
 <RodolfoBot
   stats={{

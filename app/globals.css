@@ -1,3 +1,5 @@
+/* === MapLibre Styles === */
+@import "maplibre-gl/dist/maplibre-gl.css";
 /* === Tailwind: SIEMPRE primero === */
 @tailwind base;
 @tailwind components;
@@ -8,21 +10,18 @@
 
 /* === Variables globales === */
 :root {
-  --bg: #ffffff;           /* Fondo blanco global */
+  --bg: #ffffff;
   --bg-alt: #f9fafb;
-  --accent: #14b8a6;       /* Verde esmeralda ManosYA */
-  --accent2: #06b6d4;      /* Cian eléctrico */
-  --text-main: #111827;    /* Texto gris oscuro */
-  --text-muted: #6b7280;   /* Texto gris claro */
+  --accent: #14b8a6;
+  --accent2: #06b6d4;
+  --text-main: #111827;
+  --text-muted: #6b7280;
 
-  /* === SAFE AREAS (iPhone / Android notch) === */
   --safe-area-top: env(safe-area-inset-top);
   --safe-area-bottom: env(safe-area-inset-bottom);
 
-  /* === Altura real del viewport móvil (fix Android/iPhone) === */
   --real-vh: 100vh;
 }
-
 
 /* === Utilidades Safe Area === */
 .safe-top {
@@ -48,19 +47,14 @@ html, body {
   font-family: Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-
-  /* ⛔ FIX: evita pull-to-refresh y scroll vertical global */
   overscroll-behavior-y: none !important;
   overscroll-behavior: none !important;
 }
 
-/* 🚫 Evita que el dispositivo escale las fuentes globalmente */
 html, body {
   -webkit-text-size-adjust: none !important;
   text-size-adjust: none !important;
 }
-
-
 
 /* === Selección de texto === */
 ::selection {
@@ -225,8 +219,6 @@ html, body {
   grid-template-columns: repeat(4, 1fr);
   text-align: center;
   z-index: 40;
-
-  /* Safe area abajo */
   padding-bottom: max(env(safe-area-inset-bottom), 10px);
 }
 
@@ -312,9 +304,37 @@ html, body {
 }
 .animate-fadeIn { animation: fadeIn .4s ease-in-out; }
 
-/* 🚫 FIX DEFINITIVO PARA ANDROID — evita pull-to-refresh */
+/* 🚫 FIX DEFINITIVO PARA ANDROID */
 .no-pull-refresh {
   overscroll-behavior-y: contain !important;
   touch-action: pan-y !important;
   overscroll-behavior: contain !important;
+}
+@keyframes slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.35s ease-out;
+}
+
+/* =====================================================
+   FIX CORRECTO PARA MOSTRAR TU MARCADOR PERSONALIZADO
+   Y OCULTAR SOLO LOS DEFAULTS
+   ===================================================== */
+
+/* Ocultar SOLO los marcadores default de Leaflet */
+.leaflet-marker-icon.leaflet-marker-icon-default,
+.leaflet-marker-shadow {
+  display: none !important;
+}
+
+.custom-spot-marker {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #10b981;
+  border: 4px solid white;
+  box-shadow: 0 4px 14px rgba(16,185,129,.4);
 }
