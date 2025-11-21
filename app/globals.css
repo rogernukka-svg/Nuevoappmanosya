@@ -8,27 +8,23 @@
 
 /* === Variables globales === */
 :root {
-  --bg: #ffffff;           /* Fondo blanco global */
+  --bg: #ffffff;
   --bg-alt: #f9fafb;
-  --accent: #14b8a6;       /* Verde esmeralda ManosYA */
-  --accent2: #06b6d4;      /* Cian eléctrico */
-  --text-main: #111827;    /* Texto gris oscuro */
-  --text-muted: #6b7280;   /* Texto gris claro */
+  --accent: #14b8a6;      
+  --accent2: #06b6d4;      
+  --text-main: #111827;    
+  --text-muted: #6b7280;   
 
-  /* === SAFE AREAS (iPhone / Android notch) === */
   --safe-area-top: env(safe-area-inset-top);
   --safe-area-bottom: env(safe-area-inset-bottom);
 
-  /* === Altura real del viewport móvil (fix Android/iPhone) === */
   --real-vh: 100vh;
 }
-
 
 /* === Utilidades Safe Area === */
 .safe-top {
   padding-top: max(var(--safe-area-top), 12px);
 }
-
 .safe-bottom {
   padding-bottom: max(var(--safe-area-bottom), 12px);
 }
@@ -40,6 +36,10 @@
   padding: 0;
 }
 
+/* ===========================================================
+   🚫 FIX DEFINITIVO PARA ANDROID + LEAFLET (PULL-TO-REFRESH)
+   =========================================================== */
+
 html, body {
   height: 100%;
   background: var(--bg);
@@ -48,23 +48,49 @@ html, body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 
-  /* ⛔ FIX: elimina pull-to-refresh en Android */
   overscroll-behavior-y: none !important;
   overscroll-behavior: none !important;
 
-  /* ⛔ FIX 2: bloquear scroll global (previene refresh al 100%) */
   overflow: hidden !important;
   position: fixed !important;
   width: 100%;
   inset: 0;
 
-  /* 🚫 Evita escalado automático de fuentes */
   -webkit-text-size-adjust: none !important;
   text-size-adjust: none !important;
 }
 
+/* 🔥 FIX REAL: el contenedor de Leaflet rompe el scroll en Android */
+.leaflet-container {
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  touch-action: none !important;
+}
 
+/* 🔥 Leaflet crea múltiples panes que deben bloquear scroll */
+.leaflet-pane,
+.leaflet-map-pane,
+.leaflet-tile-pane,
+.leaflet-overlay-pane,
+.leaflet-shadow-pane,
+.leaflet-marker-pane,
+.leaflet-tooltip-pane,
+.leaflet-popup-pane,
+.leaflet-top,
+.leaflet-bottom {
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  touch-action: none !important;
+}
 
+/* Bloquea scroll interno del contenedor de Next.js */
+#__next,
+.app-root,
+.app-container {
+  height: 100%;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
 
 /* === Selección de texto === */
 ::selection {
@@ -79,13 +105,11 @@ html, body {
     letter-spacing: -0.02em;
     color: var(--text-main);
   }
-
   a {
     color: inherit;
     text-decoration: none;
     transition: color .2s ease, opacity .2s ease;
   }
-
   a:hover {
     color: var(--accent);
   }
@@ -106,7 +130,6 @@ html, body {
     border: 1px solid #e5e7eb;
     box-shadow: 0 4px 20px rgba(0,0,0,0.04);
   }
-
   .card:hover {
     border-color: rgba(20,184,166,0.35);
     box-shadow: 0 8px 24px rgba(20,184,166,0.08);
@@ -125,7 +148,6 @@ html, body {
     color: white;
     box-shadow: 0 4px 16px rgba(20,184,166,0.35);
   }
-
   .btn-primary:hover {
     filter: brightness(1.05);
     box-shadow: 0 6px 20px rgba(20,184,166,0.45);
@@ -136,7 +158,6 @@ html, body {
     color: #111827;
     border: 1px solid #e5e7eb;
   }
-
   .btn-ghost:hover {
     background: #e5e7eb;
   }
@@ -151,13 +172,12 @@ html, body {
     outline: none;
     transition: all .2s ease;
   }
-
   .input:focus, textarea:focus {
     border-color: var(--accent);
     box-shadow: 0 0 8px rgba(20,184,166,0.25);
   }
-
-  .input::placeholder, textarea::placeholder {
+  .input::placeholder,
+  textarea::placeholder {
     color: var(--text-muted);
   }
 
@@ -185,8 +205,6 @@ html, body {
   box-shadow: 0 4px 20px rgba(0,0,0,0.05);
   transition: all .3s ease;
 }
-
-/* Seguro en notch */
 .site-header.safe-top {
   padding-top: max(var(--safe-area-top), 6px);
 }
@@ -208,16 +226,14 @@ html, body {
   color: var(--text-main);
   transition: color .25s ease;
 }
-
 .site-brand__accent {
   color: var(--accent);
 }
-
 .site-brand:hover {
   color: var(--accent2);
 }
 
-/* ===== Tabs (solo móvil) ===== */
+/* ===== Tabs ===== */
 .site-tabs {
   position: fixed;
   bottom: 0;
@@ -229,11 +245,8 @@ html, body {
   grid-template-columns: repeat(4, 1fr);
   text-align: center;
   z-index: 40;
-
-  /* Safe area abajo */
   padding-bottom: max(env(safe-area-inset-bottom), 10px);
 }
-
 .site-tabs button {
   padding: 10px 0;
   font-size: 13px;
@@ -244,12 +257,10 @@ html, body {
   color: #6b7280;
   transition: all .2s ease;
 }
-
 .site-tabs button.active {
   color: var(--accent);
   font-weight: 600;
 }
-
 .site-tabs button:hover {
   color: #111827;
 }
