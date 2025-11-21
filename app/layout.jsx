@@ -59,7 +59,12 @@ export default function RootLayout({ children }) {
         />
       </head>
 
+      {/* ⛔ FIX agregado: evita que los celulares agranden la letra */}
       <body
+        style={{
+          WebkitTextSizeAdjust: "none",
+          textSizeAdjust: "none",
+        }}
         className="
           min-h-screen flex flex-col
           bg-[#F9FAFB] text-gray-900 antialiased
