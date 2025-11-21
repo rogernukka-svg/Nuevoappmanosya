@@ -8,7 +8,15 @@ export const metadata = {
 
 export default function WorkerLayout({ children }) {
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900">
+    <div
+      className="
+        min-h-screen 
+        flex flex-col 
+        bg-gray-50 
+        text-gray-900
+        overflow-y-auto       /* ✅ FIX DE SCROLL SOLO PARA WORKER */
+      "
+    >
       {/* ===== HEADER TRABAJADOR ===== */}
       <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-5 py-4 flex items-center justify-between">
@@ -27,7 +35,9 @@ export default function WorkerLayout({ children }) {
       </header>
 
       {/* ===== CONTENIDO PRINCIPAL ===== */}
-      <main className="flex-1 bg-gray-50">{children}</main>
+      <main className="flex-1 bg-gray-50">
+        {children}
+      </main>
 
       {/* ===== FOOTER ===== */}
       <footer className="text-center text-xs text-gray-500 py-4 border-t border-gray-200 bg-white">

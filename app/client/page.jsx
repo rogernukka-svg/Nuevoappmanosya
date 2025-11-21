@@ -182,6 +182,8 @@ export default function MapPage() {
   const mapRef = useRef(null);
   const markersRef = useRef({}); // guarda refs de marcadores por user_id
  /* === Fix altura real para móviles (Android/iPhone) === */
+ const [isTyping, setIsTyping] = useState(false);
+
   useEffect(() => {
     const setVH = () => {
       document.documentElement.style.setProperty(
@@ -2022,70 +2024,111 @@ useEffect(() => {
 </AnimatePresence>
 
 
-      {/* 💬 CHAT MODAL FLOTANTE */}
+      {/* 💬 CHAT MODAL FLOTANTE PREMIUM (AGRANDADO) */}
 <AnimatePresence>
   {isChatOpen && selected && (
     <motion.div
-      className="fixed inset-0 z-[10020] bg-black/70 flex items-end justify-center"
+      className="fixed inset-0 z-[10020] bg-black/45 backdrop-blur-md flex items-end justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      transition={{ duration: 0.25 }}
     >
       <motion.div
-        className="w-full max-w-md bg-white rounded-t-3xl shadow-2xl flex flex-col"
-        initial={{ y: 300 }}
+        className="
+          w-full 
+          max-w-md 
+          h-[85vh]                  /* 🔥 AGRANDADO: 85% de la pantalla */
+          bg-white 
+          rounded-t-[38px] 
+          shadow-[0_-18px_60px_rgba(0,0,0,0.28)]
+          flex flex-col 
+          overflow-hidden
+          border border-gray-200/40
+        "
+        initial={{ y: 320 }}
         animate={{ y: 0 }}
-        exit={{ y: 300 }}
-        transition={{ type: 'spring', stiffness: 120 }}
+        exit={{ y: 320 }}
+        transition={{ type: 'spring', stiffness: 110, damping: 16 }}
       >
-        {/* Header del chat con foto + nombre */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
+
+        {/* 🧊 HEADER ESTILO IPHONE */}
+        <div className="
+          flex items-center justify-between 
+          px-6 py-5 
+          border-b border-gray-100 
+          bg-white/70 backdrop-blur-xl
+        ">
+          
+          {/* VOLVER */}
           <button
             onClick={() => {
               setIsChatOpen(false);
               setMessages([]);
-              // opcionalmente limpiar el canal:
               if (chatChannelRef.current) {
                 supabase.removeChannel(chatChannelRef.current);
                 chatChannelRef.current = null;
               }
             }}
-            className="flex items-center gap-1 text-gray-600 hover:text-red-500"
+            className="flex items-center gap-1 text-gray-500 hover:text-emerald-600 transition font-medium"
           >
-            <ChevronLeft size={18} /> Volver
+            <ChevronLeft size={22} />
+            Volver
           </button>
 
-          <div className="flex items-center gap-2">
+          {/* NOMBRE + ESTADO */}
+          <div className="flex items-center gap-3">
             <img
               src={selected.avatar_url || '/avatar-fallback.png'}
-              alt="avatar"
-              className="w-8 h-8 rounded-full border"
+              className="
+                w-11 h-11 rounded-full 
+                shadow-md border border-gray-200 object-cover
+              "
             />
-            <div className="text-sm">
-              <p className="font-semibold text-gray-800 leading-4">
-                {selected.full_name || 'Trabajador'}
+            <div className="leading-4">
+              <p className="font-semibold text-gray-800 text-[15px] tracking-tight">
+                {selected.full_name || 'Profesional'}
               </p>
-              <p className="text-xs text-gray-500 leading-4">
-                {jobStatus === 'accepted' ? '🟢 En camino' : '💬 Conectado'}
+              <p className="text-xs text-emerald-600 flex items-center gap-1">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                {jobStatus === 'accepted' ? 'En camino' : 'Disponible'}
               </p>
             </div>
           </div>
-          <div className="w-6" />
+
+          <div className="w-6"></div>
         </div>
 
-        {/* 💬 Mensajes */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-white">
+        {/* 🗨 MENSAJES — MÁS GRANDE */}
+        <div className="
+          flex-1 
+          overflow-y-auto 
+          px-5 py-5 
+          space-y-4 
+          bg-gradient-to-b from-white to-gray-50
+        ">
           {messages.length === 0 ? (
-            <p className="text-center text-gray-400 mt-6">No hay mensajes aún 📭</p>
+            <p className="text-center text-gray-400 mt-8 text-sm">
+              Inicia la conversación ✨
+            </p>
           ) : (
             messages.map((m) => {
               const mine = m.sender_id === me?.id;
               return (
-                <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                <div 
+                  key={m.id} 
+                  className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
+                >
                   <div
-                    className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm shadow-sm ${
-                      mine ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-800'
-                    }`}
+                    className={`
+                      max-w-[80%] px-4 py-3 
+                      rounded-2xl text-[15px] 
+                      shadow-sm leading-relaxed
+                      ${mine 
+                        ? 'bg-emerald-500 text-white rounded-br-none shadow-emerald-300/30' 
+                        : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
+                      }
+                    `}
                   >
                     {m.text}
                   </div>
@@ -2093,32 +2136,71 @@ useEffect(() => {
               );
             })
           )}
+
+          {/* “ESCRIBIENDO...” efecto lujo */}
+          {isTyping && (
+            <div className="flex justify-start">
+              <div className="
+                bg-white border border-gray-200 
+                px-4 py-[7px] 
+                rounded-2xl shadow-sm flex gap-[4px]
+              ">
+                <span className="animate-bounce text-gray-500">•</span>
+                <span className="animate-bounce text-gray-500 delay-100">•</span>
+                <span className="animate-bounce text-gray-500 delay-200">•</span>
+              </div>
+            </div>
+          )}
+
           <div ref={bottomRef} />
         </div>
-        {/* ✉️ Input para enviar mensajes */}
+
+        {/* ✨ INPUT PREMIUM — MÁS ALTO & MEJOR DISEÑO */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
             const value = inputRef.current?.value?.trim() || '';
             if (value) sendMessage(value);
-            if (inputRef.current) inputRef.current.value = '';
+            inputRef.current.value = '';
           }}
-          className="flex gap-2 p-3 border-t border-gray-100 bg-gray-50"
+          className="
+            flex items-center gap-3 
+            p-5 
+            bg-white/85 backdrop-blur-lg
+            border-t border-gray-200
+          "
         >
           <input
             ref={inputRef}
             type="text"
             placeholder="Escribí un mensaje…"
-            className="flex-1 bg-gray-100 rounded-xl px-3 py-3 outline-none focus:ring-2 focus:ring-emerald-400 border border-gray-200"
+            className="
+              flex-1 
+              px-5 py-3.5 
+              rounded-2xl 
+              bg-gray-100/70 
+              border border-gray-200 
+              focus:ring-2 focus:ring-emerald-400/40
+              text-gray-700 shadow-inner 
+              text-[15px]
+            "
           />
+
           <button
             type="submit"
-            disabled={sending}
-            className="px-4 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 transition disabled:opacity-60"
+            className="
+              p-4 rounded-2xl 
+              bg-emerald-500 hover:bg-emerald-600 
+              active:scale-95 
+              text-white 
+              shadow-lg shadow-emerald-300/30
+              transition
+            "
           >
-            <SendHorizontal size={18} />
+            <SendHorizontal size={22} />
           </button>
         </form>
+
       </motion.div>
     </motion.div>
   )}
