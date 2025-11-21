@@ -4,7 +4,11 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useState, useRef } from "react";
 import "leaflet/dist/leaflet.css";
-import L from "leaflet"; // ✅ Agregado
+let L;
+if (typeof window !== "undefined") {
+  L = require("leaflet");
+}
+
 
 // Heatmap (solo cliente)
 const HeatmapLayer = dynamic(() => import("@/components/HeatmapLayer"), {
