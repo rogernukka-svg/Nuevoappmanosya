@@ -18,6 +18,9 @@ export const metadata = {
     shortcut: "/favicon.ico",
     apple: "/icons/icon-192x192.png",
   },
+};
+
+export const viewport = {
   themeColor: "#14B8A6",
 };
 
