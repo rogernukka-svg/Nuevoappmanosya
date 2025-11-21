@@ -48,8 +48,19 @@ html, body {
   font-family: Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  overscroll-behavior-y: contain;
+
+  /* ⛔ FIX: evita pull-to-refresh y scroll vertical global */
+  overscroll-behavior-y: none !important;
+  overscroll-behavior: none !important;
 }
+
+/* 🚫 Evita que el dispositivo escale las fuentes globalmente */
+html, body {
+  -webkit-text-size-adjust: none !important;
+  text-size-adjust: none !important;
+}
+
+
 
 /* === Selección de texto === */
 ::selection {

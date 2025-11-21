@@ -1342,24 +1342,28 @@ useEffect(() => {
 <div
   className="absolute inset-x-0 top-0 z-0"
   style={{
-    height: "calc(var(--real-vh) - 160px)"   // ⬅️ espacio exacto para panel + carrusel
+    height: "calc(var(--real-vh) - 160px)",
+    overscrollBehavior: "none",     // ⛔ evita pull-to-refresh
+    touchAction: "none"             // ⛔ evita que la página se mueva
   }}
 >
 
   <MapContainer
     center={[-24.8, -56.5]}   // 🎯 Centro óptimo: Paraguay visible completo
-    zoom={7}                  // 🔎 Zoom que muestra el país entero
+    zoom={7}                  
     minZoom={5}
     maxZoom={19}
     style={{
       height: "100%",
       width: "100%",
-      touchAction: "none",     // ⬅️ el scroll no mueve la página, solo el mapa
-      paddingBottom: "160px"   // ⬅️ el panel ya no queda atrapado
+      touchAction: "pan-x pan-y",   // 👈 permite mover el mapa pero NO la página
+      WebkitOverflowScrolling: "touch",
+      overscrollBehavior: "none",   // ⛔ bloquea refresh vertical
+      paddingBottom: "160px"
     }}
-
     whenCreated={(map) => (mapRef.current = map)}
   >
+
 
 
 
