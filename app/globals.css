@@ -18,7 +18,11 @@
   /* === SAFE AREAS (iPhone / Android notch) === */
   --safe-area-top: env(safe-area-inset-top);
   --safe-area-bottom: env(safe-area-inset-bottom);
+
+  /* === Altura real del viewport móvil (fix Android/iPhone) === */
+  --real-vh: 100vh;
 }
+
 
 /* === Utilidades Safe Area === */
 .safe-top {

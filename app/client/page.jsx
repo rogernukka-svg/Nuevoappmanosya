@@ -181,7 +181,19 @@ export default function MapPage() {
   const router = useRouter();
   const mapRef = useRef(null);
   const markersRef = useRef({}); // guarda refs de marcadores por user_id
+ /* === Fix altura real para móviles (Android/iPhone) === */
+  useEffect(() => {
+    const setVH = () => {
+      document.documentElement.style.setProperty(
+        '--real-vh',
+        `${window.innerHeight}px`
+      );
+    };
 
+    setVH();
+    window.addEventListener('resize', setVH);
+    return () => window.removeEventListener('resize', setVH);
+  }, []);
 
   const DEFAULT_CENTER = [-23.4437, -58.4400]; // Centro real del país
   const [center, setCenter] = useState(DEFAULT_CENTER);
@@ -313,7 +325,6 @@ useEffect(() => {
   (async () => {
     try {
       const { data: job } = await supabase
-
         .from('jobs')
         .select('id, status, worker_id, worker_lat, worker_lng')
         .eq('client_id', me.id)
@@ -1306,7 +1317,7 @@ useEffect(() => {
 
 
   return (
-    <div className="relative min-h-screen bg-white">
+    <div className="fixed inset-0 bg-white overflow-hidden">
       {/* Header centrado visible */}
 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
   <button
@@ -1328,15 +1339,28 @@ useEffect(() => {
 )}
 
 {/* MAPA */}
-<div className="absolute inset-0 z-0">
+<div
+  className="absolute inset-x-0 top-0 z-0"
+  style={{
+    height: "calc(var(--real-vh) - 160px)"   // ⬅️ espacio exacto para panel + carrusel
+  }}
+>
+
   <MapContainer
     center={[-24.8, -56.5]}   // 🎯 Centro óptimo: Paraguay visible completo
     zoom={7}                  // 🔎 Zoom que muestra el país entero
     minZoom={5}
     maxZoom={19}
-    style={{ height: '100%', width: '100%' }}
+    style={{
+      height: "100%",
+      width: "100%",
+      touchAction: "none",     // ⬅️ el scroll no mueve la página, solo el mapa
+      paddingBottom: "160px"   // ⬅️ el panel ya no queda atrapado
+    }}
+
     whenCreated={(map) => (mapRef.current = map)}
   >
+
 
 
     {/* 🗺️ CARTO Light (mapa blanco minimalista) */}
@@ -1448,32 +1472,32 @@ useEffect(() => {
 </MapContainer>
 </div>
 
-
-
-
-    {/* ===========================
-     PANEL MINI PROFESIONAL
+{/* ===========================
+     PANEL MINI PROFESIONAL — FIX
    =========================== */}
 <motion.div
   animate={{ y: 0 }}
   transition={{ type: "spring", stiffness: 150, damping: 20 }}
-  className="fixed left-0 right-0 bottom-0 z-[9999]
-             bg-white rounded-t-3xl shadow-xl border-t border-gray-200"
-  style={{ height: "150px" }}
+  className="
+    absolute left-0 right-0 
+    bottom-[20px]         /* ⬅️ SUBIDO 20PX PARA QUE NO SE OCULTE */
+    z-[9999]
+    bg-white rounded-t-3xl shadow-xl border-t border-gray-200
+  "
+  style={{ height: "135px" }}   /* ⬅️ SUBIDO A 135 PARA DAR AIRE */
 >
-
-  {/* Handle minimal */}
-  <div className="w-full flex justify-center py-1 select-none">
+  {/* ===== Handle ===== */}
+  <div className="w-full flex justify-center pt-1 pb-2 select-none">
     <div className="h-1.5 w-12 bg-gray-300 rounded-full"></div>
   </div>
 
-  {/* TITULO */}
+  {/* ===== Título ===== */}
   <h2 className="text-center text-[17px] font-bold text-emerald-600 mb-2 tracking-tight">
     ManosYA
   </h2>
 
-  {/* BOTONES PRINCIPALES */}
-  <div className="flex justify-center gap-2 mb-2">
+  {/* ===== Botones principales ===== */}
+  <div className="flex justify-center gap-2 mb-3">
     <button
       onClick={() => fetchWorkers(selectedService)}
       className="bg-emerald-500 text-white font-semibold px-3 py-2 rounded-lg text-sm shadow-sm active:scale-95 transition"
@@ -1497,11 +1521,11 @@ useEffect(() => {
   </div>
 
   {/* ===========================
-        CARRUSEL PROFESIONAL
+         CARRUSEL DE SERVICIOS
      =========================== */}
   <div className="relative px-2 pb-1">
 
-    {/* ➤ Flecha Izquierda (solo si NO está al inicio) */}
+    {/* ➤ Flecha Izquierda */}
     <div
       id="arrowLeft"
       className="hidden absolute left-1 top-1/2 -translate-y-1/2 z-10"
@@ -1514,7 +1538,7 @@ useEffect(() => {
       </div>
     </div>
 
-    {/* ➤ Flecha Derecha (siempre visible al inicio) */}
+    {/* ➤ Flecha Derecha */}
     <div
       id="arrowRight"
       className="absolute right-1 top-1/2 -translate-y-1/2 z-10"
@@ -1527,7 +1551,7 @@ useEffect(() => {
       </div>
     </div>
 
-    {/* CARRUSEL */}
+    {/* Carrusel */}
     <div
       id="servicesScroll"
       className="flex gap-3 overflow-x-auto pb-1 no-scrollbar scroll-smooth"
@@ -1536,17 +1560,13 @@ useEffect(() => {
         const leftArrow = document.getElementById("arrowLeft");
         const rightArrow = document.getElementById("arrowRight");
 
-        if (el.scrollLeft <= 10) {
-          leftArrow.style.display = "none";
-        } else {
-          leftArrow.style.display = "block";
-        }
+        if (el.scrollLeft <= 10) leftArrow.style.display = "none";
+        else leftArrow.style.display = "block";
 
-        if (el.scrollLeft + el.clientWidth >= el.scrollWidth - 10) {
+        if (el.scrollLeft + el.clientWidth >= el.scrollWidth - 10)
           rightArrow.style.display = "none";
-        } else {
+        else
           rightArrow.style.display = "block";
-        }
       }}
     >
       {services.map((s) => (
@@ -1556,9 +1576,11 @@ useEffect(() => {
           className={`
             flex items-center gap-2 px-4 py-2 rounded-xl border text-[15px] font-medium
             whitespace-nowrap cursor-pointer transition-all
-            ${selectedService === s.id
-              ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
-              : "bg-gray-50 text-gray-700 border-gray-200"}
+            ${
+              selectedService === s.id
+                ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
+                : "bg-gray-50 text-gray-700 border-gray-200"
+            }
           `}
           style={{ minWidth: "150px", justifyContent: "center" }}
         >
@@ -1570,8 +1592,6 @@ useEffect(() => {
   </div>
 
 </motion.div>
-
-
 
       {/* PERFIL DEL TRABAJADOR */}
 <AnimatePresence>
