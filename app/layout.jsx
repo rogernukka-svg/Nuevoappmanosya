@@ -68,7 +68,7 @@ export default function RootLayout({ children }) {
         className="
           min-h-screen flex flex-col
           bg-[#F9FAFB] text-gray-900 antialiased
-          overflow-x-hidden overflow-y-visible
+          overflow-x-hidden overflow-y-hidden
           selection:bg-emerald-200 selection:text-emerald-800
         "
       >

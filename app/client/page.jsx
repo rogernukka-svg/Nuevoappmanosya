@@ -1315,27 +1315,20 @@ useEffect(() => {
   setPrecioEstimado(nuevoPrecio);
 }, [selectedService, distanciaKm, horasTrabajo, selected]);
 
-return (
-  <div
-    className="fixed inset-0 bg-white"
-    style={{
-      overflow: "hidden",          // evita scroll global
-      touchAction: "none",         // bloquea pull-to-refresh
-      overscrollBehavior: "none",  // elimina overscroll vertical
-      WebkitOverflowScrolling: "none"
-    }}
-  >
-    {/* Header centrado visible */}
-    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
-      <button
-        onClick={() => router.push('/role-selector')}
-        className="bg-emerald-500 text-white font-semibold px-5 py-2 rounded-xl shadow-md 
-                   hover:bg-emerald-600 active:scale-95 transition"
-      >
-        Cambiar rol
-      </button>
-    </div>
 
+  return (
+    <div className="no-pull-refresh fixed inset-0 bg-white overflow-hidden">
+
+      {/* Header centrado visible */}
+<div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
+  <button
+    onClick={() => router.push('/role-selector')}
+    className="bg-emerald-500 text-white font-semibold px-5 py-2 rounded-xl shadow-md 
+               hover:bg-emerald-600 active:scale-95 transition"
+  >
+    Cambiar rol
+  </button>
+</div>
 
 {/* 🔔 Banner elegante de estado */}
 {statusBanner && (
