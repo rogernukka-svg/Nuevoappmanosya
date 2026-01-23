@@ -88,7 +88,7 @@ export default function LoginManosYA() {
 
   if (checkingSession) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-emerald-700 font-[var(--font-manrope)]">
+      <div className="min-h-[100svh] flex items-center justify-center bg-white text-emerald-700 font-[var(--font-manrope)] px-4">
         <div className="flex flex-col items-center gap-3">
           <div className="h-10 w-10 rounded-full border-2 border-emerald-200 border-t-emerald-600 animate-spin" />
           <p className="text-sm text-gray-600">Verificando sesión...</p>
@@ -98,9 +98,9 @@ export default function LoginManosYA() {
   }
 
   return (
-    <div className="min-h-screen bg-white font-[var(--font-manrope)] flex items-center justify-center px-6 py-12">
-      <div className="w-full max-w-5xl grid lg:grid-cols-2 gap-10 items-center">
-        {/* PANEL IZQUIERDO (profesional, sin redundancia de logos) */}
+    <div className="min-h-[100svh] bg-white font-[var(--font-manrope)] flex items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
+      <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-10 items-center">
+        {/* PANEL IZQUIERDO (solo desktop) */}
         <div className="hidden lg:block">
           <div className="inline-flex items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 border border-emerald-100">
@@ -136,37 +136,34 @@ export default function LoginManosYA() {
           </p>
         </div>
 
-        {/* CARD DERECHA */}
-        <div className="w-full max-w-md mx-auto">
-          <div className="rounded-3xl border border-gray-100 bg-white shadow-[0_18px_60px_rgba(15,23,42,0.10)]">
-            {/* Header card */}
-            <div className="px-8 pt-8 pb-6 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <div className="text-lg font-extrabold tracking-tight text-gray-900">
-                  Manos<span className="text-emerald-600">YA</span>
-                </div>
+        {/* CARD */}
+        <div className="w-full mx-auto max-w-[520px]">
+          <div className="rounded-3xl sm:rounded-[28px] border border-gray-100 bg-white shadow-[0_18px_60px_rgba(15,23,42,0.10)] overflow-hidden">
+            {/* Header card (SIN LOGO: quitado “ManosYA” de adentro) */}
+            <div className="px-5 sm:px-8 pt-7 sm:pt-8 pb-5 sm:pb-6 border-b border-gray-100">
+              <div className="flex items-center justify-end">
                 <div className="text-xs text-gray-400">v1.0 Beta</div>
               </div>
 
-              <div className="mt-5">
-                <h2 className="text-2xl font-bold text-gray-900">
+              <div className="mt-2 sm:mt-3">
+                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 leading-tight">
                   {mode === 'login' ? 'Bienvenido de nuevo' : 'Crear una cuenta'}
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm sm:text-base text-gray-500 mt-1">
                   {mode === 'login'
                     ? 'Ingresá con tu correo y contraseña.'
                     : 'Completá tus datos para comenzar.'}
                 </p>
               </div>
 
-              {/* Switch modo (pro y limpio) */}
-              <div className="mt-5">
+              {/* Switch modo (grande en mobile) */}
+              <div className="mt-4 sm:mt-5">
                 <div className="inline-flex w-full rounded-2xl border border-gray-200 bg-gray-50 p-1">
                   <button
                     type="button"
                     onClick={() => setMode('login')}
                     className={[
-                      'w-1/2 py-2 text-sm font-semibold rounded-xl transition',
+                      'w-1/2 py-2.5 text-sm sm:text-base font-semibold rounded-xl transition',
                       mode === 'login'
                         ? 'bg-white text-gray-900 shadow-sm'
                         : 'text-gray-500 hover:text-gray-700',
@@ -178,7 +175,7 @@ export default function LoginManosYA() {
                     type="button"
                     onClick={() => setMode('signup')}
                     className={[
-                      'w-1/2 py-2 text-sm font-semibold rounded-xl transition',
+                      'w-1/2 py-2.5 text-sm sm:text-base font-semibold rounded-xl transition',
                       mode === 'signup'
                         ? 'bg-white text-gray-900 shadow-sm'
                         : 'text-gray-500 hover:text-gray-700',
@@ -191,8 +188,11 @@ export default function LoginManosYA() {
             </div>
 
             {/* Body card */}
-            <div className="px-8 py-7">
-              <form onSubmit={mode === 'login' ? handleLogin : handleSignup} className="space-y-4">
+            <div className="px-5 sm:px-8 py-6 sm:py-7">
+              <form
+                onSubmit={mode === 'login' ? handleLogin : handleSignup}
+                className="space-y-4 sm:space-y-5"
+              >
                 {mode === 'signup' && (
                   <Field
                     label="Nombre completo"
@@ -215,11 +215,9 @@ export default function LoginManosYA() {
                 />
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-gray-700">Contraseña</label>
+                  <label className="text-xs sm:text-sm font-semibold text-gray-700">Contraseña</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                      🔒
-                    </span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔒</span>
                     <input
                       type={showPassword ? 'text' : 'password'}
                       placeholder="••••••••"
@@ -227,12 +225,12 @@ export default function LoginManosYA() {
                       onChange={(e) => setPassword(e.target.value)}
                       required
                       autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                      className="w-full bg-gray-50 text-gray-900 placeholder:text-gray-400 pl-10 pr-16 py-3 rounded-2xl border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-200"
+                      className="w-full bg-gray-50 text-gray-900 placeholder:text-gray-400 pl-10 pr-20 py-3.5 sm:py-4 rounded-2xl border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-200 text-base"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-500 hover:text-gray-700 transition"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs sm:text-sm font-semibold text-gray-500 hover:text-gray-700 transition"
                     >
                       {showPassword ? 'OCULTAR' : 'VER'}
                     </button>
@@ -242,13 +240,13 @@ export default function LoginManosYA() {
                 <button
                   type="submit"
                   disabled={busy}
-                  className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-[0_10px_24px_rgba(16,185,129,0.20)] transition disabled:opacity-70 disabled:cursor-not-allowed"
+                  className="w-full py-3.5 sm:py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-base shadow-[0_10px_24px_rgba(16,185,129,0.20)] transition disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   {busy ? 'Procesando...' : mode === 'login' ? 'Entrar' : 'Crear cuenta'}
                 </button>
               </form>
 
-              <div className="mt-5 text-sm text-gray-600 text-center">
+              <div className="mt-5 text-sm sm:text-base text-gray-600 text-center">
                 {mode === 'login' ? (
                   <>
                     ¿No tenés cuenta?{' '}
@@ -274,7 +272,7 @@ export default function LoginManosYA() {
                 )}
               </div>
 
-              <p className="mt-6 text-xs text-gray-500 text-center leading-snug">
+              <p className="mt-6 text-[11px] sm:text-xs text-gray-500 text-center leading-snug">
                 Al continuar, aceptás nuestras{' '}
                 <a
                   href="/terms-of-use"
@@ -298,8 +296,7 @@ export default function LoginManosYA() {
             </div>
           </div>
 
-          {/* Nota corta, tecnológica, sin “frases raras” */}
-          <p className="mt-4 text-xs text-gray-400 text-center">
+          <p className="mt-4 text-xs text-gray-400 text-center px-2">
             Plataforma en evolución. Mejoras activas para enero.
           </p>
         </div>
@@ -308,7 +305,7 @@ export default function LoginManosYA() {
   );
 }
 
-/* ===================== UI helpers (sin dependencias) ===================== */
+/* ===================== UI helpers ===================== */
 
 function InfoLine({ title, desc }) {
   return (
@@ -327,7 +324,7 @@ function InfoLine({ title, desc }) {
 function Field({ label, placeholder, value, onChange, icon, type = 'text', required = false }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-semibold text-gray-700">{label}</label>
+      <label className="text-xs sm:text-sm font-semibold text-gray-700">{label}</label>
       <div className="relative">
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">{icon}</span>
         <input
@@ -336,7 +333,7 @@ function Field({ label, placeholder, value, onChange, icon, type = 'text', requi
           value={value}
           onChange={onChange}
           required={required}
-          className="w-full bg-gray-50 text-gray-900 placeholder:text-gray-400 pl-10 pr-4 py-3 rounded-2xl border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-200"
+          className="w-full bg-gray-50 text-gray-900 placeholder:text-gray-400 pl-10 pr-4 py-3.5 sm:py-4 rounded-2xl border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-200 text-base"
         />
       </div>
     </div>
