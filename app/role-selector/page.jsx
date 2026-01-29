@@ -75,7 +75,7 @@ export default function RoleSelectorPage() {
       return;
     }
 
-    // OJO: en tu DB usás .eq('id', userId). Si tu tabla profiles usa user_id, cambiá a .eq('user_id', userId)
+    // ⚠️ Si tu tabla profiles usa user_id, cambiá a .eq('user_id', userId)
     const { error } = await supabase.from('profiles').update({ role }).eq('id', userId);
 
     if (error) {
@@ -112,9 +112,12 @@ export default function RoleSelectorPage() {
     );
   }
 
-  /* 🌈 UI principal — responsive real */
+  /* 🌈 UI principal — MISMO DISEÑO, PERO CON SCROLL REAL */
   return (
-    <div className="min-h-[100dvh] bg-[#F8FAFC] px-4 sm:px-6 py-6 sm:py-8 pb-[env(safe-area-inset-bottom)] overflow-x-hidden">
+    <div
+      className="h-[100dvh] overflow-y-auto overflow-x-hidden bg-[#F8FAFC] px-4 sm:px-6 py-6 sm:py-8 pb-[env(safe-area-inset-bottom)]"
+      style={{ WebkitOverflowScrolling: 'touch' }}
+    >
       <div className="w-full max-w-[420px] mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 10, scale: 0.985 }}
@@ -167,21 +170,21 @@ export default function RoleSelectorPage() {
               }`}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-cyan-600 opacity-95" />
-              <div className="relative flex items-center gap-3 sm:gap-4 text-white">
-                <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/15 flex items-center justify-center">
+              <div className="relative flex items-start gap-3 sm:gap-4 text-white">
+                <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/15 flex items-center justify-center mt-0.5">
                   <UserRound className="w-5 h-5" />
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <div className="text-[15px] sm:text-base font-extrabold tracking-tight truncate">
+                  <div className="text-[15px] sm:text-base font-extrabold tracking-tight">
                     Pedí tu chofer y servicios
                   </div>
-                  <div className="text-[11px] sm:text-xs text-white/85 leading-snug line-clamp-2">
+                  <div className="text-[11px] sm:text-xs text-white/85 leading-snug break-words">
                     Encontrá ayuda cerca, en minutos.
                   </div>
                 </div>
 
-                <div className="shrink-0 text-[10px] sm:text-xs font-semibold bg-white/15 px-3 py-1 rounded-full">
+                <div className="shrink-0 text-[10px] sm:text-xs font-semibold bg-white/15 px-3 py-1 rounded-full mt-1">
                   Rápido
                 </div>
               </div>
@@ -199,21 +202,21 @@ export default function RoleSelectorPage() {
               }`}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-emerald-600 opacity-95" />
-              <div className="relative flex items-center gap-3 sm:gap-4 text-white">
-                <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/15 flex items-center justify-center">
+              <div className="relative flex items-start gap-3 sm:gap-4 text-white">
+                <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/15 flex items-center justify-center mt-0.5">
                   <Wrench className="w-5 h-5" />
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <div className="text-[15px] sm:text-base font-extrabold tracking-tight truncate">
+                  <div className="text-[15px] sm:text-base font-extrabold tracking-tight">
                     Ofrecer servicios
                   </div>
-                  <div className="text-[11px] sm:text-xs text-white/85 leading-snug line-clamp-2">
+                  <div className="text-[11px] sm:text-xs text-white/85 leading-snug break-words">
                     Gestión 360: trabajá con respaldo y construí reputación.
                   </div>
                 </div>
 
-                <div className="shrink-0 text-[10px] sm:text-xs font-semibold bg-white/15 px-3 py-1 rounded-full">
+                <div className="shrink-0 text-[10px] sm:text-xs font-semibold bg-white/15 px-3 py-1 rounded-full mt-1">
                   Ingresos
                 </div>
               </div>
@@ -231,21 +234,21 @@ export default function RoleSelectorPage() {
               }`}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-gray-900 to-black opacity-95" />
-              <div className="relative flex items-center gap-3 sm:gap-4 text-white">
-                <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/10 flex items-center justify-center">
+              <div className="relative flex items-start gap-3 sm:gap-4 text-white">
+                <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/10 flex items-center justify-center mt-0.5">
                   <Car className="w-5 h-5" />
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <div className="text-[15px] sm:text-base font-extrabold tracking-tight truncate">
+                  <div className="text-[15px] sm:text-base font-extrabold tracking-tight">
                     Ser chofer
                   </div>
-                  <div className="text-[11px] sm:text-xs text-white/80 leading-snug line-clamp-2">
+                  <div className="text-[11px] sm:text-xs text-white/80 leading-snug break-words">
                     Gestión 360: te documentamos para cobrar mejor y acceder a beneficios.
                   </div>
                 </div>
 
-                <div className="shrink-0 text-[10px] sm:text-xs font-semibold bg-white/10 px-3 py-1 rounded-full">
+                <div className="shrink-0 text-[10px] sm:text-xs font-semibold bg-white/10 px-3 py-1 rounded-full mt-1">
                   Seguro
                 </div>
               </div>
@@ -303,16 +306,6 @@ export default function RoleSelectorPage() {
           ManosYA — confianza, rapidez y respaldo local.
         </p>
       </div>
-
-      {/* util para line-clamp si no lo tenés */}
-      <style jsx global>{`
-        .line-clamp-2 {
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-      `}</style>
     </div>
   );
 }
