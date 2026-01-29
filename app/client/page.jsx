@@ -20,6 +20,7 @@ import {
   SendHorizontal,
   ChevronLeft,
   CheckCircle2,
+  Car, // 🚕 Taxi
 } from 'lucide-react';
 import { getSupabase } from '@/lib/supabase';
 import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
@@ -176,6 +177,41 @@ function getMinutesAgo(dateString) {
   return Math.floor(diffMs / 60000);
 }
 
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const toRad = (v) => (v * Math.PI) / 180;
+  const R = 6371; // km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function getDriverTier(selected) {
+  // Ajustá estos campos según tu DB/view:
+  // plan_tier | tier | membership | driver_tier
+  const t = (selected?.plan_tier || selected?.tier || selected?.membership || selected?.driver_tier || 'normal')
+    .toString()
+    .toLowerCase();
+
+  if (t.includes('prem')) return 'premium';
+  if (t.includes('eco')) return 'eco';
+  return 'normal';
+}
+
+function avatarRingClassForTier(tier) {
+  if (tier === 'premium') return 'border-yellow-400';  // dorado
+  if (tier === 'eco') return 'border-emerald-500';     // verde
+  return 'border-gray-300';                            // plateado
+}
+
+function formatKm(km) {
+  if (!Number.isFinite(km)) return '—';
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+}
+ 
 export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
@@ -201,11 +237,27 @@ export default function MapPage() {
   const [center, setCenter] = useState(DEFAULT_CENTER);
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
   const [workers, setWorkers] = useState([]);
+  const [drivers, setDrivers] = useState([]);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
   const [showPrice, setShowPrice] = useState(false);
   const [route, setRoute] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
+  const isTaxiSelected =
+  selectedService === 'taxi' ||
+  !!selected?.vehicle_plate ||
+  !!selected?.vehicle_brand ||
+  !!selected?.vehicle_model;
+
+const distanceToSelectedKm =
+  Number(me?.lat) && Number(me?.lon) && Number(selected?.lat) && Number(selected?.lng)
+    ? haversineKm(me.lat, me.lon, selected.lat, selected.lng)
+    : null;
+
+const driverTier = isTaxiSelected ? getDriverTier(selected) : null;
+const driverRingClass = isTaxiSelected
+  ? avatarRingClassForTier(driverTier)
+  : 'border-emerald-500';
   // 🟢 Panel estilo Uber (3 niveles)
 const [panelLevel, setPanelLevel] = useState("hidden"); 
 // niveles: "mini" | "mid" | "full"
@@ -236,6 +288,7 @@ const [statusBanner, setStatusBanner] = useState(null);
   
  
   const services = [
+    { id: 'taxi', label: 'Chofer', icon: <Car size={18} /> },
     { id: 'plomería', label: 'Plomería', icon: <Droplets size={18} /> },
     { id: 'electricidad', label: 'Electricidad', icon: <Wrench size={18} /> },
     { id: 'limpieza', label: 'Limpieza', icon: <Sparkles size={18} /> },
@@ -244,6 +297,7 @@ const [statusBanner, setStatusBanner] = useState(null);
     { id: 'mascotas', label: 'Mascotas', icon: <PawPrint size={18} /> },
     { id: 'emergencia', label: 'Emergencia', icon: <Flame size={18} /> },
     { id: 'car detailing', label: 'Car Detailing', icon: <Sparkles size={18} /> },
+    
 
 
   ];
@@ -472,6 +526,7 @@ if (mapRef.current) {
       mapRef.current.fitBounds(bounds, {
         padding: [80, 80],
         animate: true
+        
       });
     }
   }
@@ -485,11 +540,34 @@ if (mapRef.current) {
     setBusy(false);
   }
 } // ✅ cierre correcto de fetchWorkers
+/* === Cargar choferes (drivers) === */
+async function fetchDrivers() {
+  try {
+    const { data, error } = await supabase
+      .from('map_drivers_view_v2')
+      .select('*')
+      .not('lat', 'is', null)
+      .not('lng', 'is', null)
+      .eq('is_active', true);
+
+    if (error) throw error;
+
+    setDrivers(data || []);
+    console.log('🚕 Drivers desde Supabase:', data);
+  } catch (err) {
+    console.error('Error cargando drivers:', err?.message || err);
+    toast.error('Error cargando choferes');
+  }
+}
 
 // ⚡ Cargar trabajadores DESPUÉS del mapa (mejora la velocidad)
 useEffect(() => {
-  setTimeout(() => fetchWorkers(), 350);
+  setTimeout(() => {
+    fetchWorkers();
+    fetchDrivers();
+  }, 350);
 }, []);
+
 
 
 
@@ -1409,73 +1487,84 @@ useEffect(() => {
   maxClusterRadius={48}
   iconCreateFunction={clusterIconCreateFunction}
 >
-  {workers
-    ?.filter(
-      w =>
-  Number(w?.lat) &&
-  Number(w?.lng) &&
-  w?.status !== 'paused'
- // ⬅️ oculta los pausados
-    )
-    .map(w => {
-      const minutesAgo = getMinutesAgo(w.updated_at);
-
-      // 🕒 Calcular texto y color de estado
-      let estadoTexto = 'Disponible ahora';
-      let estadoColor = '#10b981'; // 🟢 verde por defecto
-
-      if (w.status === 'busy') {
-        const busyUntil = w.busy_until ? new Date(w.busy_until) : null;
-        if (busyUntil) {
-          const diffMin = Math.max(
-            0,
-            Math.round((busyUntil.getTime() - Date.now()) / 60000)
-          );
-          estadoTexto =
-            diffMin > 0
-              ? `Ocupado • libre en ${diffMin} min`
-              : 'Ocupado (finalizando)';
-        } else {
-          estadoTexto = 'Ocupado';
-        }
-        estadoColor = '#f97316'; // 🟠 naranja
-      }
-
-      return (
+  {/* =======================
+      🚕 DRIVERS (CHOFERES)
+      ======================= */}
+  {selectedService === 'taxi' &&
+    drivers
+      ?.filter((d) => Number(d?.lat) && Number(d?.lng) && d?.is_active === true)
+      .map((d) => (
         <Marker
-          key={w.user_id}
-          position={[w.lat, w.lng]}
-          icon={avatarIcon(w.avatar_url, w)}
-          eventHandlers={{ click: () => handleMarkerClick(w) }}
+          key={`driver-${d.user_id}`}
+          position={[d.lat, d.lng]}
+          icon={avatarIcon(d.avatar_url, d) || undefined}
+          eventHandlers={{ click: () => handleMarkerClick(d) }}
         >
           <Tooltip direction="top">
             <div className="text-xs leading-tight">
-              <strong className="block text-sm font-semibold">
-                {w.full_name}
-              </strong>
-              <p>Servicio: {w.main_skill || 'No especificado'}</p>
-              <p>💰 Desde ₲45.000</p>
-
-              {/* 🟡 Estado dinámico */}
-              <p
-                className="mt-1 font-semibold"
-                style={{ color: estadoColor }}
-              >
-                {estadoTexto}
+              <strong className="block text-sm font-semibold">🚕 {d.full_name}</strong>
+              <p>
+                {d.vehicle_brand || ''} {d.vehicle_model || ''}
               </p>
-
-              {/* ⏱ tiempo desde última actualización */}
-              {minutesAgo !== null && (
-                <p className="text-[10px] text-gray-500 mt-1">
-                  ⏱ hace {minutesAgo} min
-                </p>
-              )}
+              <p>
+                {d.vehicle_color || ''} • {d.vehicle_plate || ''}
+              </p>
+              <p>⭐ {d.avg_rating || 0} ({d.total_reviews || 0})</p>
             </div>
           </Tooltip>
         </Marker>
-      );
-    })}
+      ))}
+
+  {/* =======================
+      👷 WORKERS (SERVICIOS)
+      ======================= */}
+  {selectedService !== 'taxi' &&
+    workers
+      ?.filter((w) => Number(w?.lat) && Number(w?.lng) && w?.status !== 'paused')
+      .map((w) => {
+        const minutesAgo = getMinutesAgo(w.updated_at);
+
+        let estadoTexto = 'Disponible ahora';
+        let estadoColor = '#10b981';
+
+        if (w.status === 'busy') {
+          const busyUntil = w.busy_until ? new Date(w.busy_until) : null;
+          if (busyUntil) {
+            const diffMin = Math.max(0, Math.round((busyUntil.getTime() - Date.now()) / 60000));
+            estadoTexto = diffMin > 0 ? `Ocupado • libre en ${diffMin} min` : 'Ocupado (finalizando)';
+          } else {
+            estadoTexto = 'Ocupado';
+          }
+          estadoColor = '#f97316';
+        }
+
+        return (
+          <Marker
+            key={`worker-${w.user_id}`}
+            position={[w.lat, w.lng]}
+            icon={avatarIcon(w.avatar_url, w) || undefined}
+            eventHandlers={{ click: () => handleMarkerClick(w) }}
+          >
+            <Tooltip direction="top">
+              <div className="text-xs leading-tight">
+                <strong className="block text-sm font-semibold">{w.full_name}</strong>
+                <p>Servicio: {w.main_skill || 'No especificado'}</p>
+                <p>💰 Desde ₲45.000</p>
+
+                <p className="mt-1 font-semibold" style={{ color: estadoColor }}>
+                  {estadoTexto}
+                </p>
+
+                {minutesAgo !== null && (
+                  <p className="text-[10px] text-gray-500 mt-1">⏱ hace {minutesAgo} min</p>
+                )}
+              </div>
+            </Tooltip>
+          </Marker>
+        );
+      })}
 </MarkerClusterGroup>
+
 </MapContainer>
 </div>
 
@@ -1600,172 +1689,362 @@ useEffect(() => {
 
 </motion.div>
 
-      {/* PERFIL DEL TRABAJADOR */}
+  {/* PERFIL DEL TRABAJADOR / CHOFER (MODIFICADO) */}
 <AnimatePresence>
-  {selected && !showPrice && (
-    <motion.div
-      key="perfil"
-      initial={{ y: '100%' }}
-      animate={{ y: 0 }}
-      exit={{ y: '100%' }}
-      transition={{ type: 'spring', stiffness: 120, damping: 18 }}
-      className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
-    >
-      <div className="text-center">
-       {/* 🧑 Avatar con verificación */}
-<div className="relative w-20 h-20 mx-auto mb-2">
-  <img
-  src={selected.avatar_url || '/avatar-fallback.png'}
-  onError={(e) => { e.currentTarget.src = '/avatar-fallback.png' }}
-  className="
-    w-20 h-20 rounded-full border-4 border-emerald-500 shadow-md
-    object-cover object-center
-  "
-  alt="avatar"
-/>
+  {selected && !showPrice && (() => {
+    const isTaxiSelected =
+      selectedService === 'taxi' ||
+      !!selected?.vehicle_plate ||
+      !!selected?.vehicle_brand;
 
-  {selected.worker_verified && selected.profile_verified && (
-    <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-1.5 border-2 border-white shadow">
-      <CheckCircle2 size={14} className="text-white" />
-    </div>
-  )}
-</div>
+    // 📏 Distancia (km) cliente ↔ chofer/trabajador
+    const haversineKm = (lat1, lon1, lat2, lon2) => {
+      const toRad = (v) => (v * Math.PI) / 180;
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) *
+          Math.cos(toRad(lat2)) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    };
 
-        {/* 🧾 Nombre y descripción */}
-        <h2 className="font-bold text-lg">{selected.full_name}</h2>
-        <p className="text-sm italic text-gray-500 mb-2">
-          “{selected.bio || 'Sin descripción'}”
-        </p>
+    const km =
+      Number(me?.lat) &&
+      Number(me?.lon) &&
+      Number(selected?.lat) &&
+      Number(selected?.lng)
+        ? Math.round(haversineKm(me.lat, me.lon, selected.lat, selected.lng) * 10) / 10
+        : null;
 
-       {/* ⭐ Calificación dinámica */}
-<div className="flex justify-center items-center gap-1 mb-2">
-  {[...Array(5)].map((_, i) => (
-    <Star
-      key={i}
-      size={14}
-      className={
-        i < Math.round(selected.avg_rating)
-          ? 'text-yellow-400 fill-yellow-400'
-          : 'text-gray-300'
-      }
-    />
-  ))}
-  <span className="text-xs text-gray-500 ml-1">
-    ({selected.total_reviews || 0})
-  </span>
-</div>
+    // 🏅 Aro por plan (premium dorado / normal plateado / eco verde)
+    const tier = String(selected?.plan_tier || 'normal').toLowerCase();
+    const ringClass =
+      tier === 'premium'
+        ? 'border-yellow-400'
+        : tier === 'eco'
+        ? 'border-emerald-500'
+        : 'border-gray-300';
 
+    const tierLabel =
+      tier === 'premium' ? '⭐ Premium' : tier === 'eco' ? '🌿 Eco' : '🩶 Normal';
 
-        {/* 🧠 Experiencia dinámica (sincronizada con Supabase) */}
-        <p className="text-sm text-gray-600">
-          <Clock3 size={14} className="inline mr-1" />
-          {selected?.years_experience
-            ? `${selected.years_experience} ${selected.years_experience === 1 ? 'año' : 'años'} de experiencia`
-            : 'Sin experiencia registrada'}
-        </p>
+    return (
+      <motion.div
+        key="perfil"
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 120, damping: 18 }}
+        className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
+      >
+        <div className="text-center">
+          {/* =========================
+    🚕 PERFIL CHOFER — ESTILO PREMIUM (MARKETING)
+   ========================= */}
+{isTaxiSelected ? (
+  <>
+    {/* AVATAR + PLAN */}
+    <div className="relative w-24 h-24 mx-auto mb-3">
+      <img
+        src={selected.avatar_url || '/avatar-fallback.png'}
+        onError={(e) => {
+          e.currentTarget.src = '/avatar-fallback.png';
+        }}
+        className={`
+          w-24 h-24 rounded-full border-[5px] ${ringClass}
+          shadow-xl object-cover object-center bg-white
+        `}
+        alt="avatar chofer"
+      />
 
-        {/* ⏰ Última actividad */}
-        <p className="text-xs text-gray-500 mt-1">
-          {(() => {
-            const mins = getMinutesAgo(selected?.updated_at);
-            if (mins == null) return 'Sin actividad reciente';
-            if (mins < 60) return `Activo hace ${mins} min`;
-            if (mins < 1440) return `Activo hace ${Math.floor(mins / 60)} h`;
-            return `Activo hace ${Math.floor(mins / 1440)} d`;
-          })()}
-        </p>
-
-        {/* 🧰 Especialidades (mejor visual) */}
-        <div className="mt-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Especialidades</h3>
-          <div className="flex flex-wrap justify-center gap-2">
-            {(() => {
-              let skillsList = [];
-
-              if (Array.isArray(selected?.skills)) {
-                skillsList = selected.skills;
-              } else if (typeof selected?.skills === 'string') {
-                skillsList = selected.skills.split(',');
-              } else {
-                skillsList = ['Limpieza', 'Plomería', 'Jardinería'];
-              }
-
-              return skillsList.map((skill, i) => (
-                <span
-                  key={i}
-                  className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium text-sm shadow-sm border border-emerald-200"
-                >
-                  {skill.trim()}
-                </span>
-              ));
-            })()}
-          </div>
-        </div>
-
-        {/* Estado de pedido si existe */}
-        <div className="mt-3">{jobId && <StatusBadge />}</div>
-
-        {/* 🔘 Botones dinámicos */}
-        {!route ? (
-          // 🔹 No hay ruta → "Cerrar" y "Solicitar"
-          <div className="flex justify-center gap-3 mt-5">
-            <button
-              onClick={() => setSelected(null)}
-              className="px-5 py-3 rounded-xl border text-gray-700"
-            >
-              Cerrar
-            </button>
-            <button
-              onClick={solicitar}
-              className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
-            >
-              🚀 Solicitar
-            </button>
-          </div>
-        ) : (
-          // 🔹 Hay ruta → depende del estado del pedido
-          <div className="flex flex-col items-center gap-3 mt-5">
-            {/* 💬 Botón de chat */}
-<button
-  onClick={() => {
-    openChat();
-    setHasUnread(false); // 🔁 limpia el indicador al abrir el chat
-  }}
-  className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
->
-  <MessageCircle size={18} className="text-emerald-600" />
-  Chatear
-  {hasUnread && (
-    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
-  )}
-  {hasUnread && (
-    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
-  )}
-</button>
-
-
-       {/* 🔄 Finalizar o Cancelar */}
-{jobStatus === 'accepted' || jobStatus === 'assigned' ? (
-  <button
-    onClick={finalizarPedido}
-    className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
-  >
-    <CheckCircle2 size={16} /> Finalizar pedido
-  </button>
-) : jobStatus === 'open' ? (
-  <button
-    onClick={cancelarPedido}
-    className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
-  >
-    <XCircle size={16} /> Cancelar pedido
-  </button>
-) : null}
-
-          </div>
-        )}
+      {/* Badge de plan */}
+      <div className="
+        absolute -bottom-3 left-1/2 -translate-x-1/2
+        px-3 py-1 rounded-full text-[11px] font-bold
+        bg-white border shadow-md
+      ">
+        {tier === 'premium' ? '⭐ Chofer Premium' : tier === 'eco' ? '🌿 Chofer Eco' : '🩶 Chofer Verificado'}
       </div>
-    </motion.div>
-  )}
+
+      {/* Verificación */}
+      {selected.worker_verified && selected.profile_verified && (
+        <div className="absolute top-1 right-1 bg-blue-600 rounded-full p-1.5 border-2 border-white shadow">
+          <CheckCircle2 size={14} className="text-white" />
+        </div>
+      )}
+    </div>
+
+    {/* NOMBRE */}
+    <h2 className="text-xl font-extrabold tracking-tight text-gray-800">
+      🚕 {selected.full_name}
+    </h2>
+
+    {/* DISTANCIA + MENSAJE EMOCIONAL */}
+    <p className="text-sm text-gray-600 mt-1">
+      📍 A <b>{km ?? '—'} km</b> de vos
+    </p>
+    <p className="text-xs text-emerald-600 font-medium mt-1">
+      Llega rápido • Seguro • Confiable
+    </p>
+
+    {/* ⭐ CALIFICACIÓN */}
+    <div className="flex justify-center items-center gap-1 mt-3">
+      {[...Array(5)].map((_, i) => (
+        <Star
+          key={i}
+          size={16}
+          className={
+            i < Math.round(selected.avg_rating || 0)
+              ? 'text-yellow-400 fill-yellow-400'
+              : 'text-gray-300'
+          }
+        />
+      ))}
+      <span className="text-xs text-gray-500 ml-1">
+        ({selected.total_reviews || 0} viajes)
+      </span>
+    </div>
+
+    {/* 🚗 CARD VEHÍCULO */}
+    <div className="mt-4 bg-gradient-to-br from-gray-50 to-white border rounded-2xl p-4 text-sm text-left shadow-sm">
+      <p className="font-semibold text-gray-700 mb-2">🚗 Vehículo</p>
+
+      <div className="grid grid-cols-2 gap-y-1 gap-x-3 text-gray-600">
+        <p><b>Marca:</b> {selected.vehicle_brand || '—'}</p>
+        <p><b>Modelo:</b> {selected.vehicle_model || '—'}</p>
+        <p><b>Color:</b> {selected.vehicle_color || '—'}</p>
+        <p><b>Chapa:</b> {selected.vehicle_plate || '—'}</p>
+      </div>
+    </div>
+
+    {/* Estado de pedido si existe */}
+    <div className="mt-3">{jobId && <StatusBadge />}</div>
+
+    {/* 🔘 Botones dinámicos */}
+    {!route ? (
+      <div className="flex justify-center gap-3 mt-6">
+        <button
+          onClick={() => setSelected(null)}
+          className="px-5 py-3 rounded-xl border text-gray-600 hover:bg-gray-50 transition"
+        >
+          Cerrar
+        </button>
+
+        <button
+          onClick={solicitar}
+          className="
+            px-7 py-3 rounded-xl
+            bg-emerald-500 hover:bg-emerald-600
+            text-white font-extrabold
+            shadow-lg shadow-emerald-300/40
+            transition active:scale-95
+          "
+        >
+          🚕 Solicitar viaje
+        </button>
+      </div>
+    ) : (
+      <div className="flex flex-col items-center gap-3 mt-6">
+        <button
+          onClick={() => {
+            openChat();
+            setHasUnread(false);
+          }}
+          className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
+        >
+          <MessageCircle size={18} className="text-emerald-600" />
+          Chatear
+          {hasUnread && (
+            <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
+          )}
+          {hasUnread && (
+            <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
+          )}
+        </button>
+
+        {jobStatus === 'accepted' || jobStatus === 'assigned' ? (
+          <button
+            onClick={finalizarPedido}
+            className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
+          >
+            <CheckCircle2 size={16} /> Finalizar viaje
+          </button>
+        ) : jobStatus === 'open' ? (
+          <button
+            onClick={cancelarPedido}
+            className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
+          >
+            <XCircle size={16} /> Cancelar viaje
+          </button>
+        ) : null}
+      </div>
+    )}
+  </>
+) : (
+
+            /* =========================
+               👷 PERFIL SERVICIOS HOGAR (TU MODAL ORIGINAL)
+               ========================= */
+            <>
+              {/* 🧑 Avatar con verificación */}
+              <div className="relative w-20 h-20 mx-auto mb-2">
+                <img
+                  src={selected.avatar_url || '/avatar-fallback.png'}
+                  onError={(e) => {
+                    e.currentTarget.src = '/avatar-fallback.png';
+                  }}
+                  className="
+                    w-20 h-20 rounded-full border-4 border-emerald-500 shadow-md
+                    object-cover object-center
+                  "
+                  alt="avatar"
+                />
+
+                {selected.worker_verified && selected.profile_verified && (
+                  <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-1.5 border-2 border-white shadow">
+                    <CheckCircle2 size={14} className="text-white" />
+                  </div>
+                )}
+              </div>
+
+              {/* 🧾 Nombre y descripción */}
+              <h2 className="font-bold text-lg">{selected.full_name}</h2>
+              <p className="text-sm italic text-gray-500 mb-2">
+                “{selected.bio || 'Sin descripción'}”
+              </p>
+
+              {/* ⭐ Calificación dinámica */}
+              <div className="flex justify-center items-center gap-1 mb-2">
+                {[...Array(5)].map((_, i) => (
+                  <Star
+                    key={i}
+                    size={14}
+                    className={
+                      i < Math.round(selected.avg_rating)
+                        ? 'text-yellow-400 fill-yellow-400'
+                        : 'text-gray-300'
+                    }
+                  />
+                ))}
+                <span className="text-xs text-gray-500 ml-1">
+                  ({selected.total_reviews || 0})
+                </span>
+              </div>
+
+              {/* 🧠 Experiencia dinámica */}
+              <p className="text-sm text-gray-600">
+                <Clock3 size={14} className="inline mr-1" />
+                {selected?.years_experience
+                  ? `${selected.years_experience} ${
+                      selected.years_experience === 1 ? 'año' : 'años'
+                    } de experiencia`
+                  : 'Sin experiencia registrada'}
+              </p>
+
+              {/* ⏰ Última actividad */}
+              <p className="text-xs text-gray-500 mt-1">
+                {(() => {
+                  const mins = getMinutesAgo(selected?.updated_at);
+                  if (mins == null) return 'Sin actividad reciente';
+                  if (mins < 60) return `Activo hace ${mins} min`;
+                  if (mins < 1440) return `Activo hace ${Math.floor(mins / 60)} h`;
+                  return `Activo hace ${Math.floor(mins / 1440)} d`;
+                })()}
+              </p>
+
+              {/* 🧰 Especialidades */}
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Especialidades</h3>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {(() => {
+                    let skillsList = [];
+
+                    if (Array.isArray(selected?.skills)) {
+                      skillsList = selected.skills;
+                    } else if (typeof selected?.skills === 'string') {
+                      skillsList = selected.skills.split(',');
+                    } else {
+                      skillsList = ['Limpieza', 'Plomería', 'Jardinería'];
+                    }
+
+                    return skillsList.map((skill, i) => (
+                      <span
+                        key={i}
+                        className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium text-sm shadow-sm border border-emerald-200"
+                      >
+                        {skill.trim()}
+                      </span>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Estado de pedido si existe */}
+              <div className="mt-3">{jobId && <StatusBadge />}</div>
+
+              {/* 🔘 Botones dinámicos */}
+              {!route ? (
+                <div className="flex justify-center gap-3 mt-5">
+                  <button
+                    onClick={() => setSelected(null)}
+                    className="px-5 py-3 rounded-xl border text-gray-700"
+                  >
+                    Cerrar
+                  </button>
+                  <button
+                    onClick={solicitar}
+                    className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
+                  >
+                    🚀 Solicitar
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3 mt-5">
+                  <button
+                    onClick={() => {
+                      openChat();
+                      setHasUnread(false);
+                    }}
+                    className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
+                  >
+                    <MessageCircle size={18} className="text-emerald-600" />
+                    Chatear
+                    {hasUnread && (
+                      <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
+                    )}
+                    {hasUnread && (
+                      <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
+                    )}
+                  </button>
+
+                  {jobStatus === 'accepted' || jobStatus === 'assigned' ? (
+                    <button
+                      onClick={finalizarPedido}
+                      className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
+                    >
+                      <CheckCircle2 size={16} /> Finalizar pedido
+                    </button>
+                  ) : jobStatus === 'open' ? (
+                    <button
+                      onClick={cancelarPedido}
+                      className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
+                    >
+                      <XCircle size={16} /> Cancelar pedido
+                    </button>
+                  ) : null}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </motion.div>
+    );
+  })()}
 </AnimatePresence>
 
     {/* 💵 MODAL PRECIO — versión final (dinámica y adaptativa) */}

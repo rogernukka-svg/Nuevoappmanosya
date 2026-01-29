@@ -7,6 +7,7 @@ const supabase = getSupabase();
 
 /* ====================== CONFIG ====================== */
 const ALL_SKILLS = [
+  { slug: 'taxi', name: '🚕 Taxi' },
   { slug: 'limpieza', name: '🧹 Limpieza' },
   { slug: 'plomeria', name: '🔧 Plomería' },
   { slug: 'jardineria', name: '🌿 Jardinería / Césped' },
