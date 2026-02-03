@@ -1748,35 +1748,62 @@ useEffect(() => {
    ========================= */}
 {isTaxiSelected ? (
   <>
-    {/* AVATAR + PLAN */}
-    <div className="relative w-24 h-24 mx-auto mb-3">
-      <img
-        src={selected.avatar_url || '/avatar-fallback.png'}
-        onError={(e) => {
-          e.currentTarget.src = '/avatar-fallback.png';
-        }}
-        className={`
-          w-24 h-24 rounded-full border-[5px] ${ringClass}
-          shadow-xl object-cover object-center bg-white
-        `}
-        alt="avatar chofer"
-      />
+    {/* AVATAR + EXCELENTE AZUL (MARKETING) */}
+    <div className="flex flex-col items-center mb-3">
+      <div className="relative w-24 h-24">
+        <img
+          src={selected.avatar_url || '/avatar-fallback.png'}
+          onError={(e) => {
+            e.currentTarget.src = '/avatar-fallback.png';
+          }}
+          className={`
+            w-24 h-24 rounded-full border-[5px]
+            ${
+              selected.worker_verified || selected.profile_verified
+                ? 'border-blue-500'
+                : ringClass
+            }
+            shadow-xl object-cover object-center bg-white
+          `}
+          alt="avatar chofer"
+        />
 
-      {/* Badge de plan */}
-      <div className="
-        absolute -bottom-3 left-1/2 -translate-x-1/2
-        px-3 py-1 rounded-full text-[11px] font-bold
-        bg-white border shadow-md
-      ">
-        {tier === 'premium' ? '⭐ Chofer Premium' : tier === 'eco' ? '🌿 Chofer Eco' : '🩶 Chofer Verificado'}
+        {/* ✅ CHECK AZUL ESTILO TRABAJADOR (EXCELENTE) */}
+        {(selected.worker_verified || selected.profile_verified) && (
+          <div className="
+            absolute -bottom-1 -right-1
+            bg-blue-600 rounded-full
+            p-1.5 border-2 border-white
+            shadow-lg
+          ">
+            <CheckCircle2 size={14} className="text-white" />
+          </div>
+        )}
       </div>
 
-      {/* Verificación */}
-      {selected.worker_verified && selected.profile_verified && (
-        <div className="absolute top-1 right-1 bg-blue-600 rounded-full p-1.5 border-2 border-white shadow">
-          <CheckCircle2 size={14} className="text-white" />
+      {/* 🔵 BADGE EXCELENTE AZUL (MARKETING FUERTE) */}
+      {(selected.worker_verified || selected.profile_verified) && (
+        <div className="
+          mt-2 px-4 py-1.5
+          rounded-full text-[11px]
+          font-extrabold
+          bg-blue-600 text-white
+          shadow-md
+          flex items-center gap-1
+        ">
+          <CheckCircle2 size={12} />
+          Chofer Verificado
         </div>
       )}
+
+      {/* Badge de plan (secundario) */}
+      <div className="mt-2 px-3 py-1 rounded-full text-[11px] font-bold bg-white border shadow-sm">
+        {tier === 'premium'
+          ? '⭐ Chofer Premium'
+          : tier === 'eco'
+          ? '🌿 Chofer Eco'
+          : '🩶 Chofer Normal'}
+      </div>
     </div>
 
     {/* NOMBRE */}
@@ -1788,8 +1815,11 @@ useEffect(() => {
     <p className="text-sm text-gray-600 mt-1">
       📍 A <b>{km ?? '—'} km</b> de vos
     </p>
-    <p className="text-xs text-emerald-600 font-medium mt-1">
+    <p className="text-xs text-emerald-600 font-semibold mt-1">
       Llega rápido • Seguro • Confiable
+    </p>
+    <p className="text-[11px] text-gray-500 mt-1">
+      Tu viaje, con un chofer documentado y verificado por ManosYA.
     </p>
 
     {/* ⭐ CALIFICACIÓN */}
@@ -1822,10 +1852,10 @@ useEffect(() => {
       </div>
     </div>
 
-    {/* Estado de pedido si existe */}
+    {/* Estado de pedido */}
     <div className="mt-3">{jobId && <StatusBadge />}</div>
 
-    {/* 🔘 Botones dinámicos */}
+    {/* BOTONES */}
     {!route ? (
       <div className="flex justify-center gap-3 mt-6">
         <button
@@ -1859,33 +1889,12 @@ useEffect(() => {
         >
           <MessageCircle size={18} className="text-emerald-600" />
           Chatear
-          {hasUnread && (
-            <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
-          )}
-          {hasUnread && (
-            <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
-          )}
         </button>
-
-        {jobStatus === 'accepted' || jobStatus === 'assigned' ? (
-          <button
-            onClick={finalizarPedido}
-            className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
-          >
-            <CheckCircle2 size={16} /> Finalizar viaje
-          </button>
-        ) : jobStatus === 'open' ? (
-          <button
-            onClick={cancelarPedido}
-            className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
-          >
-            <XCircle size={16} /> Cancelar viaje
-          </button>
-        ) : null}
       </div>
     )}
   </>
 ) : (
+
 
             /* =========================
                👷 PERFIL SERVICIOS HOGAR (TU MODAL ORIGINAL)
