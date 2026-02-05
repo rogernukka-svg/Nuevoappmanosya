@@ -7,11 +7,17 @@ import { toast } from 'sonner';
 import {
   Loader2,
   LogOut,
-  UserRound,
   Wrench,
   Settings,
   Car,
   ShieldCheck,
+  HardHat,
+  Construction,
+  SteeringWheel,
+  CircleDot,
+  // ❌ quitamos Key y KeyRound (ya no se usan)
+  // Key,
+  // KeyRound,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -112,6 +118,11 @@ export default function RoleSelectorPage() {
     );
   }
 
+  // ✅ Fallbacks seguros (misma idea, pero cambiamos íconos)
+  const KeyIcon = Wrench; // 🔧 llave de tuercas
+  const HardHatIcon = HardHat || Construction;
+  const SteeringWheelIcon = Car; // 🚗 icono de auto
+
   /* 🌈 UI principal — MISMO DISEÑO, PERO CON SCROLL REAL */
   return (
     <div
@@ -171,8 +182,12 @@ export default function RoleSelectorPage() {
             >
               <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-cyan-600 opacity-95" />
               <div className="relative flex items-start gap-3 sm:gap-4 text-white">
+                {/* ✅ 1er icono: llave de tuercas + auto */}
                 <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/15 flex items-center justify-center mt-0.5">
-                  <UserRound className="w-5 h-5" />
+                  <div className="flex items-center gap-1">
+                    <KeyIcon className="w-4 h-4" />
+                    <Car className="w-4 h-4" />
+                  </div>
                 </div>
 
                 <div className="min-w-0 flex-1">
@@ -203,8 +218,9 @@ export default function RoleSelectorPage() {
             >
               <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-emerald-600 opacity-95" />
               <div className="relative flex items-start gap-3 sm:gap-4 text-white">
+                {/* ✅ 2do icono: hombre con casco */}
                 <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/15 flex items-center justify-center mt-0.5">
-                  <Wrench className="w-5 h-5" />
+                  <HardHatIcon className="w-5 h-5" />
                 </div>
 
                 <div className="min-w-0 flex-1">
@@ -235,8 +251,9 @@ export default function RoleSelectorPage() {
             >
               <div className="absolute inset-0 bg-gradient-to-r from-gray-900 to-black opacity-95" />
               <div className="relative flex items-start gap-3 sm:gap-4 text-white">
+                {/* ✅ 3er icono: auto */}
                 <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/10 flex items-center justify-center mt-0.5">
-                  <Car className="w-5 h-5" />
+                  <SteeringWheelIcon className="w-5 h-5" />
                 </div>
 
                 <div className="min-w-0 flex-1">

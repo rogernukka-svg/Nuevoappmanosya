@@ -261,7 +261,7 @@ const driverRingClass = isTaxiSelected
   // 🟢 Panel estilo Uber (3 niveles)
 const [panelLevel, setPanelLevel] = useState("hidden"); 
 // niveles: "mini" | "mid" | "full"
-
+const [servicesOpen, setServicesOpen] = useState(false);
 const togglePanel = (level) => {
   setPanelLevel(level);
 };
@@ -1282,13 +1282,13 @@ async function confirmarReseña() {
   }
 }
 
-  function toggleService(id) {
-    const next = selectedService === id ? null : id;
-    setSelectedService(next);
-    setSelected(null);
-    setRoute(null);
-    fetchWorkers(next);
-  }
+ function toggleService(id) {
+  const next = selectedService === id ? null : id; // id puede ser null
+  setSelectedService(next);
+  setSelected(null);
+  setRoute(null);
+  fetchWorkers(next);
+}
 
   // Etiqueta estado bonita
   function StatusBadge() {
@@ -1399,15 +1399,40 @@ useEffect(() => {
   return (
     <div className="no-pull-refresh fixed inset-0 bg-white overflow-hidden">
 
-      {/* Header centrado visible */}
-<div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
+    {/* Header superior — volver atrás (marketing) */}
+<div className="absolute top-4 left-4 z-[1000]">
   <button
-    onClick={() => router.push('/role-selector')}
-    className="bg-emerald-500 text-white font-semibold px-5 py-2 rounded-xl shadow-md 
-               hover:bg-emerald-600 active:scale-95 transition"
+    onClick={() => router.back()}
+    className="
+      flex items-center gap-2
+      bg-white/90 backdrop-blur
+      text-gray-800 font-semibold
+      px-4 py-2
+      rounded-full
+      shadow-lg
+      border border-gray-200
+      hover:bg-emerald-50 hover:text-emerald-700
+      active:scale-95
+      transition
+    "
   >
-    Cambiar rol
+    <ChevronLeft size={20} />
+    <span className="text-sm">Volver</span>
   </button>
+</div>
+
+{/* Mensaje marketing sutil centrado */}
+<div className="absolute top-4 left-1/2 -translate-x-1/2 z-[999]">
+  <div className="
+    bg-emerald-500 text-white
+    px-4 py-2
+    rounded-full
+    shadow-md
+    text-sm font-semibold
+    hidden sm:block
+  ">
+    Estás a un paso de tu solución 💚
+  </div>
 </div>
 
 {/* 🔔 Banner elegante de estado */}
@@ -1617,75 +1642,103 @@ useEffect(() => {
   </div>
 
   {/* ===========================
-         CARRUSEL DE SERVICIOS
-     =========================== */}
-  <div className="relative px-2 pb-1">
+      SERVICIOS (botón + modal)
+   =========================== */}
+<div className="px-3 pb-2 flex items-center justify-between gap-2">
+  <button
+    onClick={() => setServicesOpen(true)}
+    className="
+      flex-1 py-2.5 rounded-xl
+      bg-gray-50 border border-gray-200
+      font-semibold text-gray-700
+      active:scale-95 transition
+    "
+  >
+    🧰 SERVICIOS
+  </button>
 
-    {/* ➤ Flecha Izquierda */}
-    <div
-      id="arrowLeft"
-      className="hidden absolute left-1 top-1/2 -translate-y-1/2 z-10"
-    >
-      <div className="bg-emerald-500 w-7 h-7 rounded-full flex items-center justify-center shadow-md">
-        <svg xmlns="http://www.w3.org/2000/svg" height="18" width="18"
-          viewBox="0 0 24 24" stroke="white" fill="none" strokeWidth="2">
-          <path d="M19 12H5m6-6-6 6 6 6" />
-        </svg>
-      </div>
-    </div>
-
-    {/* ➤ Flecha Derecha */}
-    <div
-      id="arrowRight"
-      className="absolute right-1 top-1/2 -translate-y-1/2 z-10"
-    >
-      <div className="bg-emerald-500 w-7 h-7 rounded-full flex items-center justify-center shadow-md">
-        <svg xmlns="http://www.w3.org/2000/svg" height="18" width="18"
-          viewBox="0 0 24 24" stroke="white" fill="none" strokeWidth="2">
-          <path d="M5 12h14m-6-6 6 6-6 6" />
-        </svg>
-      </div>
-    </div>
-
-    {/* Carrusel */}
-    <div
-      id="servicesScroll"
-      className="flex gap-3 overflow-x-auto pb-1 no-scrollbar scroll-smooth"
-      onScroll={(e) => {
-        const el = e.target;
-        const leftArrow = document.getElementById("arrowLeft");
-        const rightArrow = document.getElementById("arrowRight");
-
-        if (el.scrollLeft <= 10) leftArrow.style.display = "none";
-        else leftArrow.style.display = "block";
-
-        if (el.scrollLeft + el.clientWidth >= el.scrollWidth - 10)
-          rightArrow.style.display = "none";
-        else
-          rightArrow.style.display = "block";
-      }}
-    >
-      {services.map((s) => (
-        <div
-          key={s.id}
-          onClick={() => toggleService(s.id)}
-          className={`
-            flex items-center gap-2 px-4 py-2 rounded-xl border text-[15px] font-medium
-            whitespace-nowrap cursor-pointer transition-all
-            ${
-              selectedService === s.id
-                ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
-                : "bg-gray-50 text-gray-700 border-gray-200"
-            }
-          `}
-          style={{ minWidth: "150px", justifyContent: "center" }}
-        >
-          {s.icon}
-          <span>{s.label}</span>
-        </div>
-      ))}
-    </div>
+  {/* mini badge del seleccionado */}
+  <div className="px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold">
+    {selectedService ? `✅ ${services.find(s => s.id === selectedService)?.label || selectedService}` : 'Todos'}
   </div>
+</div>
+
+{/* MODAL SERVICIOS */}
+<AnimatePresence>
+  {servicesOpen && (
+    <motion.div
+      className="fixed inset-0 z-[20000] bg-black/55 backdrop-blur-sm flex items-end justify-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={() => setServicesOpen(false)}
+    >
+      <motion.div
+        className="
+          w-full max-w-md
+          bg-white rounded-t-3xl
+          p-5 shadow-2xl
+          border border-gray-200
+        "
+        initial={{ y: 380 }}
+        animate={{ y: 0 }}
+        exit={{ y: 380 }}
+        transition={{ type: 'spring', stiffness: 120, damping: 18 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-extrabold text-gray-800">Seleccionar servicio</h3>
+          <button
+            onClick={() => setServicesOpen(false)}
+            className="text-gray-500 hover:text-red-500 transition"
+          >
+            <XCircle size={22} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {/* Opción: ver todos */}
+          <button
+            onClick={() => {
+              toggleService(null);
+              setServicesOpen(false);
+            }}
+            className={`
+              p-3 rounded-2xl border font-semibold text-sm
+              ${!selectedService ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-50 text-gray-700 border-gray-200'}
+              active:scale-95 transition
+            `}
+          >
+            🌍 Todos
+          </button>
+
+          {services.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => {
+                toggleService(s.id);
+                setServicesOpen(false);
+              }}
+              className={`
+                p-3 rounded-2xl border font-semibold text-sm
+                flex items-center justify-center gap-2
+                ${selectedService === s.id ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-50 text-gray-700 border-gray-200'}
+                active:scale-95 transition
+              `}
+            >
+              {s.icon}
+              <span>{s.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <p className="text-xs text-gray-500 mt-4">
+          Tip: elegí un servicio para filtrar el mapa.
+        </p>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
 
 </motion.div>
 
@@ -2496,4 +2549,3 @@ useEffect(() => {
 </div>
 );
 }
-
