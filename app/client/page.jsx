@@ -221,12 +221,15 @@ export default function MapPage() {
  const [isTyping, setIsTyping] = useState(false);
 
   useEffect(() => {
-    const setVH = () => {
-      document.documentElement.style.setProperty(
-        '--real-vh',
-        `${window.innerHeight}px`
-      );
-    };
+   const setVH = () => {
+  document.documentElement.style.setProperty('--real-vh', `${window.innerHeight}px`);
+
+  // ✅ safe-area bottom (sirve en iPhone y algunos Android)
+  const safeBottom =
+    parseInt(getComputedStyle(document.documentElement).getPropertyValue('env(safe-area-inset-bottom)')) || 0;
+
+  document.documentElement.style.setProperty('--safe-bottom', `${safeBottom}px`);
+};
 
     setVH();
     window.addEventListener('resize', setVH);
@@ -1594,21 +1597,22 @@ useEffect(() => {
 </div>
 
 {/* ===========================
-     PANEL MINI PROFESIONAL — FIX
+     PANEL MINI PROFESIONAL — FIX (MOBILE SAFE)
    =========================== */}
 <motion.div
   animate={{ y: 0 }}
   transition={{ type: "spring", stiffness: 150, damping: 20 }}
   className="
-    absolute left-0 right-0 
-    bottom-[20px]         /* ⬅️ SUBIDO 20PX PARA QUE NO SE OCULTE */
+    fixed left-0 right-0 bottom-0
     z-[9999]
     bg-white rounded-t-3xl shadow-xl border-t border-gray-200
   "
-  style={{ height: "135px" }}   /* ⬅️ SUBIDO A 135 PARA DAR AIRE */
+  style={{
+    paddingBottom: "calc(12px + env(safe-area-inset-bottom))",
+  }}
 >
   {/* ===== Handle ===== */}
-  <div className="w-full flex justify-center pt-1 pb-2 select-none">
+  <div className="w-full flex justify-center pt-2 pb-2 select-none">
     <div className="h-1.5 w-12 bg-gray-300 rounded-full"></div>
   </div>
 
@@ -1618,7 +1622,7 @@ useEffect(() => {
   </h2>
 
   {/* ===== Botones principales ===== */}
-  <div className="flex justify-center gap-2 mb-3">
+  <div className="flex justify-center gap-2 mb-3 px-3">
     <button
       onClick={() => fetchWorkers(selectedService)}
       className="bg-emerald-500 text-white font-semibold px-3 py-2 rounded-lg text-sm shadow-sm active:scale-95 transition"
@@ -1644,104 +1648,105 @@ useEffect(() => {
   {/* ===========================
       SERVICIOS (botón + modal)
    =========================== */}
-<div className="px-3 pb-2 flex items-center justify-between gap-2">
-  <button
-    onClick={() => setServicesOpen(true)}
-    className="
-      flex-1 py-2.5 rounded-xl
-      bg-gray-50 border border-gray-200
-      font-semibold text-gray-700
-      active:scale-95 transition
-    "
-  >
-    🧰 SERVICIOS
-  </button>
-
-  {/* mini badge del seleccionado */}
-  <div className="px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold">
-    {selectedService ? `✅ ${services.find(s => s.id === selectedService)?.label || selectedService}` : 'Todos'}
-  </div>
-</div>
-
-{/* MODAL SERVICIOS */}
-<AnimatePresence>
-  {servicesOpen && (
-    <motion.div
-      className="fixed inset-0 z-[20000] bg-black/55 backdrop-blur-sm flex items-end justify-center"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={() => setServicesOpen(false)}
+  <div className="px-3 pb-3 flex items-center justify-between gap-2">
+    <button
+      onClick={() => setServicesOpen(true)}
+      className="
+        flex-1 py-2.5 rounded-xl
+        bg-gray-50 border border-gray-200
+        font-semibold text-gray-700
+        active:scale-95 transition
+      "
     >
+      🧰 SERVICIOS
+    </button>
+
+    {/* mini badge del seleccionado */}
+    <div className="px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold">
+      {selectedService ? `✅ ${services.find(s => s.id === selectedService)?.label || selectedService}` : 'Todos'}
+    </div>
+  </div>
+
+  {/* MODAL SERVICIOS */}
+  <AnimatePresence>
+    {servicesOpen && (
       <motion.div
-        className="
-          w-full max-w-md
-          bg-white rounded-t-3xl
-          p-5 shadow-2xl
-          border border-gray-200
-        "
-        initial={{ y: 380 }}
-        animate={{ y: 0 }}
-        exit={{ y: 380 }}
-        transition={{ type: 'spring', stiffness: 120, damping: 18 }}
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-[20000] bg-black/55 backdrop-blur-sm flex items-end justify-center"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={() => setServicesOpen(false)}
       >
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-extrabold text-gray-800">Seleccionar servicio</h3>
-          <button
-            onClick={() => setServicesOpen(false)}
-            className="text-gray-500 hover:text-red-500 transition"
-          >
-            <XCircle size={22} />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {/* Opción: ver todos */}
-          <button
-            onClick={() => {
-              toggleService(null);
-              setServicesOpen(false);
-            }}
-            className={`
-              p-3 rounded-2xl border font-semibold text-sm
-              ${!selectedService ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-50 text-gray-700 border-gray-200'}
-              active:scale-95 transition
-            `}
-          >
-            🌍 Todos
-          </button>
-
-          {services.map((s) => (
+        <motion.div
+          className="
+            w-full max-w-md
+            bg-white rounded-t-3xl
+            p-5 shadow-2xl
+            border border-gray-200
+          "
+          style={{
+            paddingBottom: "calc(16px + env(safe-area-inset-bottom))",
+          }}
+          initial={{ y: 380 }}
+          animate={{ y: 0 }}
+          exit={{ y: 380 }}
+          transition={{ type: 'spring', stiffness: 120, damping: 18 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-extrabold text-gray-800">Seleccionar servicio</h3>
             <button
-              key={s.id}
+              onClick={() => setServicesOpen(false)}
+              className="text-gray-500 hover:text-red-500 transition"
+            >
+              <XCircle size={22} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {/* Opción: ver todos */}
+            <button
               onClick={() => {
-                toggleService(s.id);
+                toggleService(null);
                 setServicesOpen(false);
               }}
               className={`
                 p-3 rounded-2xl border font-semibold text-sm
-                flex items-center justify-center gap-2
-                ${selectedService === s.id ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-50 text-gray-700 border-gray-200'}
+                ${!selectedService ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-50 text-gray-700 border-gray-200'}
                 active:scale-95 transition
               `}
             >
-              {s.icon}
-              <span>{s.label}</span>
+              🌍 Todos
             </button>
-          ))}
-        </div>
 
-        <p className="text-xs text-gray-500 mt-4">
-          Tip: elegí un servicio para filtrar el mapa.
-        </p>
+            {services.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => {
+                  toggleService(s.id);
+                  setServicesOpen(false);
+                }}
+                className={`
+                  p-3 rounded-2xl border font-semibold text-sm
+                  flex items-center justify-center gap-2
+                  ${selectedService === s.id ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-50 text-gray-700 border-gray-200'}
+                  active:scale-95 transition
+                `}
+              >
+                {s.icon}
+                <span>{s.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs text-gray-500 mt-4">
+            Tip: elegí un servicio para filtrar el mapa.
+          </p>
+        </motion.div>
       </motion.div>
-    </motion.div>
-  )}
-</AnimatePresence>
-
+    )}
+  </AnimatePresence>
 </motion.div>
-
   {/* PERFIL DEL TRABAJADOR / CHOFER (MODIFICADO) */}
 <AnimatePresence>
   {selected && !showPrice && (() => {
