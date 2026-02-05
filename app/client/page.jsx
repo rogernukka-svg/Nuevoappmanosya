@@ -1402,10 +1402,10 @@ useEffect(() => {
   return (
     <div className="no-pull-refresh fixed inset-0 bg-white overflow-hidden">
 
-    {/* Header superior — volver atrás (marketing) */}
-<div className="absolute top-4 left-4 z-[1000]">
+    {/* Header superior — volver atrás */}
+<div className="fixed top-4 left-4 z-[10000] pointer-events-auto">
   <button
-    onClick={() => router.back()}
+    onClick={() => router.replace('/role-selector')}
     className="
       flex items-center gap-2
       bg-white/90 backdrop-blur
