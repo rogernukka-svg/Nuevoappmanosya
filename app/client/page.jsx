@@ -1458,20 +1458,21 @@ useEffect(() => {
 >
 
   <MapContainer
-    center={[-24.8, -56.5]}   // 🎯 Centro óptimo: Paraguay visible completo
-    zoom={7}                  
-    minZoom={5}
-    maxZoom={19}
-    style={{
-      height: "100%",
-      width: "100%",
-      touchAction: "pan-x pan-y",   // 👈 permite mover el mapa pero NO la página
-      WebkitOverflowScrolling: "touch",
-      overscrollBehavior: "none",   // ⛔ bloquea refresh vertical
-      paddingBottom: "160px"
-    }}
-    whenCreated={(map) => (mapRef.current = map)}
-  >
+  center={[-24.8, -56.5]}
+  zoom={7}
+  minZoom={5}
+  maxZoom={19}
+  zoomControl={false}   // 👈 ESCONDE + / −
+  style={{
+    height: "100%",
+    width: "100%",
+    touchAction: "pan-x pan-y",
+    WebkitOverflowScrolling: "touch",
+    overscrollBehavior: "none",
+    paddingBottom: "160px"
+  }}
+  whenCreated={(map) => (mapRef.current = map)}
+>
 
 
 
