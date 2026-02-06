@@ -17,11 +17,11 @@ export default function RootPage() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      const savedRole = typeof window !== 'undefined' ? localStorage.getItem('app_role') : null;
+      const savedRole =
+        typeof window !== 'undefined' ? localStorage.getItem('app_role') : null;
 
-      // ⏳ Splash visible (con animación)
-      await new Promise((r) => setTimeout(r, 1400));
-
+      // ⏳ Splash breve (sin exagerar)
+      await new Promise((r) => setTimeout(r, 900));
       if (!alive) return;
 
       if (!user) return router.replace('/auth/login');
@@ -39,110 +39,79 @@ export default function RootPage() {
   }, [router]);
 
   return (
-    <div className="relative flex flex-col items-center justify-center h-screen overflow-hidden bg-black font-[var(--font-manrope)]">
-      {/* Glow / fondo */}
+    <div className="relative flex flex-col items-center justify-center h-screen overflow-hidden bg-white font-[var(--font-manrope)]">
+      {/* Fondo sutil (pro) */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-24 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-emerald-500/10 blur-3xl animate-[pulse_2.6s_ease-in-out_infinite]" />
-        <div className="absolute bottom-[-140px] right-[-120px] h-[520px] w-[520px] rounded-full bg-emerald-400/10 blur-3xl animate-[pulse_3.2s_ease-in-out_infinite]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(16,185,129,0.10),transparent_55%)]" />
-        <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:46px_46px]" />
+        <div className="absolute -top-40 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-emerald-500/8 blur-3xl" />
+        <div className="absolute bottom-[-180px] right-[-180px] h-[520px] w-[520px] rounded-full bg-cyan-500/8 blur-3xl" />
+        <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(to_right,rgba(0,0,0,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.08)_1px,transparent_1px)] [background-size:52px_52px]" />
       </div>
 
       {/* Contenido */}
-      <div className="relative z-10 flex flex-col items-center">
-        {/* Logo animado */}
-        <div className="relative">
-          <div className="absolute inset-0 rounded-3xl bg-emerald-500/10 blur-2xl animate-[pulse_2.2s_ease-in-out_infinite]" />
-
-          <h1 className="select-none text-[62px] sm:text-[72px] font-extrabold tracking-tight">
-            <span className="text-white inline-block animate-[fadeUp_700ms_ease-out_forwards] opacity-0">
-              Manos
-            </span>
-            <span className="text-emerald-400 inline-block animate-[fadeUp_700ms_ease-out_120ms_forwards] opacity-0">
-              YA
-            </span>
+      <div className="relative z-10 flex flex-col items-center px-6">
+        {/* Marca */}
+        <div className="text-center">
+          <h1 className="select-none text-[56px] sm:text-[70px] font-extrabold tracking-tight leading-none">
+            <span className="text-gray-900">Manos</span>
+            <span className="text-emerald-600">YA</span>
           </h1>
 
-          {/* brillo pasando */}
-          <div className="pointer-events-none absolute left-1/2 top-[10px] h-10 w-[260px] -translate-x-1/2 rounded-full bg-gradient-to-r from-transparent via-emerald-300/25 to-transparent blur-md animate-[shine_1.6s_ease-in-out_infinite]" />
+          <p className="mt-3 text-sm sm:text-base text-gray-600 max-w-[420px]">
+            Estamos mejorando para una experiencia más rápida y segura.
+            <span className="text-gray-900 font-semibold">
+              {' '}
+              Igual ya podés curiosear
+            </span>{' '}
+            y ver el mapa, servicios y chat.
+          </p>
         </div>
 
-        {/* Frase marketing */}
-        <p className="mt-4 max-w-[360px] text-center text-emerald-200/90 text-[15px] sm:text-base font-light tracking-wide animate-[fadeIn_900ms_ease-out_260ms_forwards] opacity-0">
-          Conectamos clientes con trabajadores verificados.
-          <span className="text-white/80"> Rápido, seguro y cerca tuyo.</span>
+        {/* Estado / mensaje de confianza */}
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[12px] text-emerald-700 font-semibold">
+            ✅ Verificación en progreso
+          </span>
+          <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[12px] text-cyan-700 font-semibold">
+            🧭 Explorá sin compromiso
+          </span>
+          <span className="rounded-full border border-gray-200 bg-white px-3 py-1 text-[12px] text-gray-600 font-semibold">
+            🔒 Seguridad primero
+          </span>
+        </div>
+
+        {/* Loader minimal */}
+        <div className="mt-8 w-[280px] sm:w-[320px]">
+          <div className="h-[10px] rounded-full bg-gray-200 overflow-hidden">
+            <div className="h-full w-1/3 rounded-full bg-emerald-500 animate-[softload_1.6s_ease-in-out_infinite]" />
+          </div>
+          <div className="mt-3 text-center text-[12px] text-gray-500">
+            Cargando… te llevamos al inicio en segundos
+          </div>
+        </div>
+
+        {/* Nota sutil */}
+        <p className="mt-6 text-[12px] text-gray-400 text-center max-w-[460px]">
+          Tip: si algo no carga, recargá la página. Estamos ajustando rendimiento y estabilidad.
         </p>
-
-        {/* Barra loading */}
-        <div className="mt-7 w-[260px] sm:w-[300px]">
-          <div className="h-[10px] rounded-full bg-white/10 overflow-hidden">
-            <div className="h-full w-1/3 rounded-full bg-emerald-400 animate-[load_1.35s_ease-in-out_infinite]" />
-          </div>
-          <div className="mt-3 text-center text-[12px] text-white/60 animate-[fadeIn_900ms_ease-out_420ms_forwards] opacity-0">
-            Preparando tu experiencia…
-          </div>
-        </div>
-
-        {/* Mini claims */}
-        <div className="mt-8 flex items-center gap-3 text-[12px] text-white/55 animate-[fadeIn_900ms_ease-out_520ms_forwards] opacity-0">
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-            📍 Cerca tuyo
-          </span>
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-            ✅ Verificados
-          </span>
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-            💬 Chat directo
-          </span>
-        </div>
       </div>
 
-      {/* Animaciones (Tailwind arbitrary keyframes) */}
+      {/* Animación MUY suave */}
       <style jsx global>{`
-        @keyframes fadeUp {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-        @keyframes load {
+        @keyframes softload {
           0% {
-            transform: translateX(-20%);
+            transform: translateX(-25%);
             width: 30%;
+            opacity: 0.85;
           }
           50% {
-            transform: translateX(80%);
-            width: 45%;
+            transform: translateX(70%);
+            width: 42%;
+            opacity: 1;
           }
           100% {
-            transform: translateX(-20%);
+            transform: translateX(-25%);
             width: 30%;
-          }
-        }
-        @keyframes shine {
-          0% {
-            transform: translateX(-60%) scaleX(0.9);
-            opacity: 0.2;
-          }
-          50% {
-            transform: translateX(-50%) scaleX(1.05);
-            opacity: 0.45;
-          }
-          100% {
-            transform: translateX(-40%) scaleX(0.9);
-            opacity: 0.2;
+            opacity: 0.85;
           }
         }
       `}</style>

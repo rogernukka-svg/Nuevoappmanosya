@@ -219,6 +219,18 @@ export default function MapPage() {
   const markersRef = useRef({}); // guarda refs de marcadores por user_id
  /* === Fix altura real para móviles (Android/iPhone) === */
  const [isTyping, setIsTyping] = useState(false);
+ useEffect(() => {
+  const prevHtml = document.documentElement.style.overscrollBehavior;
+  const prevBody = document.body.style.overscrollBehavior;
+
+  document.documentElement.style.overscrollBehavior = "none";
+  document.body.style.overscrollBehavior = "none";
+
+  return () => {
+    document.documentElement.style.overscrollBehavior = prevHtml;
+    document.body.style.overscrollBehavior = prevBody;
+  };
+}, []);
 
   useEffect(() => {
    const setVH = () => {
@@ -1462,16 +1474,24 @@ useEffect(() => {
   zoom={7}
   minZoom={5}
   maxZoom={19}
-  zoomControl={false}   // 👈 ESCONDE + / −
+  zoomControl={false}
+  scrollWheelZoom={false}   // opcional (PC)
   style={{
     height: "100%",
     width: "100%",
-    touchAction: "pan-x pan-y",
-    WebkitOverflowScrolling: "touch",
+    touchAction: "none",          // ✅ BLOQUEA el gesto del navegador (pull-to-refresh / scroll)
     overscrollBehavior: "none",
+    WebkitOverflowScrolling: "auto",
     paddingBottom: "160px"
   }}
-  whenCreated={(map) => (mapRef.current = map)}
+  whenCreated={(map) => {
+    mapRef.current = map;
+
+    // ✅ Extra: bloquea “rebotito”/scroll del contenedor Leaflet
+    const el = map.getContainer();
+    el.style.touchAction = "none";
+    el.style.overscrollBehavior = "none";
+  }}
 >
 
 
@@ -1650,17 +1670,20 @@ useEffect(() => {
       SERVICIOS (botón + modal)
    =========================== */}
   <div className="px-3 pb-3 flex items-center justify-between gap-2">
-    <button
-      onClick={() => setServicesOpen(true)}
-      className="
-        flex-1 py-2.5 rounded-xl
-        bg-gray-50 border border-gray-200
-        font-semibold text-gray-700
-        active:scale-95 transition
-      "
-    >
-      🧰 SERVICIOS
-    </button>
+   <button
+  onClick={() => setServicesOpen(true)}
+  className="
+    flex-1 py-2.5 rounded-xl
+    bg-cyan-50
+    border border-cyan-200
+    font-semibold text-cyan-700
+    hover:bg-cyan-100
+    active:scale-95
+    transition
+  "
+>
+  🧰 SERVICIOS
+</button>
 
     {/* mini badge del seleccionado */}
     <div className="px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold">
