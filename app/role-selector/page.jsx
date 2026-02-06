@@ -7,17 +7,12 @@ import { toast } from 'sonner';
 import {
   Loader2,
   LogOut,
-  Wrench,
   Settings,
-  Car,
   ShieldCheck,
+  Key,
+  KeyRound,
   HardHat,
   Construction,
-  SteeringWheel,
-  CircleDot,
-  // ❌ quitamos Key y KeyRound (ya no se usan)
-  // Key,
-  // KeyRound,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -28,29 +23,17 @@ export default function RoleSelectorPage() {
   const [loading, setLoading] = useState(true);
   const [selectedRole, setSelectedRole] = useState(null);
 
-  // ✅ FIX SCROLL (si algún layout/global dejó overflow hidden)
+  /* ✅ FIX SCROLL */
   useEffect(() => {
     const prevHtmlOverflow = document.documentElement.style.overflow;
     const prevBodyOverflow = document.body.style.overflow;
-    const prevBodyHeight = document.body.style.height;
-    const prevBodyPosition = document.body.style.position;
-    const prevBodyTop = document.body.style.top;
-    const prevBodyWidth = document.body.style.width;
 
     document.documentElement.style.overflow = 'auto';
     document.body.style.overflow = 'auto';
-    document.body.style.height = 'auto';
-    document.body.style.position = 'static';
-    document.body.style.top = '';
-    document.body.style.width = 'auto';
 
     return () => {
       document.documentElement.style.overflow = prevHtmlOverflow;
       document.body.style.overflow = prevBodyOverflow;
-      document.body.style.height = prevBodyHeight;
-      document.body.style.position = prevBodyPosition;
-      document.body.style.top = prevBodyTop;
-      document.body.style.width = prevBodyWidth;
     };
   }, []);
 
@@ -81,8 +64,10 @@ export default function RoleSelectorPage() {
       return;
     }
 
-    // ⚠️ Si tu tabla profiles usa user_id, cambiá a .eq('user_id', userId)
-    const { error } = await supabase.from('profiles').update({ role }).eq('id', userId);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role })
+      .eq('id', userId);
 
     if (error) {
       toast.error('No se pudo guardar el modo.');
@@ -92,15 +77,16 @@ export default function RoleSelectorPage() {
 
     localStorage.setItem('app_role', role);
 
-    if (role === 'worker') toast.success('Modo Profesional activado ✅');
-    else if (role === 'taxi') toast.success('Modo Taxista activado 🚕');
-    else toast.success('Modo Cliente activado 🙌');
-
-    if (role === 'taxi') router.push('/driver');
-    else router.push(`/${role}`);
+    if (role === 'worker') {
+      toast.success('Modo Profesional activado ✅');
+      router.push('/worker');
+    } else {
+      toast.success('Modo Cliente activado 🙌');
+      router.push('/client');
+    }
   };
 
-  /* 🚪 Salida */
+  /* 🚪 Logout */
   const handleLogout = async () => {
     await supabase.auth.signOut();
     localStorage.removeItem('app_role');
@@ -108,7 +94,6 @@ export default function RoleSelectorPage() {
     router.replace('/auth/login');
   };
 
-  /* ⏳ Pantalla de carga */
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] text-gray-600">
@@ -118,89 +103,68 @@ export default function RoleSelectorPage() {
     );
   }
 
-  // ✅ Fallbacks seguros (misma idea, pero cambiamos íconos)
-  const KeyIcon = Wrench; // 🔧 llave de tuercas
+  const KeyIcon = KeyRound || Key;
   const HardHatIcon = HardHat || Construction;
-  const SteeringWheelIcon = Car; // 🚗 icono de auto
 
-  /* 🌈 UI principal — MISMO DISEÑO, PERO CON SCROLL REAL */
   return (
-    <div
-      className="h-[100dvh] overflow-y-auto overflow-x-hidden bg-[#F8FAFC] px-4 sm:px-6 py-6 sm:py-8 pb-[env(safe-area-inset-bottom)]"
-      style={{ WebkitOverflowScrolling: 'touch' }}
-    >
+    <div className="h-[100dvh] overflow-y-auto bg-[#F8FAFC] px-4 py-8">
       <div className="w-full max-w-[420px] mx-auto">
         <motion.div
-          initial={{ opacity: 0, y: 10, scale: 0.985 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="bg-white/95 backdrop-blur rounded-3xl border border-gray-200 shadow-[0_18px_60px_rgba(0,0,0,0.10)] p-5 sm:p-7"
+          className="bg-white rounded-3xl border border-gray-200 shadow-[0_18px_60px_rgba(0,0,0,0.10)] p-7"
         >
           {/* LOGO */}
           <div className="text-center">
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
+            <h1 className="text-4xl font-extrabold tracking-tight">
               <span className="text-[#0F172A]">Manos</span>
               <span className="text-emerald-600">YA</span>
             </h1>
-            <p className="text-gray-500 text-[12px] sm:text-sm mt-1">
+            <p className="text-gray-500 text-sm mt-1">
               Tu ayuda al instante.
             </p>
           </div>
 
-          {/* Marketing copy */}
-          <div className="mt-5 text-center">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-800">
+          {/* Marketing */}
+          <div className="mt-6 text-center">
+            <h2 className="text-lg font-semibold text-gray-800">
               ¿Qué querés hacer hoy?
             </h2>
-            <p className="text-[11px] sm:text-[12px] text-gray-500 mt-1 leading-relaxed">
-              Elegí una opción. Podés cambiar de modo cuando quieras.
+            <p className="text-xs text-gray-500 mt-1">
+              Elegí una opción. Podés cambiar cuando quieras.
             </p>
 
-            <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 text-[10px] sm:text-[11px] px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <ShieldCheck className="w-4 h-4" />
                 Perfiles verificados
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-[10px] sm:text-[11px] px-3 py-1 rounded-full bg-gray-50 text-gray-700 border border-gray-200">
-                Soporte local
               </span>
             </div>
           </div>
 
-          {/* Opciones */}
-          <div className="mt-5 flex flex-col gap-3">
+          {/* BOTONES */}
+          <div className="mt-6 flex flex-col gap-4">
             {/* CLIENTE */}
             <motion.button
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               onClick={() => handleSelectRole('client')}
-              className={`relative overflow-hidden w-full rounded-2xl px-4 sm:px-5 py-3.5 sm:py-4 text-left border transition-all ${
-                selectedRole === 'client'
-                  ? 'border-cyan-300 shadow-[0_12px_30px_rgba(6,182,212,0.18)]'
-                  : 'border-gray-200 hover:border-cyan-200'
-              }`}
+              className="relative overflow-hidden w-full rounded-2xl px-5 py-4 text-left border border-cyan-200"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-cyan-600 opacity-95" />
-              <div className="relative flex items-start gap-3 sm:gap-4 text-white">
-                {/* ✅ 1er icono: llave de tuercas + auto */}
-                <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/15 flex items-center justify-center mt-0.5">
-                  <div className="flex items-center gap-1">
-                    <KeyIcon className="w-4 h-4" />
-                    <Car className="w-4 h-4" />
-                  </div>
+              <div className="relative flex items-center gap-4 text-white">
+                <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center">
+                  <KeyIcon className="w-5 h-5" />
                 </div>
 
-                <div className="min-w-0 flex-1">
-                  <div className="text-[15px] sm:text-base font-extrabold tracking-tight">
-                    Pedí tu chofer y servicios
+                <div>
+                  <div className="font-extrabold">
+                    Pedir servicios del hogar
                   </div>
-                  <div className="text-[11px] sm:text-xs text-white/85 leading-snug break-words">
-                    Encontrá ayuda cerca, en minutos.
+                  <div className="text-xs text-white/85">
+                    Encontrá profesionales cerca en minutos.
                   </div>
-                </div>
-
-                <div className="shrink-0 text-[10px] sm:text-xs font-semibold bg-white/15 px-3 py-1 rounded-full mt-1">
-                  Rápido
                 </div>
               </div>
             </motion.button>
@@ -210,77 +174,31 @@ export default function RoleSelectorPage() {
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               onClick={() => handleSelectRole('worker')}
-              className={`relative overflow-hidden w-full rounded-2xl px-4 sm:px-5 py-3.5 sm:py-4 text-left border transition-all ${
-                selectedRole === 'worker'
-                  ? 'border-emerald-300 shadow-[0_12px_30px_rgba(16,185,129,0.18)]'
-                  : 'border-gray-200 hover:border-emerald-200'
-              }`}
+              className="relative overflow-hidden w-full rounded-2xl px-5 py-4 text-left border border-emerald-200"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-emerald-600 opacity-95" />
-              <div className="relative flex items-start gap-3 sm:gap-4 text-white">
-                {/* ✅ 2do icono: hombre con casco */}
-                <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/15 flex items-center justify-center mt-0.5">
+              <div className="relative flex items-center gap-4 text-white">
+                <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center">
                   <HardHatIcon className="w-5 h-5" />
                 </div>
 
-                <div className="min-w-0 flex-1">
-                  <div className="text-[15px] sm:text-base font-extrabold tracking-tight">
+                <div>
+                  <div className="font-extrabold">
                     Ofrecer servicios
                   </div>
-                  <div className="text-[11px] sm:text-xs text-white/85 leading-snug break-words">
+                  <div className="text-xs text-white/85">
                     Gestión 360: trabajá con respaldo y construí reputación.
                   </div>
                 </div>
-
-                <div className="shrink-0 text-[10px] sm:text-xs font-semibold bg-white/15 px-3 py-1 rounded-full mt-1">
-                  Ingresos
-                </div>
               </div>
             </motion.button>
-
-            {/* TAXI */}
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              onClick={() => handleSelectRole('taxi')}
-              className={`relative overflow-hidden w-full rounded-2xl px-4 sm:px-5 py-3.5 sm:py-4 text-left border transition-all ${
-                selectedRole === 'taxi'
-                  ? 'border-gray-400 shadow-[0_12px_30px_rgba(2,6,23,0.18)]'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-gray-900 to-black opacity-95" />
-              <div className="relative flex items-start gap-3 sm:gap-4 text-white">
-                {/* ✅ 3er icono: auto */}
-                <div className="shrink-0 w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/10 flex items-center justify-center mt-0.5">
-                  <SteeringWheelIcon className="w-5 h-5" />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="text-[15px] sm:text-base font-extrabold tracking-tight">
-                    Ser chofer
-                  </div>
-                  <div className="text-[11px] sm:text-xs text-white/80 leading-snug break-words">
-                    Gestión 360: te documentamos para cobrar mejor y acceder a beneficios.
-                  </div>
-                </div>
-
-                <div className="shrink-0 text-[10px] sm:text-xs font-semibold bg-white/10 px-3 py-1 rounded-full mt-1">
-                  Seguro
-                </div>
-              </div>
-            </motion.button>
-
-            <p className="text-[10px] sm:text-[11px] text-gray-500 text-center mt-1 leading-relaxed">
-              Taxi se activa tras completar verificación. Así protegemos a choferes y pasajeros.
-            </p>
           </div>
 
-          {/* Accesos */}
+          {/* ACCESOS */}
           <div className="mt-6">
             <button
               onClick={() => router.push('/settings/account')}
-              className="w-full flex items-center justify-center gap-2 text-[13px] sm:text-sm text-gray-600 hover:text-emerald-700 transition py-2"
+              className="w-full flex items-center justify-center gap-2 text-sm text-gray-600 hover:text-emerald-700 transition py-2"
             >
               <Settings className="w-4 h-4 opacity-70" />
               Gestión de mi cuenta
@@ -288,22 +206,21 @@ export default function RoleSelectorPage() {
 
             <button
               onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 text-[13px] sm:text-sm text-gray-600 hover:text-emerald-700 transition py-2"
+              className="w-full flex items-center justify-center gap-2 text-sm text-gray-600 hover:text-emerald-700 transition py-2"
             >
               <LogOut className="w-4 h-4 opacity-70" />
               Cerrar sesión
             </button>
           </div>
 
-          {/* Legal */}
-          <p className="text-[10px] sm:text-[11px] text-gray-400 mt-4 text-center leading-relaxed">
+          {/* LEGAL */}
+          <p className="text-xs text-gray-400 mt-4 text-center">
             Al continuar aceptás nuestras políticas.
             <br />
             <a
               href="/terms-of-use"
               className="text-emerald-600 underline"
               target="_blank"
-              rel="noreferrer"
             >
               Condiciones de Uso
             </a>{' '}
@@ -312,14 +229,13 @@ export default function RoleSelectorPage() {
               href="/privacy-policy"
               className="text-emerald-600 underline"
               target="_blank"
-              rel="noreferrer"
             >
               Privacidad
             </a>
           </p>
         </motion.div>
 
-        <p className="text-center text-[10px] sm:text-[11px] text-gray-400 mt-4">
+        <p className="text-center text-xs text-gray-400 mt-4">
           ManosYA — confianza, rapidez y respaldo local.
         </p>
       </div>

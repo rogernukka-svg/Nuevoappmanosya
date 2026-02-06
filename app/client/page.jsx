@@ -20,7 +20,6 @@ import {
   SendHorizontal,
   ChevronLeft,
   CheckCircle2,
-  Car, // 🚕 Taxi
 } from 'lucide-react';
 import { getSupabase } from '@/lib/supabase';
 import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
@@ -252,27 +251,16 @@ export default function MapPage() {
   const [center, setCenter] = useState(DEFAULT_CENTER);
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
   const [workers, setWorkers] = useState([]);
-  const [drivers, setDrivers] = useState([]);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
   const [showPrice, setShowPrice] = useState(false);
   const [route, setRoute] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
-  const isTaxiSelected =
-  selectedService === 'taxi' ||
-  !!selected?.vehicle_plate ||
-  !!selected?.vehicle_brand ||
-  !!selected?.vehicle_model;
-
 const distanceToSelectedKm =
   Number(me?.lat) && Number(me?.lon) && Number(selected?.lat) && Number(selected?.lng)
     ? haversineKm(me.lat, me.lon, selected.lat, selected.lng)
     : null;
 
-const driverTier = isTaxiSelected ? getDriverTier(selected) : null;
-const driverRingClass = isTaxiSelected
-  ? avatarRingClassForTier(driverTier)
-  : 'border-emerald-500';
   // 🟢 Panel estilo Uber (3 niveles)
 const [panelLevel, setPanelLevel] = useState("hidden"); 
 // niveles: "mini" | "mid" | "full"
@@ -303,7 +291,6 @@ const [statusBanner, setStatusBanner] = useState(null);
   
  
   const services = [
-    { id: 'taxi', label: 'Chofer', icon: <Car size={18} /> },
     { id: 'plomería', label: 'Plomería', icon: <Droplets size={18} /> },
     { id: 'electricidad', label: 'Electricidad', icon: <Wrench size={18} /> },
     { id: 'limpieza', label: 'Limpieza', icon: <Sparkles size={18} /> },
@@ -554,32 +541,12 @@ if (mapRef.current) {
   } finally {
     setBusy(false);
   }
-} // ✅ cierre correcto de fetchWorkers
-/* === Cargar choferes (drivers) === */
-async function fetchDrivers() {
-  try {
-    const { data, error } = await supabase
-      .from('map_drivers_view_v2')
-      .select('*')
-      .not('lat', 'is', null)
-      .not('lng', 'is', null)
-      .eq('is_active', true);
-
-    if (error) throw error;
-
-    setDrivers(data || []);
-    console.log('🚕 Drivers desde Supabase:', data);
-  } catch (err) {
-    console.error('Error cargando drivers:', err?.message || err);
-    toast.error('Error cargando choferes');
-  }
-}
+} 
 
 // ⚡ Cargar trabajadores DESPUÉS del mapa (mejora la velocidad)
 useEffect(() => {
   setTimeout(() => {
     fetchWorkers();
-    fetchDrivers();
   }, 350);
 }, []);
 
@@ -1175,10 +1142,11 @@ async function openChat(forceChatId = null) {
 }
 
 
-// ✉️ Enviar mensaje
-async function sendMessage() {
-  const text = inputRef.current?.value?.trim();
+// ✉️ Enviar mensaje (acepta texto opcional)
+async function sendMessage(textOverride = null) {
+  const text = (textOverride ?? inputRef.current?.value)?.trim();
   if (!text) return;
+
   if (!chatId || !me?.id) {
     console.error('❌ Falta chatId o sender_id');
     toast.error('No se puede enviar el mensaje');
@@ -1195,21 +1163,22 @@ async function sendMessage() {
           text,
         },
       ])
-      .select();
+      .select()
+      .single();
 
     if (error) {
       console.error('❌ Error enviando mensaje:', error);
       toast.error('No se pudo enviar el mensaje');
-    } else {
-      console.log('✅ Mensaje insertado:', data);
-      setMessages((prev) => {
-        // ✅ Evita duplicar el mismo mensaje localmente
-        if (prev.some((m) => m.id === data[0]?.id)) return prev;
-        return [...prev, data[0]];
-      });
-      inputRef.current.value = '';
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+      return;
     }
+
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === data?.id)) return prev;
+      return [...prev, data];
+    });
+
+    if (inputRef.current) inputRef.current.value = '';
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
   } catch (err) {
     console.error('❌ Error general al enviar mensaje:', err);
     toast.error('No se pudo enviar el mensaje');
@@ -1537,34 +1506,6 @@ useEffect(() => {
   iconCreateFunction={clusterIconCreateFunction}
 >
   {/* =======================
-      🚕 DRIVERS (CHOFERES)
-      ======================= */}
-  {selectedService === 'taxi' &&
-    drivers
-      ?.filter((d) => Number(d?.lat) && Number(d?.lng) && d?.is_active === true)
-      .map((d) => (
-        <Marker
-          key={`driver-${d.user_id}`}
-          position={[d.lat, d.lng]}
-          icon={avatarIcon(d.avatar_url, d) || undefined}
-          eventHandlers={{ click: () => handleMarkerClick(d) }}
-        >
-          <Tooltip direction="top">
-            <div className="text-xs leading-tight">
-              <strong className="block text-sm font-semibold">🚕 {d.full_name}</strong>
-              <p>
-                {d.vehicle_brand || ''} {d.vehicle_model || ''}
-              </p>
-              <p>
-                {d.vehicle_color || ''} • {d.vehicle_plate || ''}
-              </p>
-              <p>⭐ {d.avg_rating || 0} ({d.total_reviews || 0})</p>
-            </div>
-          </Tooltip>
-        </Marker>
-      ))}
-
-  {/* =======================
       👷 WORKERS (SERVICIOS)
       ======================= */}
   {selectedService !== 'taxi' &&
@@ -1774,11 +1715,7 @@ useEffect(() => {
   {/* PERFIL DEL TRABAJADOR / CHOFER (MODIFICADO) */}
 <AnimatePresence>
   {selected && !showPrice && (() => {
-    const isTaxiSelected =
-      selectedService === 'taxi' ||
-      !!selected?.vehicle_plate ||
-      !!selected?.vehicle_brand;
-
+    
     // 📏 Distancia (km) cliente ↔ chofer/trabajador
     const haversineKm = (lat1, lon1, lat2, lon2) => {
       const toRad = (v) => (v * Math.PI) / 180;
@@ -1825,157 +1762,8 @@ useEffect(() => {
         className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
       >
         <div className="text-center">
-          {/* =========================
-    🚕 PERFIL CHOFER — ESTILO PREMIUM (MARKETING)
-   ========================= */}
-{isTaxiSelected ? (
-  <>
-    {/* AVATAR + EXCELENTE AZUL (MARKETING) */}
-    <div className="flex flex-col items-center mb-3">
-      <div className="relative w-24 h-24">
-        <img
-          src={selected.avatar_url || '/avatar-fallback.png'}
-          onError={(e) => {
-            e.currentTarget.src = '/avatar-fallback.png';
-          }}
-          className={`
-            w-24 h-24 rounded-full border-[5px]
-            ${
-              selected.worker_verified || selected.profile_verified
-                ? 'border-blue-500'
-                : ringClass
-            }
-            shadow-xl object-cover object-center bg-white
-          `}
-          alt="avatar chofer"
-        />
+         
 
-        {/* ✅ CHECK AZUL ESTILO TRABAJADOR (EXCELENTE) */}
-        {(selected.worker_verified || selected.profile_verified) && (
-          <div className="
-            absolute -bottom-1 -right-1
-            bg-blue-600 rounded-full
-            p-1.5 border-2 border-white
-            shadow-lg
-          ">
-            <CheckCircle2 size={14} className="text-white" />
-          </div>
-        )}
-      </div>
-
-      {/* 🔵 BADGE EXCELENTE AZUL (MARKETING FUERTE) */}
-      {(selected.worker_verified || selected.profile_verified) && (
-        <div className="
-          mt-2 px-4 py-1.5
-          rounded-full text-[11px]
-          font-extrabold
-          bg-blue-600 text-white
-          shadow-md
-          flex items-center gap-1
-        ">
-          <CheckCircle2 size={12} />
-          Chofer Verificado
-        </div>
-      )}
-
-      {/* Badge de plan (secundario) */}
-      <div className="mt-2 px-3 py-1 rounded-full text-[11px] font-bold bg-white border shadow-sm">
-        {tier === 'premium'
-          ? '⭐ Chofer Premium'
-          : tier === 'eco'
-          ? '🌿 Chofer Eco'
-          : '🩶 Chofer Normal'}
-      </div>
-    </div>
-
-    {/* NOMBRE */}
-    <h2 className="text-xl font-extrabold tracking-tight text-gray-800">
-      🚕 {selected.full_name}
-    </h2>
-
-    {/* DISTANCIA + MENSAJE EMOCIONAL */}
-    <p className="text-sm text-gray-600 mt-1">
-      📍 A <b>{km ?? '—'} km</b> de vos
-    </p>
-    <p className="text-xs text-emerald-600 font-semibold mt-1">
-      Llega rápido • Seguro • Confiable
-    </p>
-    <p className="text-[11px] text-gray-500 mt-1">
-      Tu viaje, con un chofer documentado y verificado por ManosYA.
-    </p>
-
-    {/* ⭐ CALIFICACIÓN */}
-    <div className="flex justify-center items-center gap-1 mt-3">
-      {[...Array(5)].map((_, i) => (
-        <Star
-          key={i}
-          size={16}
-          className={
-            i < Math.round(selected.avg_rating || 0)
-              ? 'text-yellow-400 fill-yellow-400'
-              : 'text-gray-300'
-          }
-        />
-      ))}
-      <span className="text-xs text-gray-500 ml-1">
-        ({selected.total_reviews || 0} viajes)
-      </span>
-    </div>
-
-    {/* 🚗 CARD VEHÍCULO */}
-    <div className="mt-4 bg-gradient-to-br from-gray-50 to-white border rounded-2xl p-4 text-sm text-left shadow-sm">
-      <p className="font-semibold text-gray-700 mb-2">🚗 Vehículo</p>
-
-      <div className="grid grid-cols-2 gap-y-1 gap-x-3 text-gray-600">
-        <p><b>Marca:</b> {selected.vehicle_brand || '—'}</p>
-        <p><b>Modelo:</b> {selected.vehicle_model || '—'}</p>
-        <p><b>Color:</b> {selected.vehicle_color || '—'}</p>
-        <p><b>Chapa:</b> {selected.vehicle_plate || '—'}</p>
-      </div>
-    </div>
-
-    {/* Estado de pedido */}
-    <div className="mt-3">{jobId && <StatusBadge />}</div>
-
-    {/* BOTONES */}
-    {!route ? (
-      <div className="flex justify-center gap-3 mt-6">
-        <button
-          onClick={() => setSelected(null)}
-          className="px-5 py-3 rounded-xl border text-gray-600 hover:bg-gray-50 transition"
-        >
-          Cerrar
-        </button>
-
-        <button
-          onClick={solicitar}
-          className="
-            px-7 py-3 rounded-xl
-            bg-emerald-500 hover:bg-emerald-600
-            text-white font-extrabold
-            shadow-lg shadow-emerald-300/40
-            transition active:scale-95
-          "
-        >
-          🚕 Solicitar viaje
-        </button>
-      </div>
-    ) : (
-      <div className="flex flex-col items-center gap-3 mt-6">
-        <button
-          onClick={() => {
-            openChat();
-            setHasUnread(false);
-          }}
-          className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
-        >
-          <MessageCircle size={18} className="text-emerald-600" />
-          Chatear
-        </button>
-      </div>
-    )}
-  </>
-) : (
 
 
             /* =========================
@@ -2130,8 +1918,7 @@ useEffect(() => {
                   ) : null}
                 </div>
               )}
-            </>
-          )}
+                        </>
         </div>
       </motion.div>
     );
