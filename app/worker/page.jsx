@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   Map,
   CheckSquare,
+  CheckCircle2,
   Power,
   MessageCircle,
   Home,
@@ -105,6 +106,186 @@ const HOTSPOTS = [
   // ======= LIMPIO =======
   { name: "Limpio Centro", lat: -25.1590, lng: -57.4850, intensity: 6 },
 ]; 
+
+
+/**
+ * AvailabilityCarousel
+ * - Swipe izquierda/derecha para cambiar estado
+ * - Botón central tipo "píldora" con snap
+ * - Haptics/vibrate opcional
+ */
+export function AvailabilityCarousel({
+  value, // "available" | "offline"
+  onChange,
+}) {
+  const items = [
+    {
+      id: "available",
+      title: "Disponible",
+      subtitle: "Recibir pedidos en tiempo real",
+      pill: "Conectado",
+      tone: "emerald",
+    },
+    {
+      id: "offline",
+      title: "No disponible",
+      subtitle: "Pausás pedidos temporalmente",
+      pill: "Pausado",
+      tone: "gray",
+    },
+  ];
+
+  const idx = Math.max(0, items.findIndex((x) => x.id === value));
+  const active = items[idx];
+
+  function setByIndex(nextIdx) {
+    const clamped = Math.max(0, Math.min(items.length - 1, nextIdx));
+    const next = items[clamped].id;
+    if (next !== value) {
+      if (navigator?.vibrate) navigator.vibrate(20);
+      onChange(next);
+    }
+  }
+
+  return (
+    <div className="w-full">
+      {/* Card glass */}
+      <div className="rounded-3xl border border-gray-200 bg-white shadow-[0_18px_50px_rgba(16,24,40,0.10)] overflow-hidden">
+        {/* Header */}
+        <div className="px-5 pt-5 pb-3 flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span
+                className={`inline-flex items-center justify-center w-9 h-9 rounded-2xl ${
+                  active.tone === "emerald"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                <Power size={18} />
+              </span>
+              <h3 className="text-[17px] font-extrabold text-gray-900">
+                {active.title}
+              </h3>
+            </div>
+
+            <p className="text-[13px] text-gray-500 mt-1">
+              {active.subtitle}
+            </p>
+          </div>
+
+          <span
+            className={`text-[12px] font-bold px-3 py-1.5 rounded-full border ${
+              active.tone === "emerald"
+                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                : "bg-gray-50 text-gray-700 border-gray-200"
+            }`}
+          >
+            {active.pill}
+          </span>
+        </div>
+
+        {/* Carousel track */}
+        <div className="px-4 pb-5">
+          <div className="relative rounded-2xl bg-gray-50 border border-gray-200 p-2 overflow-hidden">
+            {/* Active glow */}
+            <div
+              className={`absolute inset-0 pointer-events-none ${
+                active.tone === "emerald"
+                  ? "bg-[radial-gradient(circle_at_30%_20%,rgba(16,185,129,0.20),transparent_55%)]"
+                  : "bg-[radial-gradient(circle_at_30%_20%,rgba(17,24,39,0.10),transparent_55%)]"
+              }`}
+            />
+
+            <motion.div
+              className="flex gap-2"
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.12}
+              onDragEnd={(e, info) => {
+                const x = info.offset.x;
+                if (x < -40) setByIndex(idx + 1);
+                if (x > 40) setByIndex(idx - 1);
+              }}
+              animate={{ x: -idx * 260 }}
+              transition={{ type: "spring", stiffness: 260, damping: 22 }}
+              style={{ width: items.length * 260 }}
+            >
+              {items.map((it) => {
+                const activeItem = it.id === value;
+                return (
+                  <button
+                    key={it.id}
+                    onClick={() => onChange(it.id)}
+                    className={`w-[252px] shrink-0 rounded-2xl px-4 py-4 text-left border transition ${
+                      activeItem
+                        ? it.tone === "emerald"
+                          ? "bg-white border-emerald-200 shadow-[0_12px_30px_rgba(16,185,129,0.18)]"
+                          : "bg-white border-gray-200 shadow-[0_12px_30px_rgba(17,24,39,0.12)]"
+                        : "bg-white/70 border-gray-200 hover:bg-white"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="text-[15px] font-extrabold text-gray-900">
+                        {it.title}
+                      </div>
+                      <AnimatePresence>
+                        {activeItem && (
+                          <motion.span
+                            initial={{ scale: 0.7, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.7, opacity: 0 }}
+                            className={`inline-flex items-center gap-1 text-[12px] font-bold ${
+                              it.tone === "emerald"
+                                ? "text-emerald-700"
+                                : "text-gray-700"
+                            }`}
+                          >
+                            <CheckCircle2 size={14} />
+                            Activo
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    <div className="text-[12px] text-gray-500 mt-1">
+                      {it.subtitle}
+                    </div>
+
+                    <div className="mt-3 flex items-center gap-2">
+                      <span
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          it.tone === "emerald" ? "bg-emerald-500" : "bg-gray-400"
+                        }`}
+                      />
+                      <span className="text-[12px] font-semibold text-gray-700">
+                        Deslizá para cambiar
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </motion.div>
+          </div>
+
+          {/* Dots */}
+          <div className="flex justify-center gap-2 mt-3">
+            {items.map((it, i) => (
+              <button
+                key={it.id}
+                onClick={() => setByIndex(i)}
+                className={`h-2.5 rounded-full transition-all ${
+                  i === idx ? "w-8 bg-emerald-500" : "w-2.5 bg-gray-300"
+                }`}
+                aria-label={`Ir a ${it.title}`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 export default function WorkerPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -736,75 +917,171 @@ async function sendMessage() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="container max-w-screen-md mx-auto px-4 pb-28 bg-white text-gray-900 min-h-screen"
-    >{/* === BANNER DE ESTADO DEL TRABAJADOR (MINIMALISTA) === */}
+    
+    
+    >{/* === TOP BAR ESTADO (MARKETING / RESPONSIVE) === */}
+  {/* 🔙 VOLVER FLOTANTE (pantalla principal) */}
+<button
+  onClick={() => router.push("/role-selector")}
+  className="
+    fixed left-4 z-[90]
+    top-[calc(env(safe-area-inset-top)+12px)]
+    bg-white/90 backdrop-blur
+    px-4 py-2 rounded-full
+    shadow-md border border-gray-200
+    text-gray-700 font-semibold
+    flex items-center gap-2
+    hover:bg-white transition
+  "
+>
+  <ChevronLeft size={16} />
+  Volver
+</button>
 <motion.div
-  initial={{ opacity: 0, y: -10 }}
+  initial={{ opacity: 0, y: -8 }}
   animate={{ opacity: 1, y: 0 }}
-  transition={{ duration: 0.25 }}
-  className="mb-6 px-2"
+  transition={{ duration: 0.2 }}
+  className="mb-4"
 >
   <div
-    className={`w-full rounded-xl p-4 shadow-sm border bg-white transition-all duration-300
-    flex flex-col items-center text-center gap-3
-    ${
-      status === 'available'
-        ? 'border-emerald-300 text-emerald-700'
-        : status === 'paused'
-        ? 'border-red-300 text-red-700'
-        : 'border-blue-300 text-blue-700'
-    }`}
+    className="
+      w-full rounded-2xl border border-gray-200 bg-white
+      px-4 py-3 shadow-sm
+      flex flex-col sm:flex-row
+      sm:items-center sm:justify-between
+      gap-3
+    "
   >
-    {/* Estado general */}
-    <div className="flex flex-col items-center gap-1">
-      <div className="flex items-center gap-2">
-        {status === 'available' && <Power className="text-emerald-500" size={20} />}
-        {status === 'paused' && <Power className="text-red-400" size={20} />}
-        {status === 'busy' && <Loader2 className="text-blue-500 animate-spin" size={20} />}
+    {/* Left: Estado + microcopy */}
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-2 min-w-0 flex-wrap">
+        <span
+          className={`h-2.5 w-2.5 rounded-full ${
+            status === "available"
+              ? "bg-emerald-500"
+              : status === "paused"
+              ? "bg-red-400"
+              : "bg-blue-500"
+          }`}
+        />
 
-        <span className="font-bold text-lg">
-          {status === 'available'
-            ? 'Estás disponible'
-            : status === 'paused'
-            ? 'Estás en pausa'
-            : 'Estás ocupado'}
+        <div className="font-extrabold text-gray-900 leading-tight">
+          {status === "available"
+            ? "Disponible"
+            : status === "paused"
+            ? "En pausa"
+            : "Ocupado"}
+        </div>
+
+        {/* Online pill */}
+        <span
+          className={`text-[11px] font-bold px-2.5 py-1 rounded-full border whitespace-nowrap ${
+            isConnected
+              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+              : "bg-red-50 text-red-700 border-red-200"
+          }`}
+        >
+          {isConnected ? "Conectado" : "Sin conexión"}
         </span>
       </div>
 
-      {/* Descripción */}
-      <p className="text-sm opacity-70 leading-snug max-w-xs">
-        {status === 'available'
-          ? 'Podés recibir pedidos nuevos en tiempo real.'
-          : status === 'paused'
-          ? 'No vas a recibir pedidos hasta reactivarte.'
-          : 'Finalizá tu trabajo actual para recibir nuevos.'}
-      </p>
+      {/* Microcopy: wrap en móvil + se oculta en xs muy chicos */}
+      <div className="mt-1 text-[12px] text-gray-500 leading-snug break-words">
+        <span className="hidden xs:inline">
+          {status === "available"
+            ? "Recibí pedidos en tiempo real."
+            : status === "paused"
+            ? "No recibís pedidos hasta reactivarte."
+            : "Finalizá el trabajo para volver a recibir pedidos."}
+        </span>
+
+        {/* fallback ultra-corto si tu tailwind NO tiene 'xs:' */}
+        <span className="xs:hidden">
+          {status === "available"
+            ? "Pedidos en vivo."
+            : status === "paused"
+            ? "En pausa."
+            : "En curso."}
+        </span>
+      </div>
     </div>
 
-    {/* Botones */}
-    <div className="flex gap-2 mt-1">
+    {/* Right: Switch + Volver */}
+    <div className="flex items-center gap-2 w-full sm:w-auto">
       <button
-        onClick={toggleStatus}
-        className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-sm font-semibold hover:bg-gray-50 transition shadow-sm"
-      >
-        Cambiar estado
-      </button>
+  onClick={toggleStatus}
+  disabled={status === "busy"}
+  aria-label="Cambiar disponibilidad"
+  className={`relative w-full sm:w-[220px] h-12 rounded-2xl border overflow-hidden
+    shadow-[0_10px_30px_rgba(16,24,40,0.10)] transition
+    ${status === "busy" ? "bg-gray-100 border-gray-200 opacity-70 cursor-not-allowed" : "bg-white border-gray-200"}
+  `}
+>
+  {/* fondo animado (sensación de cambio de modo) */}
+  <motion.div
+    className="absolute inset-0"
+    initial={false}
+    animate={{
+      opacity: status === "available" ? 1 : 0,
+      scale: status === "available" ? 1 : 0.98,
+    }}
+    transition={{ type: "spring", stiffness: 260, damping: 22 }}
+    style={{
+      background:
+        "radial-gradient(circle at 30% 20%, rgba(16,185,129,0.28), transparent 55%), linear-gradient(90deg, rgba(16,185,129,0.18), rgba(16,185,129,0.06))",
+    }}
+  />
 
-      <button
-        onClick={() => router.push('/role-selector')}
-        className="px-4 py-2 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 transition shadow-sm"
-      >
-        Volver
-      </button>
-    </div>
-
-    {/* Indicador de conexión */}
-    <span
-      className={`mt-1 text-xs font-medium px-3 py-1 rounded-full ${
-        isConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'
-      }`}
-    >
-      {isConnected ? '🟢 Conectado' : '🔴 Sin conexión'}
+  {/* labels */}
+  <div className="absolute inset-0 flex items-center justify-between px-4 text-[12px] font-semibold">
+    <span className={`${status === "available" ? "text-gray-400" : "text-gray-900"} transition`}>
+      Pausa
     </span>
+    <span className={`${status === "available" ? "text-emerald-700" : "text-gray-400"} transition`}>
+      Disponible
+    </span>
+  </div>
+
+  {/* knob deslizante (la “sensación que se giró”) */}
+<motion.div
+  className={`absolute top-1 bottom-1 w-[118px] rounded-2xl flex items-center justify-center gap-2
+    shadow-[0_12px_28px_rgba(16,24,40,0.18)]
+    ${status === "available" ? "bg-emerald-600 text-white" : "bg-gray-900 text-white"}
+  `}
+  initial={false}
+  animate={{
+    left: status === "available" ? "calc(100% - 122px)" : "4px",
+    rotate: status === "available" ? 0 : -2,
+    scale: 1, // ✅ siempre número (sin array)
+  }}
+  transition={{
+    left: { type: "spring", stiffness: 420, damping: 28 },
+    rotate: { type: "spring", stiffness: 420, damping: 28 },
+    scale: { type: "tween", duration: 0.18 }, // ✅ keyframes friendly
+  }}
+  whileTap={{ scale: 0.98 }}   // ✅ sensación click
+  whileHover={{ scale: 1.01 }} // ✅ sensación premium
+>
+  <motion.div
+    initial={false}
+    animate={{ rotate: status === "available" ? 0 : -25 }}
+    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+    className="flex items-center"
+  >
+    <Power size={16} />
+  </motion.div>
+
+  <span className="text-[12px] font-extrabold tracking-tight">
+    {status === "available" ? "ON" : "OFF"}
+  </span>
+</motion.div>
+
+  {/* borde brillante al hover */}
+  <div className="absolute inset-0 pointer-events-none opacity-0 hover:opacity-100 transition">
+    <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.55),transparent_60%)]" />
+  </div>
+</button>
+    </div>
   </div>
 </motion.div>
 
@@ -945,6 +1222,22 @@ async function sendMessage() {
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/50 flex justify-center items-end z-[80]"
     >
+      {/* 🔙 BOTÓN VOLVER FLOTANTE */}
+<button
+  onClick={() => router.push("/role-selector")}
+  className="
+    fixed top-4 left-4 z-50
+    bg-white/90 backdrop-blur
+    px-4 py-2 rounded-full
+    shadow-md border border-gray-200
+    text-gray-700 font-semibold
+    flex items-center gap-2
+    hover:bg-white transition
+  "
+>
+  <ChevronLeft size={16} />
+  Volver
+</button>
       <motion.div
         initial={{ y: '100%' }}
         animate={{ y: 0 }}
@@ -1201,8 +1494,7 @@ async function sendMessage() {
   )}
 </AnimatePresence>
 
-{/* 🐾 Rodolfo Supervisor */}
-<RodolfoBot
+<Bot360
   stats={{
     totalWorkers: jobs.length,
     jobsCompleted: jobs.filter((j) => j.status === 'completed').length,
@@ -1219,7 +1511,7 @@ async function sendMessage() {
 );
 }
 /* === 🐾 RODOLFOBOT v11 — Coach Paraguayo de ManosYA === */
-function RodolfoBot({ stats = {}, workerStatus = 'available' }) {
+function Bot360({ stats = {}, workerStatus = 'available' }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -1486,7 +1778,7 @@ useEffect(() => {
           <motion.span animate={{ rotate: [0, 10, 0, -10, 0] }} transition={{ repeat: Infinity, duration: 2 }}>
             🐱
           </motion.span>
-          <span className="font-semibold">RodolfoBot</span>
+         <span className="font-semibold">360Bot</span>
         </button>
       )}
 
@@ -1497,7 +1789,7 @@ useEffect(() => {
               <motion.span animate={{ rotate: [0, 10, 0, -10, 0] }} transition={{ repeat: Infinity, duration: 3 }}>
                 🐾
               </motion.span>
-              <span>RodolfoBot</span>
+             <span>360Bot</span>
             </div>
             <button onClick={() => setOpen(false)} className="hover:opacity-80">✕</button>
           </div>
