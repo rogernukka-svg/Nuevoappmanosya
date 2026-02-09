@@ -1512,15 +1512,15 @@ touchAction: "manipulation"
 <ChangeView center={myCenter} zoom={10} enabled={hasGPS} />
   <RadiusLock center={myCenter} radiusM={MAX_RADIUS_M} />
 
-  {/* 🗺️ CARTO Light (mapa blanco minimalista) */}
-  <TileLayer
-  
-    url="https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
-    attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-    updateWhenIdle={true}
-    updateWhenZooming={false}
-    keepBuffer={2}
-  />
+<TileLayer
+  url="https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+  attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+  crossOrigin="anonymous"
+  referrerPolicy="no-referrer"
+  updateWhenIdle={true}
+  updateWhenZooming={false}
+  keepBuffer={2}
+/>
 {/* 📍 MI UBICACIÓN (punto en el centro) */}
 {hasGPS && (
   <CircleMarker

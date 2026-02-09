@@ -1,10 +1,30 @@
-// ✅ next.config.js — versión final para Vercel + PWA + Bundle Analyzer + alias
+// next.config.js — FINAL (Vercel + PWA + Bundle Analyzer + cache tiles CARTO)
 const withPWA = require('next-pwa')({
   dest: 'public',
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
-  buildExcludes: [/app-build-manifest\.json$/], // 👈 evita errores de build PWA
+
+  // 👇 evita errores raros de PWA en build
+  buildExcludes: [/app-build-manifest\.json$/],
+
+  // ✅ Cache de tiles CARTO (para que en móvil/PWA no quede “blanco”)
+  runtimeCaching: [
+    {
+      urlPattern: /^https:\/\/tile\.basemaps\.cartocdn\.com\/.*$/i,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'carto-tiles',
+        expiration: {
+          maxEntries: 500,
+          maxAgeSeconds: 60 * 60 * 24 * 30, // 30 días
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+  ],
 });
 
 const withBundleAnalyzer = require('@next/bundle-analyzer')({
@@ -15,16 +35,15 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 const nextConfig = {
   reactStrictMode: true,
 
-  // ✅ Ignora errores de tipo y eslint durante el build (útil para deploy rápido)
+  // ✅ Ignora errores de tipo y eslint durante el build (deploy rápido)
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
 
-  // ✅ Permite usar alias "@/"
+  // ✅ Alias "@/..."
   webpack: (config) => {
     config.resolve.alias['@'] = __dirname;
     return config;
   },
 };
 
-// ✅ Combina PWA y Bundle Analyzer
 module.exports = withBundleAnalyzer(withPWA(nextConfig));
