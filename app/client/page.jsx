@@ -1,5 +1,5 @@
 'use client';
-
+import 'leaflet/dist/leaflet.css';
 import { useEffect, useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
@@ -258,6 +258,22 @@ export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
+  useEffect(() => {
+  const onResume = () => {
+    // ✅ cuando volvés a la app / cambiás orientación
+    setTimeout(() => {
+      try { mapRef.current?.invalidateSize(true); } catch {}
+    }, 200);
+  };
+
+  window.addEventListener("orientationchange", onResume);
+  document.addEventListener("visibilitychange", onResume);
+
+  return () => {
+    window.removeEventListener("orientationchange", onResume);
+    document.removeEventListener("visibilitychange", onResume);
+  };
+}, []);
     // ✅ HOOK ADENTRO DEL COMPONENTE (FIX)
   const [tileUrl, setTileUrl] = useState(CARTO_URL);
   const markersRef = useRef({}); // guarda refs de marcadores por user_id
@@ -1485,68 +1501,75 @@ useEffect(() => {
   style={{
     height: "calc(var(--real-vh, 100vh) - 160px)",
     overscrollBehavior: "none",
-    touchAction: "manipulation",
+    touchAction: "none",          // ✅ Leaflet captura gestos en móvil
+    WebkitUserSelect: "none",
+    userSelect: "none",
   }}
 >
   <MapContainer
-    center={myCenter}
-    zoom={10}
-    minZoom={9}
-    maxZoom={18}
-    zoomControl={false}
-    scrollWheelZoom={false}
-    style={{
-      height: "100%",
-      width: "100%",
-      touchAction: "manipulation",
-      overscrollBehavior: "none",
-      WebkitOverflowScrolling: "auto",
-      paddingBottom: "160px",
-      background: "#eef2f7",
+  center={myCenter}
+  zoom={10}
+  minZoom={9}
+  maxZoom={18}
+  zoomControl={false}
+  scrollWheelZoom={false}
+
+  /* ✅ FIX MOBILE/PWA (clave) */
+  dragging={true}
+  touchZoom={true}
+  doubleClickZoom={false}
+  boxZoom={false}
+  keyboard={false}
+  tap={false}
+  preferCanvas={true}
+
+  style={{
+    height: "100%",
+    width: "100%",
+    touchAction: "none",          // ✅ antes: "manipulation"
+    overscrollBehavior: "none",
+    WebkitOverflowScrolling: "auto",
+    paddingBottom: "160px",
+    background: "#eef2f7",
+  }}
+  whenCreated={(map) => {
+    mapRef.current = map;
+
+    const el = map.getContainer();
+    el.style.touchAction = "none";       // ✅ antes: "manipulation"
+    el.style.overscrollBehavior = "none";
+
+    // ✅ FIX móvil/PWA: recalcular tamaño real del mapa
+    setTimeout(() => {
+      try { map.invalidateSize(true); } catch {}
+    }, 250);
+  }}
+  whenReady={() => {
+    setTimeout(() => {
+      try { mapRef.current?.invalidateSize(true); } catch {}
+    }, 450);
+  }}
+>
+  {/* ✅ Centrar SOLO cuando hay GPS + encuadrar el círculo completo */}
+  <ChangeView center={myCenter} zoom={10} enabled={hasGPS} />
+  <RadiusLock center={myCenter} radiusM={MAX_RADIUS_M} />
+
+  <TileLayer
+    url={tileUrl}
+    attribution={
+      tileUrl === CARTO_URL
+        ? '&copy; <a href="https://carto.com/">CARTO</a>'
+        : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }
+    updateWhenIdle
+    updateWhenZooming={false}
+    keepBuffer={2}
+    eventHandlers={{
+      tileerror: () => {
+        if (tileUrl !== OSM_URL) setTileUrl(OSM_URL);
+      },
     }}
-    whenCreated={(map) => {
-      mapRef.current = map;
-
-      const el = map.getContainer();
-      el.style.touchAction = "manipulation";
-      el.style.overscrollBehavior = "none";
-
-      // ✅ FIX móvil/PWA: recalcular tamaño real del mapa
-      setTimeout(() => {
-        try { map.invalidateSize(true); } catch {}
-      }, 250);
-    }}
-    whenReady={() => {
-      setTimeout(() => {
-        try { mapRef.current?.invalidateSize(true); } catch {}
-      }, 450);
-    }}
-  >
-    {/* ✅ Centrar SOLO cuando hay GPS + encuadrar el círculo completo */}
-    <ChangeView center={myCenter} zoom={10} enabled={hasGPS} />
-    <RadiusLock center={myCenter} radiusM={MAX_RADIUS_M} />
-
-    <TileLayer
-      key={`tiles-${tileUrl}`}
-      url={tileUrl}
-      attribution={
-        tileUrl === CARTO_URL
-          ? '&copy; <a href="https://carto.com/">CARTO</a>'
-          : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-      }
-      crossOrigin="anonymous"
-      referrerPolicy="no-referrer"
-      updateWhenIdle={true}
-      updateWhenZooming={false}
-      keepBuffer={2}
-      eventHandlers={{
-        tileerror: () => {
-          // ✅ Si CARTO falla en PWA/móvil, cambiamos automáticamente a OSM
-          if (tileUrl !== OSM_URL) setTileUrl(OSM_URL);
-        },
-      }}
-    />
-
+  />
     {/* 📍 MI UBICACIÓN */}
     {hasGPS && (
       <CircleMarker
