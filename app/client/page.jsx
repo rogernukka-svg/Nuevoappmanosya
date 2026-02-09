@@ -36,6 +36,8 @@ const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { 
 const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then(m => m.default), { ssr: false });
 const MAX_RADIUS_KM = 50;
 const MAX_RADIUS_M = MAX_RADIUS_KM * 1000;
+const CARTO_URL = "https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png";
+const OSM_URL   = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const CircleMarker = dynamic(() => import('react-leaflet').then(m => m.CircleMarker), { ssr: false });
 function ChangeView({ center, zoom = 14, enabled = true }) {
   const map = useMap();
@@ -257,6 +259,8 @@ export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
+    // ✅ HOOK ADENTRO DEL COMPONENTE (FIX)
+  const [tileUrl, setTileUrl] = useState(CARTO_URL);
   const markersRef = useRef({}); // guarda refs de marcadores por user_id
  /* === Fix altura real para móviles (Android/iPhone) === */
  const [isTyping, setIsTyping] = useState(false);
@@ -1480,145 +1484,168 @@ useEffect(() => {
 <div
   className="absolute inset-x-0 top-0 z-0"
   style={{
-   height: "calc(var(--real-vh, 100vh) - 160px)",
-    overscrollBehavior: "none",     // ⛔ evita pull-to-refresh
-touchAction: "manipulation"
-  }}
->
-<MapContainer
-  center={myCenter}
-  zoom={10}      // 👈 más lejos para ver el círculo
-  minZoom={9}    // 👈 permite alejar un poco más
-  maxZoom={18}
-  zoomControl={false}
-  scrollWheelZoom={false}
-  style={{
-    height: "100%",
-    width: "100%",
-    touchAction: "manipulation",
+    height: "calc(var(--real-vh, 100vh) - 160px)",
     overscrollBehavior: "none",
-    WebkitOverflowScrolling: "auto",
-    paddingBottom: "160px",
-  }}
-  whenCreated={(map) => {
-    mapRef.current = map;
-
-    const el = map.getContainer();
-    el.style.touchAction = "manipulation";
-    el.style.overscrollBehavior = "none";
+    touchAction: "manipulation",
   }}
 >
-  {/* ✅ Centrar SOLO cuando hay GPS + encuadrar el círculo completo */}
-<ChangeView center={myCenter} zoom={10} enabled={hasGPS} />
-  <RadiusLock center={myCenter} radiusM={MAX_RADIUS_M} />
-
-<TileLayer
-  url="https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
-  attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-  crossOrigin="anonymous"
-  referrerPolicy="no-referrer"
-  updateWhenIdle={true}
-  updateWhenZooming={false}
-  keepBuffer={2}
-/>
-{/* 📍 MI UBICACIÓN (punto en el centro) */}
-{hasGPS && (
-  <CircleMarker
+  <MapContainer
     center={myCenter}
-    radius={8}
-    pathOptions={{
-      color: "#ffffff",
-      weight: 3,
-      fillColor: "#10b981",
-      fillOpacity: 1,
+    zoom={10}
+    minZoom={9}
+    maxZoom={18}
+    zoomControl={false}
+    scrollWheelZoom={false}
+    style={{
+      height: "100%",
+      width: "100%",
+      touchAction: "manipulation",
+      overscrollBehavior: "none",
+      WebkitOverflowScrolling: "auto",
+      paddingBottom: "160px",
+      background: "#eef2f7",
     }}
-  />
-)}
-  {/* 🟢 CÍRCULO 50KM DEL CLIENTE */}
-  {hasGPS && (
-    <Circle
-      center={myCenter}
-      radius={MAX_RADIUS_M}
-      pathOptions={{
-        color: "#10b981",
-        weight: 2,
-        fillColor: "#10b981",
-        fillOpacity: 0.08,
+    whenCreated={(map) => {
+      mapRef.current = map;
+
+      const el = map.getContainer();
+      el.style.touchAction = "manipulation";
+      el.style.overscrollBehavior = "none";
+
+      // ✅ FIX móvil/PWA: recalcular tamaño real del mapa
+      setTimeout(() => {
+        try { map.invalidateSize(true); } catch {}
+      }, 250);
+    }}
+    whenReady={() => {
+      setTimeout(() => {
+        try { mapRef.current?.invalidateSize(true); } catch {}
+      }, 450);
+    }}
+  >
+    {/* ✅ Centrar SOLO cuando hay GPS + encuadrar el círculo completo */}
+    <ChangeView center={myCenter} zoom={10} enabled={hasGPS} />
+    <RadiusLock center={myCenter} radiusM={MAX_RADIUS_M} />
+
+    <TileLayer
+      key={`tiles-${tileUrl}`}
+      url={tileUrl}
+      attribution={
+        tileUrl === CARTO_URL
+          ? '&copy; <a href="https://carto.com/">CARTO</a>'
+          : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      }
+      crossOrigin="anonymous"
+      referrerPolicy="no-referrer"
+      updateWhenIdle={true}
+      updateWhenZooming={false}
+      keepBuffer={2}
+      eventHandlers={{
+        tileerror: () => {
+          // ✅ Si CARTO falla en PWA/móvil, cambiamos automáticamente a OSM
+          if (tileUrl !== OSM_URL) setTileUrl(OSM_URL);
+        },
       }}
     />
-  )}
 
-  {/* Ruta (si existe) */}
-  {Array.isArray(route) &&
-    route.length === 2 &&
-    Array.isArray(route[0]) &&
-    Array.isArray(route[1]) &&
-    Number(route[0][0]) &&
-    Number(route[0][1]) &&
-    Number(route[1][0]) &&
-    Number(route[1][1]) && (
-      <Polyline positions={route} color="#10b981" weight={5} />
+    {/* 📍 MI UBICACIÓN */}
+    {hasGPS && (
+      <CircleMarker
+        center={myCenter}
+        radius={8}
+        pathOptions={{
+          color: "#ffffff",
+          weight: 3,
+          fillColor: "#10b981",
+          fillOpacity: 1,
+        }}
+      />
     )}
 
-  {/* ✅ CLUSTER + WORKERS */}
-  <MarkerClusterGroup
-    chunkedLoading
-    maxClusterRadius={48}
-    iconCreateFunction={clusterIconCreateFunction}
-  >
-    {selectedService !== "taxi" &&
-      workers
-        ?.filter((w) => Number(w?.lat) && Number(w?.lng) && w?.status !== "paused")
-        .map((w) => {
-          const minutesAgo = getMinutesAgo(w.updated_at);
+    {/* 🟢 CÍRCULO 50KM */}
+    {hasGPS && (
+      <Circle
+        center={myCenter}
+        radius={MAX_RADIUS_M}
+        pathOptions={{
+          color: "#10b981",
+          weight: 2,
+          fillColor: "#10b981",
+          fillOpacity: 0.08,
+        }}
+      />
+    )}
 
-          let estadoTexto = "Disponible ahora";
-          let estadoColor = "#10b981";
+    {/* Ruta (si existe) */}
+    {Array.isArray(route) &&
+      route.length === 2 &&
+      Array.isArray(route[0]) &&
+      Array.isArray(route[1]) &&
+      Number(route[0][0]) &&
+      Number(route[0][1]) &&
+      Number(route[1][0]) &&
+      Number(route[1][1]) && (
+        <Polyline positions={route} color="#10b981" weight={5} />
+      )}
 
-          if (w.status === "busy") {
-            const busyUntil = w.busy_until ? new Date(w.busy_until) : null;
-            if (busyUntil) {
-              const diffMin = Math.max(
-                0,
-                Math.round((busyUntil.getTime() - Date.now()) / 60000)
-              );
-              estadoTexto =
-                diffMin > 0 ? `Ocupado • libre en ${diffMin} min` : "Ocupado (finalizando)";
-            } else {
-              estadoTexto = "Ocupado";
+    {/* ✅ CLUSTER + WORKERS */}
+    <MarkerClusterGroup
+      chunkedLoading
+      maxClusterRadius={48}
+      iconCreateFunction={clusterIconCreateFunction}
+    >
+      {selectedService !== "taxi" &&
+        workers
+          ?.filter((w) => Number(w?.lat) && Number(w?.lng) && w?.status !== "paused")
+          .map((w) => {
+            const minutesAgo = getMinutesAgo(w.updated_at);
+
+            let estadoTexto = "Disponible ahora";
+            let estadoColor = "#10b981";
+
+            if (w.status === "busy") {
+              const busyUntil = w.busy_until ? new Date(w.busy_until) : null;
+              if (busyUntil) {
+                const diffMin = Math.max(
+                  0,
+                  Math.round((busyUntil.getTime() - Date.now()) / 60000)
+                );
+                estadoTexto =
+                  diffMin > 0 ? `Ocupado • libre en ${diffMin} min` : "Ocupado (finalizando)";
+              } else {
+                estadoTexto = "Ocupado";
+              }
+              estadoColor = "#f97316";
             }
-            estadoColor = "#f97316";
-          }
 
-          return (
-            <Marker
-              key={`worker-${w.user_id}`}
-              position={[w.lat, w.lng]}
-              icon={avatarIcon(w.avatar_url, w) || undefined}
-              eventHandlers={{ click: () => handleMarkerClick(w) }}
-            >
-              <Tooltip direction="top">
-                <div className="text-xs leading-tight">
-                  <strong className="block text-sm font-semibold">{w.full_name}</strong>
-                  <p>Servicio: {w.main_skill || "No especificado"}</p>
-                  <p>💰 Desde ₲45.000</p>
+            return (
+              <Marker
+                key={`worker-${w.user_id}`}
+                position={[w.lat, w.lng]}
+                icon={avatarIcon(w.avatar_url, w) || undefined}
+                eventHandlers={{ click: () => handleMarkerClick(w) }}
+              >
+                <Tooltip direction="top">
+                  <div className="text-xs leading-tight">
+                    <strong className="block text-sm font-semibold">{w.full_name}</strong>
+                    <p>Servicio: {w.main_skill || "No especificado"}</p>
+                    <p>💰 Desde ₲45.000</p>
 
-                  <p className="mt-1 font-semibold" style={{ color: estadoColor }}>
-                    {estadoTexto}
-                  </p>
+                    <p className="mt-1 font-semibold" style={{ color: estadoColor }}>
+                      {estadoTexto}
+                    </p>
 
-                  {minutesAgo !== null && (
-                    <p className="text-[10px] text-gray-500 mt-1">⏱ hace {minutesAgo} min</p>
-                  )}
-                </div>
-              </Tooltip>
-            </Marker>
-          );
-        })}
-  </MarkerClusterGroup>
-</MapContainer>
+                    {minutesAgo !== null && (
+                      <p className="text-[10px] text-gray-500 mt-1">⏱ hace {minutesAgo} min</p>
+                    )}
+                  </div>
+                </Tooltip>
+              </Marker>
+            );
+          })}
+    </MarkerClusterGroup>
+  </MapContainer>
 </div>
-
 {/* ===========================
      PANEL MINI PROFESIONAL — FIX (MOBILE SAFE)
    =========================== */}
