@@ -1,15 +1,21 @@
-// next.config.js — FINAL (Vercel + PWA + Bundle Analyzer + FIX CARTO tiles)
-const withPWA = require('next-pwa')({
-  dest: 'public',
+// next.config.js — FINAL (Render/Vercel + PWA + Bundle Analyzer + FIX CARTO tiles)
+
+const withBundleAnalyzer = require("@next/bundle-analyzer")({
+  enabled: process.env.ANALYZE === "true",
+});
+
+const withPWA = require("next-pwa")({
+  dest: "public",
   register: true,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === 'development',
+  disable: process.env.NODE_ENV === "development",
 
+  // evita conflictos con manifests generados por Next
   buildExcludes: [/app-build-manifest\.json$/],
 
-  workboxOptions: {
+  // ✅ OJO: en next-pwa es "workboxOpts" (NO workboxOptions)
+  workboxOpts: {
     cleanupOutdatedCaches: true,
-    // ✅ importantísimo para que SW no “congele” el estado viejo
     clientsClaim: true,
     skipWaiting: true,
   },
@@ -19,29 +25,27 @@ const withPWA = require('next-pwa')({
     // 1) CARTO tiles
     {
       urlPattern: /^https:\/\/tile\.basemaps\.cartocdn\.com\/.*$/i,
-      handler: 'StaleWhileRevalidate',
+      handler: "StaleWhileRevalidate",
       options: {
-        cacheName: 'carto-tiles-v3', // 🔥 SUBIR versión para romper cache viejo
+        cacheName: "carto-tiles-v3", // 🔥 subí versión para romper cache viejo
         expiration: {
           maxEntries: 1000,
           maxAgeSeconds: 60 * 60 * 24 * 30, // 30 días
         },
-        cacheableResponse: {
-          statuses: [0, 200], // 0 = opaque
-        },
+        cacheableResponse: { statuses: [0, 200] }, // 0 = opaque
         fetchOptions: {
-          mode: 'no-cors',
-          credentials: 'omit',
+          mode: "no-cors",
+          credentials: "omit",
         },
       },
     },
 
-    // 2) fallback: otras imágenes externas (si usás)
+    // 2) fallback: imágenes externas
     {
       urlPattern: /^https?:\/\/.*\.(?:png|jpg|jpeg|svg|webp)$/i,
-      handler: 'StaleWhileRevalidate',
+      handler: "StaleWhileRevalidate",
       options: {
-        cacheName: 'external-images-v1',
+        cacheName: "external-images-v1",
         expiration: {
           maxEntries: 300,
           maxAgeSeconds: 60 * 60 * 24 * 30,
@@ -52,10 +56,6 @@ const withPWA = require('next-pwa')({
   ],
 });
 
-const withBundleAnalyzer = require('@next/bundle-analyzer')({
-  enabled: process.env.ANALYZE === 'true',
-});
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -64,7 +64,7 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
 
   webpack: (config) => {
-    config.resolve.alias['@'] = __dirname;
+    config.resolve.alias["@"] = __dirname;
     return config;
   },
 };

@@ -3,6 +3,7 @@ import { Inter, Manrope } from "next/font/google";
 import { Toaster } from "sonner";
 import ClientOnlyLayout from "./ClientOnlyLayout";
 import GlobalAudio from "@/components/GlobalAudio";
+import "leaflet/dist/leaflet.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
@@ -10,8 +11,7 @@ const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
 /* === 🧠 SEO + PWA Metadata === */
 export const metadata = {
   title: "ManosYA | Tu ayuda al instante",
-  description:
-    "Conectamos clientes y profesionales en minutos. Rápido, seguro y confiable.",
+  description: "Conectamos clientes y profesionales en minutos. Rápido, seguro y confiable.",
   manifest: "/manifest.json",
   icons: {
     icon: "/favicon.ico",
@@ -37,10 +37,7 @@ export default function RootLayout({ children }) {
         <meta name="theme-color" content="#14B8A6" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta
-          name="apple-mobile-web-app-status-bar-style"
-          content="black-translucent"
-        />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="ManosYA" />
         <meta name="application-name" content="ManosYA" />
 
@@ -62,16 +59,14 @@ export default function RootLayout({ children }) {
         />
       </head>
 
-      {/* ⛔ FIX agregado: evita que los celulares agranden la letra */}
+      {/* ⛔ FIX: evita que los celulares agranden la letra */}
       <body
-        style={{
-          WebkitTextSizeAdjust: "none",
-          textSizeAdjust: "none",
-        }}
+        style={{ WebkitTextSizeAdjust: "none", textSizeAdjust: "none" }}
         className="
           min-h-screen flex flex-col
           bg-[#F9FAFB] text-gray-900 antialiased
-          overflow-x-hidden overflow-y-hidden
+          overflow-x-hidden
+          overflow-y-auto
           selection:bg-emerald-200 selection:text-emerald-800
         "
       >
@@ -106,9 +101,7 @@ export default function RootLayout({ children }) {
             __html: `
               document.addEventListener("click", () => {
                 const audio = document.querySelector("audio");
-                if (audio && audio.paused) {
-                  audio.play().catch(()=>{});
-                }
+                if (audio && audio.paused) audio.play().catch(()=>{});
               }, { once: true });
             `,
           }}
