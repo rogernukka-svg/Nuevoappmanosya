@@ -429,14 +429,20 @@ useEffect(() => {
 
   (async () => {
     try {
-      const { data: job } = await supabase
-        .from('jobs')
-        .select('id, status, worker_id, worker_lat, worker_lng')
-        .eq('client_id', me.id)
-        .in('status', ['open', 'accepted', 'assigned'])
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+     const { data: job, error } = await supabase
+  .from('jobs')
+  .select('id, status, worker_id, worker_lat, worker_lng')
+  .eq('client_id', me.id)
+  .in('status', ['open', 'accepted', 'assigned'])
+  .order('created_at', { ascending: false })
+  .limit(1)
+  .maybeSingle();
+
+if (error) {
+  console.warn("restore job error:", error);
+  return;
+}
+if (!job) return; // ✅ normal: no hay pedido activo
 
       if (job) {
         setJobId(job.id);
@@ -472,44 +478,51 @@ useEffect(() => {
     })();
   }, [router]);
 
-/* === GEOLOC OPTIMIZADA — MAPA RÁPIDO COMO UBER === */
+/* === GEOLOC OPTIMIZADA — MAPA RÁPIDO COMO UBER (FIX) === */
 useEffect(() => {
-  // 1️⃣ MOSTRAR MAPA INSTANTÁNEO
-  setCenter([-23.4437, -58.4400]); // centro del país (rápido)
+  // 1️⃣ MOSTRAR MAPA INSTANTÁNEO (sin esperar GPS)
+  setCenter([-23.4437, -58.44]); // centro del país
 
   if (!navigator.geolocation) return;
-  
 
   let firstFix = false;
 
+  // ✅ Intento rápido primero (mejor UX)
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+      setMe((prev) => ({ ...prev, lat, lon }));
+
+      if (!firstFix) {
+        firstFix = true;
+        setCenter([lat, lon]);
+        // ⛔ NO setView acá (para no pelear con RadiusLock/ChangeView)
+      }
+    },
+    (err) => console.warn("GPS quick error:", err),
+    { enableHighAccuracy: false, maximumAge: 15000, timeout: 8000 }
+  );
+
+  // ✅ Watch continuo (más precisión después)
   const watcher = navigator.geolocation.watchPosition(
     (pos) => {
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
-      if (!Number(lat) || !Number(lon)) return;
-
-      // actualizar mi ubicación SIEMPRE
       setMe((prev) => ({ ...prev, lat, lon }));
 
-      // 2️⃣ SOLO CENTRAR UNA VEZ (no mover cada vez)
       if (!firstFix) {
         firstFix = true;
         setCenter([lat, lon]);
-
-        if (mapRef.current) {
-         mapRef.current.setView([lat, lon], 12, { animate: true });
-        }
+        // ⛔ NO setView acá
       }
     },
-    (err) => {
-      console.warn("GPS error:", err);
-    },
-    {
-      enableHighAccuracy: true,
-      maximumAge: 3000,
-      timeout: 5000,
-    }
+    (err) => console.warn("GPS watch error:", err),
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
   );
 
   return () => navigator.geolocation.clearWatch(watcher);
@@ -549,18 +562,20 @@ async function fetchWorkers(serviceFilter = null) {
     // 🧠 Log para verificar qué datos llegan (incluye rating y reviews)
     console.log('🧠 Trabajadores desde Supabase:', data);
 
-   // 🎯 FILTRAR SOLO TRABAJADORES DENTRO DE 50 KM
 let filtered = data || [];
 
-if (Number(me?.lat) && Number(me?.lon)) {
-  filtered = filtered.filter(w => {
-    if (!Number(w.lat) || !Number(w.lng)) return false;
+const hasMe =
+  Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
 
-    const distance = haversineKm(me.lat, me.lon, w.lat, w.lng);
-    return distance <= 50; // 👈 RADIO 50 KM
+if (hasMe) {
+  filtered = filtered.filter((w) => {
+    if (!Number(w?.lat) || !Number(w?.lng)) return false;
+    const d = haversineKm(Number(me.lat), Number(me.lon), Number(w.lat), Number(w.lng));
+    return d <= 50;
   });
 }
 
+// ✅ Si NO hay GPS, NO filtramos por distancia (para que cargue rápido)
 setWorkers(filtered);
     
   } catch (err) {
@@ -571,14 +586,19 @@ setWorkers(filtered);
   }
 } 
 
-// ⚡ Cargar trabajadores DESPUÉS del mapa (mejora la velocidad)
+// ✅ Cargar trabajadores SOLO cuando la sesión esté lista
 useEffect(() => {
-  setTimeout(() => {
-    fetchWorkers();
-  }, 350);
-}, []);
+  if (!me?.id) return; // ⛔ no cargar si aún no hay usuario
+  fetchWorkers(selectedService || null);
+}, [me?.id]);
 
+useEffect(() => {
+  const hasMe =
+    Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
+  if (!hasMe) return;
 
+  fetchWorkers(selectedService || null);
+}, [me?.lat, me?.lon, selectedService]);
 
 
 // 🛰️ Realtime instantáneo de cambios de estado (busy / available / paused)
@@ -1460,7 +1480,7 @@ useEffect(() => {
 <div
   className="absolute inset-x-0 top-0 z-0"
   style={{
-    height: "calc(var(--real-vh) - 160px)",
+   height: "calc(var(--real-vh, 100vh) - 160px)",
     overscrollBehavior: "none",     // ⛔ evita pull-to-refresh
 touchAction: "manipulation"
   }}
