@@ -23,29 +23,71 @@ import {
 } from 'lucide-react';
 import { getSupabase } from '@/lib/supabase';
 import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
-
+import { useMap } from 'react-leaflet';
 
 import { toast } from 'sonner';
 
-
+const Circle = dynamic(() => import('react-leaflet').then(m => m.Circle), { ssr: false });
 const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
 const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
 const Tooltip = dynamic(() => import('react-leaflet').then(m => m.Tooltip), { ssr: false });
 const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
 const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then(m => m.default), { ssr: false });
-import { useMap } from 'react-leaflet';
-
-function ChangeView({ center }) {
+const MAX_RADIUS_KM = 50;
+const MAX_RADIUS_M = MAX_RADIUS_KM * 1000;
+const CircleMarker = dynamic(() => import('react-leaflet').then(m => m.CircleMarker), { ssr: false });
+function ChangeView({ center, zoom = 14, enabled = true }) {
   const map = useMap();
-  const hasCenteredRef = useRef(false);
+  const didRef = useRef(false);
 
   useEffect(() => {
-    if (map && center && !hasCenteredRef.current) {
-      map.setView(center, 14); // solo centra una vez al cargar
-      hasCenteredRef.current = true; // evita que se recoloque después
+    if (!map) return;
+    if (!enabled) return; // ✅ no centra hasta tener GPS
+    if (!Array.isArray(center) || !Number.isFinite(center[0]) || !Number.isFinite(center[1])) return;
+
+    if (!didRef.current) {
+      didRef.current = true;
+      map.setView(center, zoom, { animate: true });
     }
-  }, [center, map]);
+  }, [map, enabled, center?.[0], center?.[1], zoom]);
+
+  return null;
+}
+function RadiusLock({ center, radiusM }) {
+  const map = useMap();
+  const lastKeyRef = useRef(null);
+
+  useEffect(() => {
+    if (!map) return;
+    if (!Array.isArray(center) || !Number.isFinite(center[0]) || !Number.isFinite(center[1])) return;
+    if (!Number.isFinite(radiusM) || radiusM <= 0) return;
+
+    const L = require("leaflet");
+    const centerLL = L.latLng(center[0], center[1]);
+    const bounds = centerLL.toBounds(radiusM * 2);
+
+    const key = `${center[0].toFixed(6)},${center[1].toFixed(6)}:${radiusM}`;
+    const centerChanged = lastKeyRef.current !== key;
+    lastKeyRef.current = key;
+
+    // ✅ cada vez que llega GPS (cambia center) -> encuadrar el círculo entero
+    if (centerChanged) {
+      map.fitBounds(bounds, {
+  paddingTopLeft: [40, 80],
+  paddingBottomRight: [40, 220], // 👈 deja espacio para tu panel inferior
+  animate: true,
+});
+    }
+
+    map.setMaxBounds(bounds);
+    map.options.maxBoundsViscosity = 1.0;
+
+    return () => {
+      map.setMaxBounds(null);
+      map.options.maxBoundsViscosity = 0.0;
+    };
+  }, [map, center?.[0], center?.[1], radiusM]);
 
   return null;
 }
@@ -250,6 +292,11 @@ export default function MapPage() {
   const DEFAULT_CENTER = [-23.4437, -58.4400]; // Centro real del país
   const [center, setCenter] = useState(DEFAULT_CENTER);
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
+  // ✅ Centro seguro: usa GPS si existe, si no usa el center actual
+const hasGPS =
+  Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
+
+const myCenter = hasGPS ? [Number(me.lat), Number(me.lon)] : center;
   const [workers, setWorkers] = useState([]);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -431,6 +478,7 @@ useEffect(() => {
   setCenter([-23.4437, -58.4400]); // centro del país (rápido)
 
   if (!navigator.geolocation) return;
+  
 
   let firstFix = false;
 
@@ -450,7 +498,7 @@ useEffect(() => {
         setCenter([lat, lon]);
 
         if (mapRef.current) {
-          mapRef.current.setView([lat, lon], 15, { animate: true });
+         mapRef.current.setView([lat, lon], 12, { animate: true });
         }
       }
     },
@@ -501,39 +549,19 @@ async function fetchWorkers(serviceFilter = null) {
     // 🧠 Log para verificar qué datos llegan (incluye rating y reviews)
     console.log('🧠 Trabajadores desde Supabase:', data);
 
-    setWorkers(data || []);
- // ⭐ Auto-ajustar mapa estilo Uber
-if (mapRef.current) {
-  const bounds = [];
+   // 🎯 FILTRAR SOLO TRABAJADORES DENTRO DE 50 KM
+let filtered = data || [];
 
-  // agregar trabajadores válidos
-  data.forEach(w => {
-    if (Number(w.lat) && Number(w.lng)) {
-      bounds.push([w.lat, w.lng]);
-    }
+if (Number(me?.lat) && Number(me?.lon)) {
+  filtered = filtered.filter(w => {
+    if (!Number(w.lat) || !Number(w.lng)) return false;
+
+    const distance = haversineKm(me.lat, me.lon, w.lat, w.lng);
+    return distance <= 50; // 👈 RADIO 50 KM
   });
-
-  // agregar tu ubicación si existe
-  if (me?.lat && me?.lon) {
-    bounds.push([me.lat, me.lon]);
-  }
-
-  // si hay algo que mostrar
-  if (bounds.length > 0) {
-    if (bounds.length === 1) {
-      // solo un punto → centrar directo
-      mapRef.current.setView(bounds[0], 15, { animate: true });
-    } else {
-      // varios puntos → encuadrar todo
-      mapRef.current.fitBounds(bounds, {
-        padding: [80, 80],
-        animate: true
-        
-      });
-    }
-  }
 }
 
+setWorkers(filtered);
     
   } catch (err) {
     console.error('Error cargando trabajadores:', err.message);
@@ -1434,127 +1462,140 @@ useEffect(() => {
   style={{
     height: "calc(var(--real-vh) - 160px)",
     overscrollBehavior: "none",     // ⛔ evita pull-to-refresh
-    touchAction: "none"             // ⛔ evita que la página se mueva
+touchAction: "manipulation"
   }}
 >
-
-  <MapContainer
-  center={[-24.8, -56.5]}
-  zoom={7}
-  minZoom={5}
-  maxZoom={19}
+<MapContainer
+  center={myCenter}
+  zoom={10}      // 👈 más lejos para ver el círculo
+  minZoom={9}    // 👈 permite alejar un poco más
+  maxZoom={18}
   zoomControl={false}
-  scrollWheelZoom={false}   // opcional (PC)
+  scrollWheelZoom={false}
   style={{
     height: "100%",
     width: "100%",
-    touchAction: "none",          // ✅ BLOQUEA el gesto del navegador (pull-to-refresh / scroll)
+    touchAction: "manipulation",
     overscrollBehavior: "none",
     WebkitOverflowScrolling: "auto",
-    paddingBottom: "160px"
+    paddingBottom: "160px",
   }}
   whenCreated={(map) => {
     mapRef.current = map;
 
-    // ✅ Extra: bloquea “rebotito”/scroll del contenedor Leaflet
     const el = map.getContainer();
-    el.style.touchAction = "none";
+    el.style.touchAction = "manipulation";
     el.style.overscrollBehavior = "none";
   }}
 >
+  {/* ✅ Centrar SOLO cuando hay GPS + encuadrar el círculo completo */}
+<ChangeView center={myCenter} zoom={10} enabled={hasGPS} />
+  <RadiusLock center={myCenter} radiusM={MAX_RADIUS_M} />
 
-
-
-
-    {/* 🗺️ CARTO Light (mapa blanco minimalista) */}
-    <TileLayer
-      url="https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
-      attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-      updateWhenIdle={true}
-      updateWhenZooming={false}
-      keepBuffer={2}
+  {/* 🗺️ CARTO Light (mapa blanco minimalista) */}
+  <TileLayer
+  
+    url="https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+    attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+    updateWhenIdle={true}
+    updateWhenZooming={false}
+    keepBuffer={2}
+  />
+{/* 📍 MI UBICACIÓN (punto en el centro) */}
+{hasGPS && (
+  <CircleMarker
+    center={myCenter}
+    radius={8}
+    pathOptions={{
+      color: "#ffffff",
+      weight: 3,
+      fillColor: "#10b981",
+      fillOpacity: 1,
+    }}
+  />
+)}
+  {/* 🟢 CÍRCULO 50KM DEL CLIENTE */}
+  {hasGPS && (
+    <Circle
+      center={myCenter}
+      radius={MAX_RADIUS_M}
+      pathOptions={{
+        color: "#10b981",
+        weight: 2,
+        fillColor: "#10b981",
+        fillOpacity: 0.08,
+      }}
     />
+  )}
 
+  {/* Ruta (si existe) */}
+  {Array.isArray(route) &&
+    route.length === 2 &&
+    Array.isArray(route[0]) &&
+    Array.isArray(route[1]) &&
+    Number(route[0][0]) &&
+    Number(route[0][1]) &&
+    Number(route[1][0]) &&
+    Number(route[1][1]) && (
+      <Polyline positions={route} color="#10b981" weight={5} />
+    )}
 
+  {/* ✅ CLUSTER + WORKERS */}
+  <MarkerClusterGroup
+    chunkedLoading
+    maxClusterRadius={48}
+    iconCreateFunction={clusterIconCreateFunction}
+  >
+    {selectedService !== "taxi" &&
+      workers
+        ?.filter((w) => Number(w?.lat) && Number(w?.lng) && w?.status !== "paused")
+        .map((w) => {
+          const minutesAgo = getMinutesAgo(w.updated_at);
 
+          let estadoTexto = "Disponible ahora";
+          let estadoColor = "#10b981";
 
-
-
-
-
-
-
-
-
-   {Array.isArray(route) &&
-  route.length === 2 &&
-  Array.isArray(route[0]) &&
-  Array.isArray(route[1]) &&
-  Number(route[0][0]) &&
-  Number(route[0][1]) &&
-  Number(route[1][0]) &&
-  Number(route[1][1]) && (
-    <Polyline positions={route} color="#10b981" weight={5} />
-  )
-}
-
-
-   {/* ✅ Bloque final actualizado — oculta 'paused' y muestra estados dinámicos */}
-<MarkerClusterGroup
-  chunkedLoading
-  maxClusterRadius={48}
-  iconCreateFunction={clusterIconCreateFunction}
->
-  {/* =======================
-      👷 WORKERS (SERVICIOS)
-      ======================= */}
-  {selectedService !== 'taxi' &&
-    workers
-      ?.filter((w) => Number(w?.lat) && Number(w?.lng) && w?.status !== 'paused')
-      .map((w) => {
-        const minutesAgo = getMinutesAgo(w.updated_at);
-
-        let estadoTexto = 'Disponible ahora';
-        let estadoColor = '#10b981';
-
-        if (w.status === 'busy') {
-          const busyUntil = w.busy_until ? new Date(w.busy_until) : null;
-          if (busyUntil) {
-            const diffMin = Math.max(0, Math.round((busyUntil.getTime() - Date.now()) / 60000));
-            estadoTexto = diffMin > 0 ? `Ocupado • libre en ${diffMin} min` : 'Ocupado (finalizando)';
-          } else {
-            estadoTexto = 'Ocupado';
+          if (w.status === "busy") {
+            const busyUntil = w.busy_until ? new Date(w.busy_until) : null;
+            if (busyUntil) {
+              const diffMin = Math.max(
+                0,
+                Math.round((busyUntil.getTime() - Date.now()) / 60000)
+              );
+              estadoTexto =
+                diffMin > 0 ? `Ocupado • libre en ${diffMin} min` : "Ocupado (finalizando)";
+            } else {
+              estadoTexto = "Ocupado";
+            }
+            estadoColor = "#f97316";
           }
-          estadoColor = '#f97316';
-        }
 
-        return (
-          <Marker
-            key={`worker-${w.user_id}`}
-            position={[w.lat, w.lng]}
-            icon={avatarIcon(w.avatar_url, w) || undefined}
-            eventHandlers={{ click: () => handleMarkerClick(w) }}
-          >
-            <Tooltip direction="top">
-              <div className="text-xs leading-tight">
-                <strong className="block text-sm font-semibold">{w.full_name}</strong>
-                <p>Servicio: {w.main_skill || 'No especificado'}</p>
-                <p>💰 Desde ₲45.000</p>
+          return (
+            <Marker
+              key={`worker-${w.user_id}`}
+              position={[w.lat, w.lng]}
+              icon={avatarIcon(w.avatar_url, w) || undefined}
+              eventHandlers={{ click: () => handleMarkerClick(w) }}
+            >
+              <Tooltip direction="top">
+                <div className="text-xs leading-tight">
+                  <strong className="block text-sm font-semibold">{w.full_name}</strong>
+                  <p>Servicio: {w.main_skill || "No especificado"}</p>
+                  <p>💰 Desde ₲45.000</p>
 
-                <p className="mt-1 font-semibold" style={{ color: estadoColor }}>
-                  {estadoTexto}
-                </p>
+                  <p className="mt-1 font-semibold" style={{ color: estadoColor }}>
+                    {estadoTexto}
+                  </p>
 
-                {minutesAgo !== null && (
-                  <p className="text-[10px] text-gray-500 mt-1">⏱ hace {minutesAgo} min</p>
-                )}
-              </div>
-            </Tooltip>
-          </Marker>
-        );
-      })}
-</MarkerClusterGroup>
-
+                  {minutesAgo !== null && (
+                    <p className="text-[10px] text-gray-500 mt-1">⏱ hace {minutesAgo} min</p>
+                  )}
+                </div>
+              </Tooltip>
+            </Marker>
+          );
+        })}
+  </MarkerClusterGroup>
 </MapContainer>
 </div>
 
