@@ -13,12 +13,8 @@ const withPWA = require("next-pwa")({
   // evita conflictos con manifests generados por Next
   buildExcludes: [/app-build-manifest\.json$/],
 
-  // ✅ OJO: en next-pwa es "workboxOpts" (NO workboxOptions)
-  workboxOpts: {
-    cleanupOutdatedCaches: true,
-    clientsClaim: true,
-    skipWaiting: true,
-  },
+  // ❌ NO usar workboxOpts acá (en tu build rompe con GenerateSW)
+  // ✅ Todo lo necesario se maneja con register/skipWaiting y runtimeCaching
 
   // ✅ Runtime caching: CARTO tiles cross-origin (PWA mobile fix)
   runtimeCaching: [
