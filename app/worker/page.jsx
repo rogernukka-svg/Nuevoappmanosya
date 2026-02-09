@@ -307,7 +307,15 @@ export default function WorkerPage() {
   const chatChannelRef = useRef(null);
   const bottomRef = useRef(null);
   const soundRef = useRef(null);
-  const [status, setStatus] = useState('available'); // 🟢 Estado actual del trabajador
+const [status, setStatus] = useState(() => {
+  if (typeof window === 'undefined') return 'available';
+  return localStorage.getItem('worker_status') || 'available';
+});
+useEffect(() => {
+  if (typeof window !== 'undefined' && status) {
+    localStorage.setItem('worker_status', status);
+  }
+}, [status]);
 
 /* === Sesión === */
 useEffect(() => {
@@ -505,60 +513,88 @@ useEffect(() => {
 }, []);
 
  /* === Cargar trabajos y sincronización === */
+/* === Cargar trabajos y sincronización (FIX) === */
+async function loadJobs() {
+  const workerId = user?.id;
+  if (!workerId) return;
+
+  try {
+    setLoading(true);
+
+    // ✅ Traer:
+    // - trabajos abiertos (open) para aceptar
+    // - trabajos asignados a este worker (worker_id = user.id)
+    const { data: jobsData, error: jobsErr } = await supabase
+      .from('jobs')
+      .select(`
+        id, title, description, status, client_id, worker_id,
+        client_lat, client_lng, created_at,
+        service_type, price
+      `)
+      .or(`status.eq.open,worker_id.eq.${workerId}`)
+      .order('created_at', { ascending: false });
+
+    if (jobsErr) throw jobsErr;
+
+    const list = jobsData || [];
+
+    // 2) Profiles de esos client_id
+    const clientIds = [...new Set(list.map(j => j.client_id).filter(Boolean))];
+
+    let profilesMap = {};
+    if (clientIds.length > 0) {
+      const { data: profs, error: profErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .in('id', clientIds);
+
+      if (profErr) throw profErr;
+
+      profilesMap = (profs || []).reduce((acc, p) => {
+        acc[p.id] = p;
+        return acc;
+      }, {});
+    }
+
+    // 3) Inyectar client
+    const enriched = list.map(j => ({
+      ...j,
+      client: profilesMap[j.client_id] || null,
+    }));
+
+    setJobs(enriched);
+
+    // 4) Si hay accepted de ESTE worker => status busy
+    const activeJob = enriched.find((j) => j.status === 'accepted' && j.worker_id === workerId);
+    if (activeJob) {
+      const busyUntil = new Date(Date.now() + 60 * 60000);
+
+      setStatus('busy');
+      await supabase
+        .from('worker_profiles')
+        .update({
+          status: 'busy',
+          is_active: true,
+          busy_until: busyUntil.toISOString(),
+        })
+        .eq('user_id', workerId);
+    }
+  } catch (err) {
+    console.error('❌ Error cargando trabajos:', err);
+    toast.error('Error al cargar trabajos');
+  } finally {
+    setLoading(false);
+  }
+}
+
+/* ✅ LLAMAR loadJobs cuando ya existe el user */
 useEffect(() => {
   if (!user?.id) return;
-  const workerId = user.id;
-
-  async function loadJobs() {
-    try {
-      setLoading(true);
-
-      const { data, error } = await supabase
-        .from('jobs')
-        .select(`
-          id, title, description, status, client_id, worker_id,
-          client_lat, client_lng, created_at,
-          service_type, price
-        `)
-        .eq('worker_id', workerId)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setJobs(data || []);
-
-      const activeJob = data?.find((j) => j.status === 'accepted');
-      if (activeJob) {
-        const busyUntil = new Date(Date.now() + 60 * 60000);
-        setStatus('busy');
-        await supabase
-          .from('worker_profiles')
-          .update({
-            status: 'busy',
-            is_active: true,
-            busy_until: busyUntil.toISOString(),
-          })
-          .eq('user_id', workerId);
-      } else if (status !== 'paused') {
-        setStatus('available');
-        await supabase
-          .from('worker_profiles')
-          .update({
-            status: 'available',
-            is_active: true,
-            busy_until: null,
-          })
-          .eq('user_id', workerId);
-      }
-    } catch (err) {
-      console.error('❌ Error cargando trabajos:', err);
-      toast.error('Error al cargar trabajos');
-    } finally {
-      setLoading(false);
-    }
-  }
-
   loadJobs();
-}, [user?.id, status]);
+  // opcional: refresco cada 15s por si algo se desincroniza
+  const t = setInterval(loadJobs, 15000);
+  return () => clearInterval(t);
+}, [user?.id]);
 
 /* === FIX MAPA DEFORMADO EN MODAL === */
 useEffect(() => {
@@ -1101,9 +1137,9 @@ async function sendMessage() {
       >
         {/* 🔹 Encabezado del trabajo */}
         <div className="flex items-center justify-between mb-2">
-          <h3 className="font-bold text-gray-800">
-            {job.title || 'Trabajo de servicio'}
-          </h3>
+        <h3 className="font-bold text-gray-800">
+  {job?.client?.full_name ? `Trabajo con ${job.client.full_name}` : (job.title || 'Trabajo de servicio')}
+</h3>
           <span
             className={`px-2 py-1 rounded-full text-xs font-semibold ${
               job.status === 'open'
@@ -1260,9 +1296,9 @@ async function sendMessage() {
     </button>
 
     {/* Nombre del cliente */}
-    <h2 className="font-semibold text-gray-800 text-center">
-      {selectedJob?.client_name || "Cliente"}
-    </h2>
+   <h2 className="font-semibold text-gray-800 text-center">
+  {selectedJob?.client?.full_name || "Cliente"}
+</h2>
 
     {/* Botón mapa */}
     <button
@@ -1280,11 +1316,11 @@ async function sendMessage() {
   </div>
 
   {/* 🔵 Indicador “Cliente está escribiendo…” */}
-  {clientTyping && (
-    <div className="px-4 pb-2 text-xs text-gray-500 italic animate-pulse">
-      {selectedJob?.client_name || "El cliente"} está escribiendo…
-    </div>
-  )}
+ {clientTyping && (
+  <div className="px-4 pb-2 text-xs text-gray-500 italic animate-pulse">
+    {selectedJob?.client?.full_name || "El cliente"} está escribiendo…
+  </div>
+)}
 
 </div>
 
@@ -1758,6 +1794,33 @@ useEffect(() => {
   }
 
   /* 🎨 Interfaz visual */
+  /* 📊 Mini analizador de rendimiento (seguro y sin romper) */
+useEffect(() => {
+  try {
+    if (!open) return; // solo si el chat está abierto
+    if (!stats || typeof stats !== 'object') return;
+    if (!memoryRef.current) return;
+
+    const alreadyShown = memoryRef.current.lastSummary;
+    if ((stats.jobsCompleted || 0) > 0 && !alreadyShown) {
+      const eff = (((stats.efficiency || 0) * 100) || 0).toFixed(1);
+      const earn = stats.earnings || 0;
+
+      simulateBotTyping(
+        `📊 Resumen rápido:
+• Completados: ${stats.jobsCompleted || 0}
+• Eficiencia: ${eff}%
+• Ganancias: ₲${Number(earn).toLocaleString('es-PY')}
+🐾 Seguimos metiendo garra, compa 💪`
+      );
+
+      // Guardar en la misma "memoria" del bot (sin updateMemory)
+      memoryRef.current.lastSummary = new Date().toISOString();
+    }
+  } catch (err) {
+    console.warn('Error en mini analizador:', err);
+  }
+}, [open, stats]);
   return (
     <div className="fixed bottom-24 right-5 z-[60]">
       {showParty && (
@@ -1826,31 +1889,5 @@ useEffect(() => {
       )}
     </div>
   );
-  /* 📊 Mini analizador de rendimiento (seguro y sin romper) */
-useEffect(() => {
-  try {
-    if (!open) return; // solo si el chat está abierto
-    if (!stats || typeof stats !== 'object') return; // validación defensiva
-    if (!memoryRef.current) return; // si la memoria aún no se inicializó
-
-    const alreadyShown = memoryRef.current.lastSummary;
-    if (stats.jobsCompleted > 0 && !alreadyShown) {
-      const eff = ((stats.efficiency || 0) * 100).toFixed(1);
-      const earn = stats.earnings || 0;
-
-      simulateBotTyping(
-        `📊 Resumen rápido de tu rendimiento:
-• Trabajos completados: ${stats.jobsCompleted}
-• Eficiencia: ${eff}%
-• Ganancias: ₲${earn.toLocaleString('es-PY')}
-🐾 Rodolfo dice: “Seguimos metiendo garra, compa 💪”`
-      );
-
-      updateMemory({ lastSummary: new Date().toISOString() });
-    }
-  } catch (err) {
-    console.warn('Error en mini analizador:', err);
-  }
-}, [open, stats]);
 
 }

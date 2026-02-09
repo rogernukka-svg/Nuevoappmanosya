@@ -690,117 +690,212 @@ const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
 </section>
 
 
-      {/* === DOCUMENTACIÓN === */}
-      <section className="bg-white border border-gray-200 shadow-sm rounded-xl p-6">
-        <h2 className="font-semibold text-gray-700 border-l-4 border-emerald-500 pl-3 mb-4">
-          Verificación de identidad
-        </h2>
+      {/* === DOCUMENTACIÓN (MARKETING + BOTONES PRO) === */}
+<section className="bg-white border border-gray-200 shadow-sm rounded-xl p-6">
+  <div className="flex items-start justify-between gap-3 mb-4">
+    <div>
+      <h2 className="font-semibold text-gray-700 border-l-4 border-emerald-500 pl-3">
+        Verificación de identidad
+      </h2>
+      <p className="text-xs text-gray-500 mt-1 pl-4">
+        ✅ Esto aumenta tu confianza y te habilita más pedidos. Subí fotos claras y sin reflejos.
+      </p>
+    </div>
 
-        <div className="grid md:grid-cols-3 gap-4">
-          <div>
-            <label className="text-sm font-semibold text-gray-700 mb-1 block">
-              Tipo de documento
-            </label>
-            <select
-              value={docType}
-              onChange={(e) => setDocType(e.target.value)}
-              className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-emerald-500"
-            >
-              {DOC_TYPES.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
+    {/* Mini badge */}
+    <span className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+      Recomendado
+    </span>
+  </div>
 
-          <div className="md:col-span-2">
-            <label className="text-sm font-semibold text-gray-700 mb-1 block">
-              Número
-            </label>
-            <input
-              className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-emerald-500"
-              value={docNumber}
-              onChange={(e) => setDocNumber(e.target.value)}
-              placeholder="Ej: 12345678"
-            />
-          </div>
-        </div>
+  {/* Tipo + Número */}
+  <div className="grid md:grid-cols-3 gap-4">
+    <div>
+      <label className="text-sm font-semibold text-gray-700 mb-1 block">
+        Tipo de documento
+      </label>
+      <select
+        value={docType}
+        onChange={(e) => setDocType(e.target.value)}
+        className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-emerald-500"
+      >
+        {DOC_TYPES.map((d) => (
+          <option key={d.value} value={d.value}>
+            {d.label}
+          </option>
+        ))}
+      </select>
+      <p className="text-[11px] text-gray-500 mt-1">
+        Elegí el mismo que usás en tu identidad.
+      </p>
+    </div>
 
-        <div className="grid md:grid-cols-2 gap-4 mt-4">
-          <div>
-            <label className="text-sm font-semibold text-gray-700 mb-1 block">
-              Frente
-            </label>
-            <label className="text-sm text-emerald-600 cursor-pointer font-medium">
-              Subir frente
-              <input
-                type="file"
-                hidden
-                accept="image/*"
-                onChange={(e) => uploadIdentity('front', e.target.files?.[0])}
-              />
-            </label>
-            {frontUrl && (
-              <a
-                href={frontUrl}
-                target="_blank"
-                className="block text-emerald-600 text-xs underline mt-1"
-              >
-                Ver archivo
-              </a>
-            )}
-          </div>
+    <div className="md:col-span-2">
+      <label className="text-sm font-semibold text-gray-700 mb-1 block">
+        Número
+      </label>
+      <input
+        className="w-full border rounded-lg p-2 bg-gray-50 focus:ring-2 focus:ring-emerald-500"
+        value={docNumber}
+        onChange={(e) => setDocNumber(e.target.value)}
+        placeholder="Ej: 12345678"
+      />
+      <p className="text-[11px] text-gray-500 mt-1">
+        No compartimos tu documento públicamente.
+      </p>
+    </div>
+  </div>
 
-          <div>
-            <label className="text-sm font-semibold text-gray-700 mb-1 block">
-              Dorso
-            </label>
-            <label className="text-sm text-emerald-600 cursor-pointer font-medium">
-              Subir dorso
-              <input
-                type="file"
-                hidden
-                accept="image/*"
-                onChange={(e) => uploadIdentity('back', e.target.files?.[0])}
-              />
-            </label>
-            {backUrl && (
-              <a
-                href={backUrl}
-                target="_blank"
-                className="block text-emerald-600 text-xs underline mt-1"
-              >
-                Ver archivo
-              </a>
-            )}
+  {/* Frente / Dorso cards */}
+  <div className="grid md:grid-cols-2 gap-4 mt-4">
+    {/* ===== Frente ===== */}
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-extrabold text-gray-900">Frente</div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            Foto clara, sin reflejos, se debe leer todo.
           </div>
         </div>
 
-        <div className="mt-6">
-          <label className="text-sm font-semibold text-gray-700 mb-1 block">
-            Antecedente policial (PDF/JPG/PNG)
-          </label>
-          <label className="text-sm text-emerald-600 cursor-pointer font-medium">
-            Subir archivo
-            <input
-              type="file"
-              hidden
-              accept="application/pdf,image/*"
-              onChange={(e) => uploadPoliceRecord(e.target.files?.[0])}
-            />
-          </label>
-          {policeUrl && (
-            <a
-              href={policeUrl}
-              target="_blank"
-              className="block text-emerald-600 text-xs underline mt-1"
-            >
-              Ver archivo
-            </a>
-          )}
+        <span
+          className={`shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+            frontUrl
+              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+              : "bg-gray-100 text-gray-600 border-gray-200"
+          }`}
+        >
+          {frontUrl ? "Subido" : "Pendiente"}
+        </span>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <label className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm shadow hover:bg-emerald-700 transition cursor-pointer">
+          Subir frente
+          <input
+            type="file"
+            hidden
+            accept="image/*"
+            onChange={(e) => uploadIdentity("front", e.target.files?.[0])}
+          />
+        </label>
+
+        {frontUrl ? (
+          <a
+            href={frontUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center px-4 py-2 rounded-xl border border-emerald-200 bg-white text-emerald-700 font-semibold text-sm hover:bg-emerald-50 transition"
+          >
+            Ver archivo →
+          </a>
+        ) : (
+          <span className="text-xs text-gray-400 font-medium">Aún no hay archivo</span>
+        )}
+      </div>
+    </div>
+
+    {/* ===== Dorso ===== */}
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-extrabold text-gray-900">Dorso</div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            Que se vea completo y bien enfocado.
+          </div>
         </div>
-      </section>
+
+        <span
+          className={`shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+            backUrl
+              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+              : "bg-gray-100 text-gray-600 border-gray-200"
+          }`}
+        >
+          {backUrl ? "Subido" : "Pendiente"}
+        </span>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <label className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm shadow hover:bg-emerald-700 transition cursor-pointer">
+          Subir dorso
+          <input
+            type="file"
+            hidden
+            accept="image/*"
+            onChange={(e) => uploadIdentity("back", e.target.files?.[0])}
+          />
+        </label>
+
+        {backUrl ? (
+          <a
+            href={backUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center px-4 py-2 rounded-xl border border-emerald-200 bg-white text-emerald-700 font-semibold text-sm hover:bg-emerald-50 transition"
+          >
+            Ver archivo →
+          </a>
+        ) : (
+          <span className="text-xs text-gray-400 font-medium">Aún no hay archivo</span>
+        )}
+      </div>
+    </div>
+  </div>
+
+  {/* Antecedente */}
+  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-sm font-extrabold text-gray-900">
+          Antecedente policial
+        </div>
+        <div className="text-xs text-gray-500 mt-0.5">
+          PDF / JPG / PNG (recomendado PDF para mejor lectura).
+        </div>
+      </div>
+
+      <span
+        className={`shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+          policeUrl
+            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+            : "bg-gray-100 text-gray-600 border-gray-200"
+        }`}
+      >
+        {policeUrl ? "Subido" : "Pendiente"}
+      </span>
+    </div>
+
+    <div className="mt-3 flex items-center justify-between gap-2">
+      <label className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm shadow hover:bg-emerald-700 transition cursor-pointer">
+        Subir archivo
+        <input
+          type="file"
+          hidden
+          accept="application/pdf,image/*"
+          onChange={(e) => uploadPoliceRecord(e.target.files?.[0])}
+        />
+      </label>
+
+      {policeUrl ? (
+        <a
+          href={policeUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center justify-center px-4 py-2 rounded-xl border border-emerald-200 bg-white text-emerald-700 font-semibold text-sm hover:bg-emerald-50 transition"
+        >
+          Ver archivo →
+        </a>
+      ) : (
+        <span className="text-xs text-gray-400 font-medium">Aún no hay archivo</span>
+      )}
+    </div>
+
+    <div className="mt-3 text-[11px] text-gray-500">
+      🔒 Tus archivos son privados y se usan solo para validación. Esto ayuda a que tu perfil se vea más confiable.
+    </div>
+  </div>
+</section>
 
       {/* === DATOS BANCARIOS === */}
       <section className="bg-white border border-gray-200 shadow-sm rounded-xl p-6">

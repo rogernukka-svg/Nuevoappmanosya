@@ -1762,13 +1762,7 @@ useEffect(() => {
         className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
       >
         <div className="text-center">
-         
-
-
-
-            /* =========================
-               👷 PERFIL SERVICIOS HOGAR (TU MODAL ORIGINAL)
-               ========================= */
+        
             <>
               {/* 🧑 Avatar con verificación */}
               <div className="relative w-20 h-20 mx-auto mb-2">
