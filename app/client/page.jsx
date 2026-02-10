@@ -35,7 +35,7 @@ const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr:
 const Tooltip = dynamic(() => import('react-leaflet').then(m => m.Tooltip), { ssr: false });
 const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
 const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then(m => m.default), { ssr: false });
-const MAX_RADIUS_KM = 8;      // 👈 antes 30
+const MAX_RADIUS_KM = 12;      // 👈 antes 8
 const MAX_RADIUS_M = MAX_RADIUS_KM * 1000;
 
 
