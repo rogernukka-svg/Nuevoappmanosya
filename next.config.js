@@ -1,68 +1,75 @@
-// next.config.js — FINAL (Render/Vercel + PWA + Bundle Analyzer + FIX CARTO tiles)
-
-const withBundleAnalyzer = require("@next/bundle-analyzer")({
-  enabled: process.env.ANALYZE === "true",
-});
-
+// ✅ next.config.js — FINAL (Vercel/Render + PWA + Bundle Analyzer + alias "@/") + FIX PWA TILES (CARTO/OSM)
 const withPWA = require("next-pwa")({
   dest: "public",
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === "development",
 
-  // evita conflictos con manifests generados por Next
+  // ✅ evita errores de build PWA
   buildExcludes: [/app-build-manifest\.json$/],
 
-  // ❌ NO usar workboxOpts acá (en tu build rompe con GenerateSW)
-  // ✅ Todo lo necesario se maneja con register/skipWaiting y runtimeCaching
+  // ✅ FIX SW: que no quede cache viejo pegado
+  workboxOptions: {
+    cleanupOutdatedCaches: true,
+    clientsClaim: true,
+    skipWaiting: true,
+  },
 
-  // ✅ Runtime caching: CARTO tiles cross-origin (PWA mobile fix)
+  // ✅ Runtime caching: TILES cross-origin (PWA mobile fix)
   runtimeCaching: [
     // 1) CARTO tiles
     {
       urlPattern: /^https:\/\/tile\.basemaps\.cartocdn\.com\/.*$/i,
-      handler: "StaleWhileRevalidate",
+      handler: "CacheFirst",
       options: {
-        cacheName: "carto-tiles-v3", // 🔥 subí versión para romper cache viejo
+        cacheName: "carto-tiles-v4", // 👈 subí versión para romper cache viejo
         expiration: {
           maxEntries: 1000,
           maxAgeSeconds: 60 * 60 * 24 * 30, // 30 días
         },
-        cacheableResponse: { statuses: [0, 200] }, // 0 = opaque
-        fetchOptions: {
-          mode: "no-cors",
-          credentials: "omit",
+        // ✅ CLAVE: en PWA muchos tiles vienen como "opaque" (status 0)
+        cacheableResponse: {
+          statuses: [0, 200],
         },
       },
     },
 
-    // 2) fallback: imágenes externas
+    // 2) OSM tiles fallback
     {
-      urlPattern: /^https?:\/\/.*\.(?:png|jpg|jpeg|svg|webp)$/i,
-      handler: "StaleWhileRevalidate",
+      urlPattern: /^https:\/\/[abc]\.tile\.openstreetmap\.org\/.*$/i,
+      handler: "CacheFirst",
       options: {
-        cacheName: "external-images-v1",
+        cacheName: "osm-tiles-v4",
         expiration: {
-          maxEntries: 300,
+          maxEntries: 1000,
           maxAgeSeconds: 60 * 60 * 24 * 30,
         },
-        cacheableResponse: { statuses: [0, 200] },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
       },
     },
   ],
+});
+
+const withBundleAnalyzer = require("@next/bundle-analyzer")({
+  enabled: process.env.ANALYZE === "true",
 });
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
 
+  // ✅ deploy rápido (si querés, luego lo sacamos)
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
 
+  // ✅ Permite usar alias "@/..."
   webpack: (config) => {
     config.resolve.alias["@"] = __dirname;
     return config;
   },
 };
 
+// ✅ Combina PWA y Bundle Analyzer
 module.exports = withBundleAnalyzer(withPWA(nextConfig));

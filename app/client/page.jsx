@@ -1,7 +1,9 @@
 'use client';
-import 'leaflet/dist/leaflet.css';
+
 import { useEffect, useState, useRef } from 'react';
+import { useMap } from 'react-leaflet';
 import dynamic from 'next/dynamic';
+import 'leaflet/dist/leaflet.css';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -22,7 +24,7 @@ import {
 } from 'lucide-react';
 import { getSupabase } from '@/lib/supabase';
 import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
-import { useMap } from 'react-leaflet';
+
 
 import { toast } from 'sonner';
 
@@ -33,65 +35,8 @@ const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr:
 const Tooltip = dynamic(() => import('react-leaflet').then(m => m.Tooltip), { ssr: false });
 const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
 const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then(m => m.default), { ssr: false });
-const MAX_RADIUS_KM = 50;
+const MAX_RADIUS_KM = 30;
 const MAX_RADIUS_M = MAX_RADIUS_KM * 1000;
-const CARTO_URL = "https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png";
-const OSM_URL   = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-const CircleMarker = dynamic(() => import('react-leaflet').then(m => m.CircleMarker), { ssr: false });
-function ChangeView({ center, zoom = 14, enabled = true }) {
-  const map = useMap();
-  const didRef = useRef(false);
-
-  useEffect(() => {
-    if (!map) return;
-    if (!enabled) return; // ✅ no centra hasta tener GPS
-    if (!Array.isArray(center) || !Number.isFinite(center[0]) || !Number.isFinite(center[1])) return;
-
-    if (!didRef.current) {
-      didRef.current = true;
-      map.setView(center, zoom, { animate: true });
-    }
-  }, [map, enabled, center?.[0], center?.[1], zoom]);
-
-  return null;
-}
-function RadiusLock({ center, radiusM }) {
-  const map = useMap();
-  const lastKeyRef = useRef(null);
-
-  useEffect(() => {
-    if (!map) return;
-    if (!Array.isArray(center) || !Number.isFinite(center[0]) || !Number.isFinite(center[1])) return;
-    if (!Number.isFinite(radiusM) || radiusM <= 0) return;
-
-    const L = require("leaflet");
-    const centerLL = L.latLng(center[0], center[1]);
-    const bounds = centerLL.toBounds(radiusM * 2);
-
-    const key = `${center[0].toFixed(6)},${center[1].toFixed(6)}:${radiusM}`;
-    const centerChanged = lastKeyRef.current !== key;
-    lastKeyRef.current = key;
-
-    // ✅ cada vez que llega GPS (cambia center) -> encuadrar el círculo entero
-    if (centerChanged) {
-      map.fitBounds(bounds, {
-  paddingTopLeft: [40, 80],
-  paddingBottomRight: [40, 220], // 👈 deja espacio para tu panel inferior
-  animate: true,
-});
-    }
-
-    map.setMaxBounds(bounds);
-    map.options.maxBoundsViscosity = 1.0;
-
-    return () => {
-      map.setMaxBounds(null);
-      map.options.maxBoundsViscosity = 0.0;
-    };
-  }, [map, center?.[0], center?.[1], radiusM]);
-
-  return null;
-}
 
 
 function mapAccentColor(worker) {
@@ -253,31 +198,30 @@ function formatKm(km) {
   if (km < 1) return `${Math.round(km * 1000)} m`;
   return `${km.toFixed(1)} km`;
 }
- 
+ function CenterOnceOnMe({ lat, lon, zoom = 13 }) {
+  const map = useMap();
+  const doneRef = useRef(false);
+
+  useEffect(() => {
+    if (!map) return;
+    if (!Number(lat) || !Number(lon)) return;
+    if (doneRef.current) return;
+
+    doneRef.current = true;
+
+    // ✅ centrado suave 1 sola vez
+    map.flyTo([lat, lon], zoom, { duration: 1.2 });
+  }, [map, lat, lon, zoom]);
+
+  return null;
+}
 export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
-  useEffect(() => {
-  const onResume = () => {
-    // ✅ cuando volvés a la app / cambiás orientación
-    setTimeout(() => {
-      try { mapRef.current?.invalidateSize(true); } catch {}
-    }, 200);
-  };
-
-  window.addEventListener("orientationchange", onResume);
-  document.addEventListener("visibilitychange", onResume);
-
-  return () => {
-    window.removeEventListener("orientationchange", onResume);
-    document.removeEventListener("visibilitychange", onResume);
-  };
-}, []);
-    // ✅ HOOK ADENTRO DEL COMPONENTE (FIX)
-  const [tileUrl, setTileUrl] = useState(CARTO_URL);
   const markersRef = useRef({}); // guarda refs de marcadores por user_id
  /* === Fix altura real para móviles (Android/iPhone) === */
+ const centeredOnceRef = useRef(false);
  const [isTyping, setIsTyping] = useState(false);
  useEffect(() => {
   const prevHtml = document.documentElement.style.overscrollBehavior;
@@ -311,11 +255,6 @@ export default function MapPage() {
   const DEFAULT_CENTER = [-23.4437, -58.4400]; // Centro real del país
   const [center, setCenter] = useState(DEFAULT_CENTER);
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
-  // ✅ Centro seguro: usa GPS si existe, si no usa el center actual
-const hasGPS =
-  Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
-
-const myCenter = hasGPS ? [Number(me.lat), Number(me.lon)] : center;
   const [workers, setWorkers] = useState([]);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -448,20 +387,14 @@ useEffect(() => {
 
   (async () => {
     try {
-     const { data: job, error } = await supabase
-  .from('jobs')
-  .select('id, status, worker_id, worker_lat, worker_lng')
-  .eq('client_id', me.id)
-  .in('status', ['open', 'accepted', 'assigned'])
-  .order('created_at', { ascending: false })
-  .limit(1)
-  .maybeSingle();
-
-if (error) {
-  console.warn("restore job error:", error);
-  return;
-}
-if (!job) return; // ✅ normal: no hay pedido activo
+      const { data: job } = await supabase
+        .from('jobs')
+        .select('id, status, worker_id, worker_lat, worker_lng')
+        .eq('client_id', me.id)
+        .in('status', ['open', 'accepted', 'assigned'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
 
       if (job) {
         setJobId(job.id);
@@ -497,57 +430,37 @@ if (!job) return; // ✅ normal: no hay pedido activo
     })();
   }, [router]);
 
-/* === GEOLOC OPTIMIZADA — MAPA RÁPIDO COMO UBER (FIX) === */
+/* === GEOLOC FIX — siempre centra en mi ubicación real (sin race) === */
+const gpsCenteredRef = useRef(false);
+
 useEffect(() => {
-  // 1️⃣ MOSTRAR MAPA INSTANTÁNEO (sin esperar GPS)
-  setCenter([-23.4437, -58.44]); // centro del país
+  // mapa rápido mientras llega GPS
+  setCenter([-23.4437, -58.4400]);
 
   if (!navigator.geolocation) return;
 
-  let firstFix = false;
-
-  // ✅ Intento rápido primero (mejor UX)
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-
-      setMe((prev) => ({ ...prev, lat, lon }));
-
-      if (!firstFix) {
-        firstFix = true;
-        setCenter([lat, lon]);
-        // ⛔ NO setView acá (para no pelear con RadiusLock/ChangeView)
-      }
-    },
-    (err) => console.warn("GPS quick error:", err),
-    { enableHighAccuracy: false, maximumAge: 15000, timeout: 8000 }
-  );
-
-  // ✅ Watch continuo (más precisión después)
   const watcher = navigator.geolocation.watchPosition(
     (pos) => {
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      if (!Number(lat) || !Number(lon)) return;
 
+      // ✅ actualizar mi ubicación SIEMPRE (realtime)
       setMe((prev) => ({ ...prev, lat, lon }));
 
-      if (!firstFix) {
-        firstFix = true;
-        setCenter([lat, lon]);
-        // ⛔ NO setView acá
-      }
+      // (opcional) mantener state center actualizado
+      setCenter([lat, lon]);
     },
-    (err) => console.warn("GPS watch error:", err),
-    { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+    (err) => console.warn("GPS error:", err),
+    {
+      enableHighAccuracy: true,
+      maximumAge: 3000,
+      timeout: 5000,
+    }
   );
 
   return () => navigator.geolocation.clearWatch(watcher);
 }, []);
-
-
 
 
 /* === Cargar trabajadores === */
@@ -581,21 +494,20 @@ async function fetchWorkers(serviceFilter = null) {
     // 🧠 Log para verificar qué datos llegan (incluye rating y reviews)
     console.log('🧠 Trabajadores desde Supabase:', data);
 
+   // 🎯 FILTRAR SOLO TRABAJADORES DENTRO DE 50 KM
 let filtered = data || [];
 
-const hasMe =
-  Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
+if (Number(me?.lat) && Number(me?.lon)) {
+  filtered = filtered.filter(w => {
+    if (!Number(w.lat) || !Number(w.lng)) return false;
 
-if (hasMe) {
-  filtered = filtered.filter((w) => {
-    if (!Number(w?.lat) || !Number(w?.lng)) return false;
-    const d = haversineKm(Number(me.lat), Number(me.lon), Number(w.lat), Number(w.lng));
-    return d <= 50;
+    const distance = haversineKm(me.lat, me.lon, w.lat, w.lng);
+return distance <= MAX_RADIUS_KM; // 👈 RADIO dinámico (30 km)
   });
 }
 
-// ✅ Si NO hay GPS, NO filtramos por distancia (para que cargue rápido)
 setWorkers(filtered);
+
     
   } catch (err) {
     console.error('Error cargando trabajadores:', err.message);
@@ -605,19 +517,14 @@ setWorkers(filtered);
   }
 } 
 
-// ✅ Cargar trabajadores SOLO cuando la sesión esté lista
+// ⚡ Cargar trabajadores DESPUÉS del mapa (mejora la velocidad)
 useEffect(() => {
-  if (!me?.id) return; // ⛔ no cargar si aún no hay usuario
-  fetchWorkers(selectedService || null);
-}, [me?.id]);
+  setTimeout(() => {
+    fetchWorkers();
+  }, 350);
+}, []);
 
-useEffect(() => {
-  const hasMe =
-    Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
-  if (!hasMe) return;
 
-  fetchWorkers(selectedService || null);
-}, [me?.lat, me?.lon, selectedService]);
 
 
 // 🛰️ Realtime instantáneo de cambios de estado (busy / available / paused)
@@ -1499,175 +1406,137 @@ useEffect(() => {
 <div
   className="absolute inset-x-0 top-0 z-0"
   style={{
-    height: "calc(var(--real-vh, 100vh) - 160px)",
-    overscrollBehavior: "none",
-    touchAction: "none",          // ✅ Leaflet captura gestos en móvil
-    WebkitUserSelect: "none",
-    userSelect: "none",
+    height: "calc(var(--real-vh) - 160px)",
+    overscrollBehavior: "none",     // ⛔ evita pull-to-refresh
+    touchAction: "none"             // ⛔ evita que la página se mueva
   }}
 >
+
   <MapContainer
-  center={myCenter}
-  zoom={10}
-  minZoom={9}
-  maxZoom={18}
+  center={center} // ✅ usa el state (se actualiza con GPS)
+  zoom={Number(me?.lat) && Number(me?.lon) ? 11 : 7} // ✅ si hay GPS: zoom cercano, si no: país
+  minZoom={5}
+  maxZoom={19}
   zoomControl={false}
   scrollWheelZoom={false}
-
-  /* ✅ FIX MOBILE/PWA (clave) */
-  dragging={true}
-  touchZoom={true}
-  doubleClickZoom={false}
-  boxZoom={false}
-  keyboard={false}
-  tap={false}
-  preferCanvas={true}
-
   style={{
     height: "100%",
     width: "100%",
-    touchAction: "none",          // ✅ antes: "manipulation"
+    touchAction: "none",
     overscrollBehavior: "none",
     WebkitOverflowScrolling: "auto",
-    paddingBottom: "160px",
-    background: "#eef2f7",
+    paddingBottom: "160px"
   }}
-  whenCreated={(map) => {
-    mapRef.current = map;
+ whenCreated={(map) => {
+  mapRef.current = map;
 
-    const el = map.getContainer();
-    el.style.touchAction = "none";       // ✅ antes: "manipulation"
-    el.style.overscrollBehavior = "none";
+  const el = map.getContainer();
+  el.style.touchAction = "none";
+  el.style.overscrollBehavior = "none";
 
-    // ✅ FIX móvil/PWA: recalcular tamaño real del mapa
-    setTimeout(() => {
-      try { map.invalidateSize(true); } catch {}
-    }, 250);
-  }}
-  whenReady={() => {
-    setTimeout(() => {
-      try { mapRef.current?.invalidateSize(true); } catch {}
-    }, 450);
-  }}
+}}
 >
-  {/* ✅ Centrar SOLO cuando hay GPS + encuadrar el círculo completo */}
-  <ChangeView center={myCenter} zoom={10} enabled={hasGPS} />
-  <RadiusLock center={myCenter} radiusM={MAX_RADIUS_M} />
+{Number(me?.lat) && Number(me?.lon) && (
+  <CenterOnceOnMe lat={me.lat} lon={me.lon} zoom={11} />
+)}
 
-  <TileLayer
-    url={tileUrl}
-    attribution={
-      tileUrl === CARTO_URL
-        ? '&copy; <a href="https://carto.com/">CARTO</a>'
-        : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    }
-    updateWhenIdle
-    updateWhenZooming={false}
-    keepBuffer={2}
-    eventHandlers={{
-      tileerror: () => {
-        if (tileUrl !== OSM_URL) setTileUrl(OSM_URL);
-      },
-    }}
-  />
-    {/* 📍 MI UBICACIÓN */}
-    {hasGPS && (
-      <CircleMarker
-        center={myCenter}
-        radius={8}
-        pathOptions={{
-          color: "#ffffff",
-          weight: 3,
-          fillColor: "#10b981",
-          fillOpacity: 1,
-        }}
-      />
-    )}
 
-    {/* 🟢 CÍRCULO 50KM */}
-    {hasGPS && (
-      <Circle
-        center={myCenter}
-        radius={MAX_RADIUS_M}
-        pathOptions={{
-          color: "#10b981",
-          weight: 2,
-          fillColor: "#10b981",
-          fillOpacity: 0.08,
-        }}
-      />
-    )}
 
-    {/* Ruta (si existe) */}
-    {Array.isArray(route) &&
-      route.length === 2 &&
-      Array.isArray(route[0]) &&
-      Array.isArray(route[1]) &&
-      Number(route[0][0]) &&
-      Number(route[0][1]) &&
-      Number(route[1][0]) &&
-      Number(route[1][1]) && (
-        <Polyline positions={route} color="#10b981" weight={5} />
-      )}
+    {/* 🗺️ CARTO Light (mapa blanco minimalista) */}
+    <TileLayer
+      url="https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+      attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+      updateWhenIdle={true}
+      
+      updateWhenZooming={false}
+      keepBuffer={2}
+    />
 
-    {/* ✅ CLUSTER + WORKERS */}
-    <MarkerClusterGroup
-      chunkedLoading
-      maxClusterRadius={48}
-      iconCreateFunction={clusterIconCreateFunction}
-    >
-      {selectedService !== "taxi" &&
-        workers
-          ?.filter((w) => Number(w?.lat) && Number(w?.lng) && w?.status !== "paused")
-          .map((w) => {
-            const minutesAgo = getMinutesAgo(w.updated_at);
+  {/* 🎯 Radio visible 30km */}
+  {Number(me?.lat) && Number(me?.lon) && (
+    <Circle
+      center={[me.lat, me.lon]}
+      radius={MAX_RADIUS_M}
+      pathOptions={{
+        color: '#10b981',
+        weight: 2,
+        fillOpacity: 0.08,
+      }}
+    />
+  )}
+   {Array.isArray(route) &&
+  route.length === 2 &&
+  Array.isArray(route[0]) &&
+  Array.isArray(route[1]) &&
+  Number(route[0][0]) &&
+  Number(route[0][1]) &&
+  Number(route[1][0]) &&
+  Number(route[1][1]) && (
+    <Polyline positions={route} color="#10b981" weight={5} />
+  )
+}
 
-            let estadoTexto = "Disponible ahora";
-            let estadoColor = "#10b981";
 
-            if (w.status === "busy") {
-              const busyUntil = w.busy_until ? new Date(w.busy_until) : null;
-              if (busyUntil) {
-                const diffMin = Math.max(
-                  0,
-                  Math.round((busyUntil.getTime() - Date.now()) / 60000)
-                );
-                estadoTexto =
-                  diffMin > 0 ? `Ocupado • libre en ${diffMin} min` : "Ocupado (finalizando)";
-              } else {
-                estadoTexto = "Ocupado";
-              }
-              estadoColor = "#f97316";
-            }
+   {/* ✅ Bloque final actualizado — oculta 'paused' y muestra estados dinámicos */}
+<MarkerClusterGroup
+  chunkedLoading
+  maxClusterRadius={48}
+  iconCreateFunction={clusterIconCreateFunction}
+>
+  {/* =======================
+      👷 WORKERS (SERVICIOS)
+      ======================= */}
+  {selectedService !== 'taxi' &&
+    workers
+      ?.filter((w) => Number(w?.lat) && Number(w?.lng) && w?.status !== 'paused')
+      .map((w) => {
+        const minutesAgo = getMinutesAgo(w.updated_at);
 
-            return (
-              <Marker
-                key={`worker-${w.user_id}`}
-                position={[w.lat, w.lng]}
-                icon={avatarIcon(w.avatar_url, w) || undefined}
-                eventHandlers={{ click: () => handleMarkerClick(w) }}
-              >
-                <Tooltip direction="top">
-                  <div className="text-xs leading-tight">
-                    <strong className="block text-sm font-semibold">{w.full_name}</strong>
-                    <p>Servicio: {w.main_skill || "No especificado"}</p>
-                    <p>💰 Desde ₲45.000</p>
+        let estadoTexto = 'Disponible ahora';
+        let estadoColor = '#10b981';
 
-                    <p className="mt-1 font-semibold" style={{ color: estadoColor }}>
-                      {estadoTexto}
-                    </p>
+        if (w.status === 'busy') {
+          const busyUntil = w.busy_until ? new Date(w.busy_until) : null;
+          if (busyUntil) {
+            const diffMin = Math.max(0, Math.round((busyUntil.getTime() - Date.now()) / 60000));
+            estadoTexto = diffMin > 0 ? `Ocupado • libre en ${diffMin} min` : 'Ocupado (finalizando)';
+          } else {
+            estadoTexto = 'Ocupado';
+          }
+          estadoColor = '#f97316';
+        }
 
-                    {minutesAgo !== null && (
-                      <p className="text-[10px] text-gray-500 mt-1">⏱ hace {minutesAgo} min</p>
-                    )}
-                  </div>
-                </Tooltip>
-              </Marker>
-            );
-          })}
-    </MarkerClusterGroup>
-  </MapContainer>
+        return (
+          <Marker
+            key={`worker-${w.user_id}`}
+            position={[w.lat, w.lng]}
+            icon={avatarIcon(w.avatar_url, w) || undefined}
+            eventHandlers={{ click: () => handleMarkerClick(w) }}
+          >
+            <Tooltip direction="top">
+              <div className="text-xs leading-tight">
+                <strong className="block text-sm font-semibold">{w.full_name}</strong>
+                <p>Servicio: {w.main_skill || 'No especificado'}</p>
+                <p>💰 Desde ₲45.000</p>
+
+                <p className="mt-1 font-semibold" style={{ color: estadoColor }}>
+                  {estadoTexto}
+                </p>
+
+                {minutesAgo !== null && (
+                  <p className="text-[10px] text-gray-500 mt-1">⏱ hace {minutesAgo} min</p>
+                )}
+              </div>
+            </Tooltip>
+          </Marker>
+        );
+      })}
+</MarkerClusterGroup>
+
+</MapContainer>
+
 </div>
+
 {/* ===========================
      PANEL MINI PROFESIONAL — FIX (MOBILE SAFE)
    =========================== */}
