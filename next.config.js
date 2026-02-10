@@ -1,4 +1,6 @@
-// ✅ next.config.js — FINAL (Vercel/Render + PWA + Bundle Analyzer + alias "@/") + FIX PWA TILES (CARTO/OSM)
+// ✅ next.config.js — Render/Vercel + PWA + Bundle Analyzer + alias "@/"
+// ✅ FIX: quitamos workboxOptions (rompía build con WebpackGenerateSW)
+
 const withPWA = require("next-pwa")({
   dest: "public",
   register: true,
@@ -7,13 +9,6 @@ const withPWA = require("next-pwa")({
 
   // ✅ evita errores de build PWA
   buildExcludes: [/app-build-manifest\.json$/],
-
-  // ✅ FIX SW: que no quede cache viejo pegado
-  workboxOptions: {
-    cleanupOutdatedCaches: true,
-    clientsClaim: true,
-    skipWaiting: true,
-  },
 
   // ✅ Runtime caching: TILES cross-origin (PWA mobile fix)
   runtimeCaching: [
