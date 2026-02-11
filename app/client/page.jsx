@@ -245,16 +245,8 @@ const sendSoundRef = useRef(null);
   const [selectedService, setSelectedService] = useState(null);
 const distanceToSelectedKm =
   Number(me?.lat) && Number(me?.lon) && Number(selected?.lat) && Number(selected?.lng)
-    ? haversineKm(me.lat, me.lon, selected.lat, selected.lng)
+    ? haversineKm(Number(me.lat), Number(me.lon), Number(selected.lat), Number(selected.lng))
     : null;
-// ✅ Distancia real al seleccionado (para precio)
-useEffect(() => {
-  if (!Number(me?.lat) || !Number(me?.lon)) return;
-  if (!Number(selected?.lat) || !Number(selected?.lng)) return;
-
-  const km = haversineKm(Number(me.lat), Number(me.lon), Number(selected.lat), Number(selected.lng));
-  setDistanciaKm(km);
-}, [me?.lat, me?.lon, selected?.lat, selected?.lng]);
   // 🟢 Panel estilo Uber (3 niveles)
 const [panelLevel, setPanelLevel] = useState("hidden"); 
 // niveles: "mini" | "mid" | "full"
@@ -1358,6 +1350,20 @@ function calcularPrecio(
 const [horasTrabajo, setHorasTrabajo] = useState(1);
 const [distanciaKm, setDistanciaKm] = useState(0);
 const [precioEstimado, setPrecioEstimado] = useState(55000);
+// ✅ Distancia real al seleccionado (para precio) — ahora sí, después de declarar setDistanciaKm
+useEffect(() => {
+  if (!Number(me?.lat) || !Number(me?.lon)) return;
+  if (!Number(selected?.lat) || !Number(selected?.lng)) return;
+
+  const km = haversineKm(
+    Number(me.lat),
+    Number(me.lon),
+    Number(selected.lat),
+    Number(selected.lng)
+  );
+
+  setDistanciaKm(km);
+}, [me?.lat, me?.lon, selected?.lat, selected?.lng]);
 
 /* 🔁 Recalcular automáticamente el precio */
 useEffect(() => {
