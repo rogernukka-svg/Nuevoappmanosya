@@ -31,7 +31,6 @@ const Circle = dynamic(() => import('react-leaflet').then(m => m.Circle), { ssr:
 const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
 const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
-const Tooltip = dynamic(() => import('react-leaflet').then(m => m.Tooltip), { ssr: false });
 const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
 const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then(m => m.default), { ssr: false });
 const MAX_RADIUS_KM = 12;      // 👈 antes 8
@@ -67,15 +66,58 @@ function avatarIcon(url, worker) {
          "></div>`
       : '';
 
+    const online = isOnlineRecent(worker);
+
+  const onlineBadge = online
+    ? `<div style="
+        position:absolute;
+        top:-12px;
+        left:50%;
+        transform:translateX(-50%);
+        background:linear-gradient(135deg,#10b981,#059669);
+        color:white;
+        font-weight:900;
+        font-size:10px;
+        padding:4px 10px;
+        border-radius:999px;
+        border:2px solid rgba(255,255,255,.95);
+        box-shadow:0 10px 24px rgba(16,185,129,.35), 0 6px 14px rgba(0,0,0,.12);
+        letter-spacing:.5px;
+        text-transform:uppercase;
+        z-index:5;
+        white-space:nowrap;
+      ">
+        <span style="display:inline-flex;align-items:center;gap:6px;">
+          <span style="
+            width:8px;height:8px;border-radius:999px;
+            background:#34d399;
+            box-shadow:0 0 0 6px rgba(52,211,153,.18);
+            animation:onlineDot 1.2s ease-in-out infinite;
+          "></span>
+          EN LÍNEA
+        </span>
+      </div>`
+    : '';
+
   const html = `
     <div style="width:${size}px;height:${size}px;border-radius:50%;
-      position:relative;background:#fff;overflow:hidden;
-      box-shadow:0 6px 16px rgba(0,0,0,.12);
+      position:relative;background:#fff;overflow:visible;
+      box-shadow:0 10px 26px rgba(0,0,0,.14);
       ${bounce}">
+      ${onlineBadge}
       ${pulse}
       <div style="position:absolute;inset:-4px;border-radius:50%;
         border:3px solid ${color};
-        filter:drop-shadow(0 0 8px ${color}40);"></div>
+        filter:drop-shadow(0 0 10px ${color}50);"></div>
+
+      <div style="
+        position:absolute;
+        inset:-10px;
+        border-radius:50%;
+        background:radial-gradient(circle, rgba(16,185,129,.12) 0%, rgba(16,185,129,0) 70%);
+        pointer-events:none;
+      "></div>
+
       <img src="${url || '/avatar-fallback.png'}"
         onerror="this.src='/avatar-fallback.png'"
         style="
@@ -142,12 +184,19 @@ if (typeof window !== 'undefined') {
 /* 💫 CSS global dinámico adicional para animaciones */
 if (typeof window !== 'undefined') {
   const style2 = document.createElement('style');
-  style2.innerHTML = `
+    style2.innerHTML = `
     /* 💚 animación para actualización (ping en marcadores) */
     @keyframes pulseGreen {
       0% { transform: scale(0.6); opacity: 0.7; }
       50% { transform: scale(1.3); opacity: 0.3; }
       100% { transform: scale(0.6); opacity: 0; }
+    }
+
+    /* 🟢 punto online del badge */
+    @keyframes onlineDot {
+      0%   { transform: scale(1);   opacity: 1; }
+      50%  { transform: scale(1.25); opacity: .85; }
+      100% { transform: scale(1);   opacity: 1; }
     }
   `;
   if (!document.head.querySelector('style[data-manosya-pulse-green]')) {
@@ -161,6 +210,20 @@ function getMinutesAgo(dateString) {
   if (!dateString) return null;
   const diffMs = Date.now() - new Date(dateString).getTime();
   return Math.floor(diffMs / 60000);
+}
+function minutesSince(dateString) {
+  if (!dateString) return null;
+  const diffMs = Date.now() - new Date(dateString).getTime();
+  return Math.floor(diffMs / 60000);
+}
+
+// ✅ ONLINE si se conectó / actualizó entre 1 y 30 minutos
+function isOnlineRecent(worker) {
+  const mins = minutesSince(worker?.updated_at);
+  if (mins == null) return false;
+
+  // ✅ ONLINE también si actualizó "hace 0 min"
+  return mins >= 0 && mins <= 30;
 }
 
 function haversineKm(lat1, lon1, lat2, lon2) {
@@ -204,23 +267,12 @@ export default function MapPage() {
   const mapRef = useRef(null);
   const soundRef = useRef(null);
 const sendSoundRef = useRef(null);
+const gpsWatchIdRef = useRef(null);
   const markersRef = useRef({}); // guarda refs de marcadores por user_id
  /* === Fix altura real para móviles (Android/iPhone) === */
  const centeredOnceRef = useRef(false);
  const gpsCenteredRef = useRef(false);
  const [isTyping, setIsTyping] = useState(false);
- useEffect(() => {
-  const prevHtml = document.documentElement.style.overscrollBehavior;
-  const prevBody = document.body.style.overscrollBehavior;
-
-  document.documentElement.style.overscrollBehavior = "none";
-  document.body.style.overscrollBehavior = "none";
-
-  return () => {
-    document.documentElement.style.overscrollBehavior = prevHtml;
-    document.body.style.overscrollBehavior = prevBody;
-  };
-}, []);
 
   useEffect(() => {
   if (typeof window === 'undefined') return;
@@ -240,12 +292,15 @@ const sendSoundRef = useRef(null);
   const [workers, setWorkers] = useState([]);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
+  // ✅ FIX: selected puede venir con lng o lon
+const selLat = Number(selected?.lat);
+const selLng = Number(selected?.lng ?? selected?.lon);
   const [showPrice, setShowPrice] = useState(false);
   const [route, setRoute] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
 const distanceToSelectedKm =
-  Number(me?.lat) && Number(me?.lon) && Number(selected?.lat) && Number(selected?.lng)
-    ? haversineKm(Number(me.lat), Number(me.lon), Number(selected.lat), Number(selected.lng))
+  Number(me?.lat) && Number(me?.lon) && selLat && selLng
+    ? haversineKm(Number(me.lat), Number(me.lon), selLat, selLng)
     : null;
   // 🟢 Panel estilo Uber (3 niveles)
 const [panelLevel, setPanelLevel] = useState("hidden"); 
@@ -266,11 +321,64 @@ const [sending, setSending] = useState(false);
 const inputRef = useRef(null);
 const bottomRef = useRef(null);
 const chatChannelRef = useRef(null);
-/* 📍 GPS: actualizar mi ubicación y centrar SOLO 1 vez */
-useEffect(() => {
-  if (typeof window === 'undefined') return;
-  if (!navigator.geolocation) return;
+const [gpsStatus, setGpsStatus] = useState('init'); // init | requesting | granted | denied | error
+const [gpsError, setGpsError] = useState(null);
+// eslint-disable-next-line no-unused-vars
+const [tick, setTick] = useState(0);
 
+useEffect(() => {
+  const t = setInterval(() => setTick(x => x + 1), 60000); // cada 1 minuto
+  return () => clearInterval(t);
+}, []);
+async function requestGPS() {
+  if (typeof window === 'undefined') return;
+  if (!navigator.geolocation) {
+    setGpsStatus('error');
+    setGpsError('Este dispositivo no soporta GPS (geolocation).');
+    toast.error('Tu dispositivo no soporta GPS.');
+    return;
+  }
+
+  setGpsStatus('requesting');
+  setGpsError(null);
+
+  // 1) Primero: pedir una posición inmediata (esto suele disparar el prompt bien en PWA)
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+
+      setMe((prev) => ({ ...prev, lat, lon }));
+      setCenter([lat, lon]);
+
+      // centrar el mapa una sola vez
+      if (!gpsCenteredRef.current && mapRef.current) {
+        gpsCenteredRef.current = true;
+        mapRef.current.flyTo([lat, lon], 13, { duration: 1.2 });
+        setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+      }
+
+      setGpsStatus('granted');
+      toast.success('📍 GPS activado');
+    },
+    (err) => {
+      // 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
+      const msg =
+        err.code === 1
+          ? 'Permiso de ubicación denegado (activar en Permisos de la app).'
+          : err.code === 2
+          ? 'Ubicación no disponible (GPS apagado o sin señal).'
+          : 'Timeout obteniendo ubicación (probá otra vez).';
+
+      setGpsStatus(err.code === 1 ? 'denied' : 'error');
+      setGpsError(msg);
+      console.warn('GPS getCurrentPosition error:', err);
+      toast.error(`📍 ${msg}`);
+    },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
+  );
+
+  // 2) Segundo: iniciar watcher para mantener actualizado
   const watcher = navigator.geolocation.watchPosition(
     (pos) => {
       const lat = pos.coords.latitude;
@@ -281,15 +389,40 @@ useEffect(() => {
 
       if (!gpsCenteredRef.current && mapRef.current) {
         gpsCenteredRef.current = true;
-        mapRef.current.flyTo([lat, lon], 11, { duration: 1.2 });
+        mapRef.current.flyTo([lat, lon], 13, { duration: 1.2 });
         setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
       }
-    },
-    (err) => console.warn('GPS error:', err),
-    { enableHighAccuracy: true, maximumAge: 3000, timeout: 5000 }
-  );
 
-  return () => navigator.geolocation.clearWatch(watcher);
+      setGpsStatus('granted');
+    },
+    (err) => {
+      const msg =
+        err.code === 1
+          ? 'Permiso de ubicación denegado.'
+          : err.code === 2
+          ? 'Ubicación no disponible.'
+          : 'Timeout GPS.';
+
+      setGpsStatus(err.code === 1 ? 'denied' : 'error');
+      setGpsError(msg);
+      console.warn('GPS watchPosition error:', err);
+    },
+    { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+  );
+  gpsWatchIdRef.current = watcher;
+}
+
+// ✅ En web puede funcionar solo; en PWA a veces necesitás gesto.
+// Intentamos auto-activar, pero también damos botón manual (abajo).
+useEffect(() => {
+  requestGPS();
+
+  return () => {
+    if (gpsWatchIdRef.current != null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+      gpsWatchIdRef.current = null;
+    }
+  };
 }, []);
 // ✅ Reintento de centrado: cuando el mapa ya existe y el GPS ya llegó
 useEffect(() => {
@@ -358,10 +491,10 @@ useEffect(() => {
   if (jobStatus === 'completed' || jobStatus === 'cancelled') return;
 
   if (!Number(me?.lat) || !Number(me?.lon)) return;
-  if (!Number(selected?.lat) || !Number(selected?.lng)) return;
+  if (!selLat || !selLng) return;
 
-  setRoute([[me.lat, me.lon], [selected.lat, selected.lng]]);
-}, [jobId, jobStatus, me?.lat, me?.lon, selected?.lat, selected?.lng]);
+  setRoute([[me.lat, me.lon], [selLat, selLng]]);
+}, [jobId, jobStatus, me?.lat, me?.lon, selLat, selLng]);
 /* 💬 Banner elegante de estado */
 useEffect(() => {
   if (jobStatus === 'completed') {
@@ -952,8 +1085,8 @@ async function confirmarSolicitud() {
 const canMakeRoute =
   Number(me?.lat) &&
   Number(me?.lon) &&
-  Number(selected?.lat) &&
-  Number(selected?.lng);
+  selLat &&
+  selLng;
 
 if (!canMakeRoute) {
   toast.error("No se puede crear el pedido. Coordenadas incompletas.");
@@ -969,7 +1102,7 @@ if (!canMakeRoute) {
 // ✔ Generar ruta ANTES de crear pedido
 setRoute([
   [me.lat, me.lon],
-  [selected.lat, selected.lng]
+  [selLat, selLng]
 ]);
 
 
@@ -985,8 +1118,8 @@ const { data: inserted, error: insertError } = await supabase
       worker_id: selected.user_id,
       client_lat: me.lat,
       client_lng: me.lon,
-      worker_lat: selected.lat,
-      worker_lng: selected.lng,
+      worker_lat: selLat,
+      worker_lng: selLng,
       created_at: new Date().toISOString(),
 
       // 🧩 Nuevos campos agregados
@@ -1353,17 +1486,17 @@ const [precioEstimado, setPrecioEstimado] = useState(55000);
 // ✅ Distancia real al seleccionado (para precio) — ahora sí, después de declarar setDistanciaKm
 useEffect(() => {
   if (!Number(me?.lat) || !Number(me?.lon)) return;
-  if (!Number(selected?.lat) || !Number(selected?.lng)) return;
+  if (!selLat || !selLng) return;
 
   const km = haversineKm(
     Number(me.lat),
     Number(me.lon),
-    Number(selected.lat),
-    Number(selected.lng)
+    selLat,
+    selLng
   );
 
   setDistanciaKm(km);
-}, [me?.lat, me?.lon, selected?.lat, selected?.lng]);
+}, [me?.lat, me?.lon, selLat, selLng]);
 
 /* 🔁 Recalcular automáticamente el precio */
 useEffect(() => {
@@ -1429,7 +1562,28 @@ useEffect(() => {
     {statusBanner.text}
   </div>
 )}
-
+{(gpsStatus === 'denied' || gpsStatus === 'error') && (
+  <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[20000]">
+    <div className="bg-white/95 border border-gray-200 shadow-lg rounded-2xl px-4 py-3 text-sm">
+      <div className="font-semibold text-gray-800">📍 No se pudo activar tu ubicación</div>
+      {gpsError && <div className="text-gray-500 mt-1">{gpsError}</div>}
+      <div className="flex gap-2 mt-3">
+        <button
+          onClick={requestGPS}
+          className="px-3 py-2 rounded-xl bg-emerald-500 text-white font-semibold active:scale-95"
+        >
+          Activar GPS
+        </button>
+        <button
+          onClick={() => toast('Abrí: Ajustes > Apps > ManosYA > Permisos > Ubicación')}
+          className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 font-semibold active:scale-95"
+        >
+          Cómo habilitar
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 {/* MAPA */}
 <div
   className="absolute inset-x-0 top-0 z-0"
@@ -1440,6 +1594,7 @@ useEffect(() => {
   }}
 >
   <MapContainer
+  key={Number(me?.lat) && Number(me?.lon) ? 'gps' : 'nogps'}
     center={center} // puede quedar así (pero ya no lo actualizamos por GPS)
     zoom={Number(me?.lat) && Number(me?.lon) ? 11 : 7}
     minZoom={5}
@@ -1529,27 +1684,11 @@ useEffect(() => {
 
         return (
           <Marker
-            key={`worker-${w.user_id}`}
-            position={[w.lat, w.lng]}
-            icon={avatarIcon(w.avatar_url, w) || undefined}
-            eventHandlers={{ click: () => handleMarkerClick(w) }}
-          >
-            <Tooltip direction="top">
-              <div className="text-xs leading-tight">
-                <strong className="block text-sm font-semibold">{w.full_name}</strong>
-                <p>Servicio: {w.main_skill || 'No especificado'}</p>
-                <p>💰 Desde ₲45.000</p>
-
-                <p className="mt-1 font-semibold" style={{ color: estadoColor }}>
-                  {estadoTexto}
-                </p>
-
-                {minutesAgo !== null && (
-                  <p className="text-[10px] text-gray-500 mt-1">⏱ hace {minutesAgo} min</p>
-                )}
-              </div>
-            </Tooltip>
-          </Marker>
+  key={`worker-${w.user_id}`}
+  position={[w.lat, w.lng]}
+  icon={avatarIcon(w.avatar_url, w) || undefined}
+  eventHandlers={{ click: () => handleMarkerClick(w) }}
+/>
         );
       })}
 </MarkerClusterGroup>
@@ -2062,20 +2201,19 @@ useEffect(() => {
           <XCircle size={20} />
         </button>
 
-        {/* 👷 Foto y nombre del trabajador */}
-        <div className="flex flex-col items-center mb-4">
-          <img
-            src={selected?.avatar_url || '/avatar-fallback.png'}
-            alt="avatar trabajador"
-            className="w-16 h-16 rounded-full border-4 border-emerald-500 shadow-sm mb-2"
-          />
-          <h2 className="text-lg font-bold text-emerald-600">
-            {selected?.full_name || 'Trabajador'}
-          </h2>
-          <p className="text-xs text-gray-500">
-            ¡Gracias por usar <span className="font-semibold">ManosYA</span>!
-          </p>
-        </div>
+        <img
+  src={selected?.avatar_url || '/avatar-fallback.png'}
+  alt="avatar trabajador"
+  onError={(e) => {
+    e.currentTarget.src = '/avatar-fallback.png';
+  }}
+  className="
+    w-16 h-16 aspect-square shrink-0
+    rounded-full border-4 border-emerald-500 shadow-sm mb-2
+    object-cover object-center
+  "
+  style={{ aspectRatio: '1 / 1' }}
+/>
 
         {/* ⭐ Calificación */}
         <div className="flex justify-center gap-2 mb-4">
