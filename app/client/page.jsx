@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useMap } from 'react-leaflet';
 import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
 import { useRouter } from 'next/navigation';
@@ -71,24 +70,24 @@ function avatarIcon(url, worker) {
   const html = `
     <div style="width:${size}px;height:${size}px;border-radius:50%;
       position:relative;background:#fff;overflow:hidden;
-      box-shadow:0 6px 16px rgba(0,0,0,.12);">
+      box-shadow:0 6px 16px rgba(0,0,0,.12);
+      ${bounce}">
       ${pulse}
       <div style="position:absolute;inset:-4px;border-radius:50%;
         border:3px solid ${color};
         filter:drop-shadow(0 0 8px ${color}40);"></div>
       <img src="${url || '/avatar-fallback.png'}"
-  onerror="this.src='/avatar-fallback.png'"
-  style="
-    position:absolute;
-    top:0; left:0;
-    width:100%; height:100%;
-    object-fit:cover;
-    object-position:center;
-    border-radius:50%;
-    aspect-ratio: 1/1;
-  "
-/>
-
+        onerror="this.src='/avatar-fallback.png'"
+        style="
+          position:absolute;
+          top:0; left:0;
+          width:100%; height:100%;
+          object-fit:cover;
+          object-position:center;
+          border-radius:50%;
+          aspect-ratio:1/1;
+        "
+      />
     </div>`;
 
   return L.divIcon({ html, iconSize: [size, size], className: '' });
@@ -198,30 +197,17 @@ function formatKm(km) {
   if (km < 1) return `${Math.round(km * 1000)} m`;
   return `${km.toFixed(1)} km`;
 }
- function CenterOnceOnMe({ lat, lon, zoom = 13 }) {
-  const map = useMap();
-  const doneRef = useRef(false);
 
-  useEffect(() => {
-    if (!map) return;
-    if (!Number(lat) || !Number(lon)) return;
-    if (doneRef.current) return;
-
-    doneRef.current = true;
-
-    // ✅ centrado suave 1 sola vez
-    map.flyTo([lat, lon], zoom, { duration: 1.2 });
-  }, [map, lat, lon, zoom]);
-
-  return null;
-}
 export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
+  const soundRef = useRef(null);
+const sendSoundRef = useRef(null);
   const markersRef = useRef({}); // guarda refs de marcadores por user_id
  /* === Fix altura real para móviles (Android/iPhone) === */
  const centeredOnceRef = useRef(false);
+ const gpsCenteredRef = useRef(false);
  const [isTyping, setIsTyping] = useState(false);
  useEffect(() => {
   const prevHtml = document.documentElement.style.overscrollBehavior;
@@ -237,20 +223,16 @@ export default function MapPage() {
 }, []);
 
   useEffect(() => {
-   const setVH = () => {
-  document.documentElement.style.setProperty('--real-vh', `${window.innerHeight}px`);
+  if (typeof window === 'undefined') return;
 
-  // ✅ safe-area bottom (sirve en iPhone y algunos Android)
-  const safeBottom =
-    parseInt(getComputedStyle(document.documentElement).getPropertyValue('env(safe-area-inset-bottom)')) || 0;
+  const setVH = () => {
+    document.documentElement.style.setProperty('--real-vh', `${window.innerHeight}px`);
+  };
 
-  document.documentElement.style.setProperty('--safe-bottom', `${safeBottom}px`);
-};
-
-    setVH();
-    window.addEventListener('resize', setVH);
-    return () => window.removeEventListener('resize', setVH);
-  }, []);
+  setVH();
+  window.addEventListener('resize', setVH);
+  return () => window.removeEventListener('resize', setVH);
+}, []);
 
   const DEFAULT_CENTER = [-23.4437, -58.4400]; // Centro real del país
   const [center, setCenter] = useState(DEFAULT_CENTER);
@@ -265,7 +247,14 @@ const distanceToSelectedKm =
   Number(me?.lat) && Number(me?.lon) && Number(selected?.lat) && Number(selected?.lng)
     ? haversineKm(me.lat, me.lon, selected.lat, selected.lng)
     : null;
+// ✅ Distancia real al seleccionado (para precio)
+useEffect(() => {
+  if (!Number(me?.lat) || !Number(me?.lon)) return;
+  if (!Number(selected?.lat) || !Number(selected?.lng)) return;
 
+  const km = haversineKm(Number(me.lat), Number(me.lon), Number(selected.lat), Number(selected.lng));
+  setDistanciaKm(km);
+}, [me?.lat, me?.lon, selected?.lat, selected?.lng]);
   // 🟢 Panel estilo Uber (3 niveles)
 const [panelLevel, setPanelLevel] = useState("hidden"); 
 // niveles: "mini" | "mid" | "full"
@@ -285,8 +274,42 @@ const [sending, setSending] = useState(false);
 const inputRef = useRef(null);
 const bottomRef = useRef(null);
 const chatChannelRef = useRef(null);
-const sendSoundRef = useRef(null);
-const soundRef = useRef(null);
+/* 📍 GPS: actualizar mi ubicación y centrar SOLO 1 vez */
+useEffect(() => {
+  if (typeof window === 'undefined') return;
+  if (!navigator.geolocation) return;
+
+  const watcher = navigator.geolocation.watchPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+
+      setMe((prev) => ({ ...prev, lat, lon }));
+      setCenter([lat, lon]);
+
+      if (!gpsCenteredRef.current && mapRef.current) {
+        gpsCenteredRef.current = true;
+        mapRef.current.flyTo([lat, lon], 11, { duration: 1.2 });
+        setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+      }
+    },
+    (err) => console.warn('GPS error:', err),
+    { enableHighAccuracy: true, maximumAge: 3000, timeout: 5000 }
+  );
+
+  return () => navigator.geolocation.clearWatch(watcher);
+}, []);
+// ✅ Reintento de centrado: cuando el mapa ya existe y el GPS ya llegó
+useEffect(() => {
+  if (gpsCenteredRef.current) return;
+  if (!mapRef.current) return;
+  if (!Number(me?.lat) || !Number(me?.lon)) return;
+
+  gpsCenteredRef.current = true;
+  mapRef.current.flyTo([me.lat, me.lon], 11, { duration: 1.2 });
+  setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+}, [me?.lat, me?.lon]);
+
 const [rating, setRating] = useState(0);
 const [comment, setComment] = useState('') 
 
@@ -310,31 +333,43 @@ const [statusBanner, setStatusBanner] = useState(null);
   ];
 /* 🧠 Restaurar estado completo (pedido + chat) desde localStorage */
 useEffect(() => {
+  if (typeof window === 'undefined') return;
+
   const saved = localStorage.getItem('activeJobChat');
   if (!saved) return;
 
-  const { jid, jstatus, cid, selectedWorker } = JSON.parse(saved);
+  let parsed = null;
+  try {
+    parsed = JSON.parse(saved);
+  } catch {
+    localStorage.removeItem('activeJobChat');
+    return;
+  }
 
-  // restaurar primero el pedido
+  const { jid, jstatus, cid, selectedWorker } = parsed || {};
+
   if (jid) setJobId(jid);
   if (jstatus) setJobStatus(jstatus);
   if (selectedWorker) setSelected(selectedWorker);
 
-  // esperar 300ms para asegurar que jobId esté seteado antes de abrir el chat
   setTimeout(() => {
     if (cid && jid && jstatus !== 'completed' && jstatus !== 'cancelled') {
       setChatId(cid);
       setIsChatOpen(true);
-      openChat(cid); // reconecta el canal del chat
+      openChat(cid);
     }
   }, 300);
-
-  // restaurar la línea del mapa
-  if (selectedWorker?.lat && selectedWorker?.lng && me?.lat) {
-    setRoute([[me.lat, me.lon], [selectedWorker.lat, selectedWorker.lng]]);
-  }
 }, []);
+// ✅ Ruta SOLO si hay pedido activo (y no está finalizado/cancelado)
+useEffect(() => {
+  if (!jobId) return;
+  if (jobStatus === 'completed' || jobStatus === 'cancelled') return;
 
+  if (!Number(me?.lat) || !Number(me?.lon)) return;
+  if (!Number(selected?.lat) || !Number(selected?.lng)) return;
+
+  setRoute([[me.lat, me.lon], [selected.lat, selected.lng]]);
+}, [jobId, jobStatus, me?.lat, me?.lon, selected?.lat, selected?.lng]);
 /* 💬 Banner elegante de estado */
 useEffect(() => {
   if (jobStatus === 'completed') {
@@ -385,82 +420,69 @@ useEffect(() => {
 useEffect(() => {
   if (jobId || !me?.id) return;
 
+  // ✅ Esperar coordenadas del cliente antes de setRoute
+  if (!Number(me?.lat) || !Number(me?.lon)) return;
+
   (async () => {
     try {
       const { data: job } = await supabase
         .from('jobs')
-        .select('id, status, worker_id, worker_lat, worker_lng')
+        .select('id, status, worker_id')
         .eq('client_id', me.id)
         .in('status', ['open', 'accepted', 'assigned'])
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
-      if (job) {
-        setJobId(job.id);
-        setJobStatus(job.status);
+      if (!job) return;
 
-        // cargar también el trabajador
-        const { data: worker } = await supabase
-          .from('map_workers_view')
-          .select('*')
-          .eq('user_id', job.worker_id)
-          .single();
+      setJobId(job.id);
+      setJobStatus(job.status);
 
-        if (worker) {
-          setSelected(worker);
-          setRoute([[me.lat, me.lon], [worker.lat, worker.lng]]);
-          toast.success(`Pedido restaurado (${job.status})`);
-        }
+      const { data: worker } = await supabase
+        .from('map_workers_view')
+        .select('*')
+        .eq('user_id', job.worker_id)
+        .maybeSingle();
+
+      if (worker && Number(worker?.lat) && Number(worker?.lng)) {
+        setSelected(worker);
+        setRoute([[me.lat, me.lon], [worker.lat, worker.lng]]);
+        toast.success(`Pedido restaurado (${job.status})`);
       }
     } catch (err) {
-      console.warn('Sin pedido activo para restaurar:', err.message);
+      console.warn('Sin pedido activo para restaurar:', err?.message || err);
     }
   })();
-}, [me?.id]);
+}, [me?.id, me?.lat, me?.lon, jobId]);
 
-  /* === Usuario === */
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      const uid = data?.user?.id;
-      if (!uid) router.replace('/login');
-      else setMe(prev => ({ ...prev, id: uid }));
-      if (typeof Audio !== 'undefined') soundRef.current = new Audio('/notify.mp3');
-    })();
-  }, [router]);
-
-/* === GEOLOC FIX — siempre centra en mi ubicación real (sin race) === */
-const gpsCenteredRef = useRef(false);
-
+/* === Usuario === */
 useEffect(() => {
-  // mapa rápido mientras llega GPS
-  setCenter([-23.4437, -58.4400]);
+  let alive = true;
 
-  if (!navigator.geolocation) return;
+  (async () => {
+    const { data } = await supabase.auth.getUser();
+    const uid = data?.user?.id;
 
-  const watcher = navigator.geolocation.watchPosition(
-    (pos) => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
-      if (!Number(lat) || !Number(lon)) return;
-
-      // ✅ actualizar mi ubicación SIEMPRE (realtime)
-      setMe((prev) => ({ ...prev, lat, lon }));
-
-      // (opcional) mantener state center actualizado
-      setCenter([lat, lon]);
-    },
-    (err) => console.warn("GPS error:", err),
-    {
-      enableHighAccuracy: true,
-      maximumAge: 3000,
-      timeout: 5000,
+    if (!uid) {
+      router.replace('/login');
+      return;
     }
-  );
 
-  return () => navigator.geolocation.clearWatch(watcher);
-}, []);
+    if (alive) setMe((prev) => ({ ...prev, id: uid }));
+
+    // 🔊 audios (una sola vez)
+    if (typeof Audio !== 'undefined') {
+      soundRef.current = new Audio('/notify.mp3');
+      sendSoundRef.current = new Audio('/send.mp3'); // si no existe, podés comentar esta línea
+    }
+  })();
+
+  return () => {
+    alive = false;
+  };
+}, [router, supabase]);
+
 
 
 /* === Cargar trabajadores === */
@@ -1334,7 +1356,7 @@ function calcularPrecio(
 
 /* ⚙️ Estados auxiliares para el cálculo dinámico */
 const [horasTrabajo, setHorasTrabajo] = useState(1);
-const [distanciaKm, setDistanciaKm] = useState(2.5);
+const [distanciaKm, setDistanciaKm] = useState(0);
 const [precioEstimado, setPrecioEstimado] = useState(55000);
 
 /* 🔁 Recalcular automáticamente el precio */
@@ -1406,42 +1428,35 @@ useEffect(() => {
 <div
   className="absolute inset-x-0 top-0 z-0"
   style={{
-    height: "calc(var(--real-vh) - 160px)",
-    overscrollBehavior: "none",     // ⛔ evita pull-to-refresh
-    touchAction: "none"             // ⛔ evita que la página se mueva
+    height: 'calc(var(--real-vh) - 160px)',
+    overscrollBehavior: 'none',
+    touchAction: 'pan-x pan-y', // ✅ permite drag del mapa en móvil
   }}
 >
-
   <MapContainer
-  center={center} // ✅ usa el state (se actualiza con GPS)
-  zoom={Number(me?.lat) && Number(me?.lon) ? 11 : 7} // ✅ si hay GPS: zoom cercano, si no: país
-  minZoom={5}
-  maxZoom={19}
-  zoomControl={false}
-  scrollWheelZoom={false}
-  style={{
-    height: "100%",
-    width: "100%",
-    touchAction: "none",
-    overscrollBehavior: "none",
-    WebkitOverflowScrolling: "auto",
-    paddingBottom: "160px"
-  }}
- whenCreated={(map) => {
-  mapRef.current = map;
+    center={center} // puede quedar así (pero ya no lo actualizamos por GPS)
+    zoom={Number(me?.lat) && Number(me?.lon) ? 11 : 7}
+    minZoom={5}
+    maxZoom={19}
+    zoomControl={false}
+    scrollWheelZoom={false}
+    style={{
+      height: '100%',
+      width: '100%',
+      touchAction: 'pan-x pan-y', // ✅
+      overscrollBehavior: 'none',
+      WebkitOverflowScrolling: 'auto',
+      paddingBottom: '160px',
+    }}
+    whenCreated={(map) => {
+      mapRef.current = map;
 
-  const el = map.getContainer();
-  el.style.touchAction = "none";
-  el.style.overscrollBehavior = "none";
-
-}}
->
-{Number(me?.lat) && Number(me?.lon) && (
-  <CenterOnceOnMe lat={me.lat} lon={me.lon} zoom={11} />
-)}
-
-
-
+      const el = map.getContainer();
+      el.style.touchAction = 'pan-x pan-y'; // ✅
+      el.style.overscrollBehavior = 'none';
+      setTimeout(() => map.invalidateSize(), 200); // ✅ ayuda iOS/Android
+    }}
+  >
     {/* 🗺️ CARTO Light (mapa blanco minimalista) */}
     <TileLayer
       url="https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
@@ -1695,28 +1710,11 @@ useEffect(() => {
 <AnimatePresence>
   {selected && !showPrice && (() => {
     
-    // 📏 Distancia (km) cliente ↔ chofer/trabajador
-    const haversineKm = (lat1, lon1, lat2, lon2) => {
-      const toRad = (v) => (v * Math.PI) / 180;
-      const R = 6371;
-      const dLat = toRad(lat2 - lat1);
-      const dLon = toRad(lon2 - lon1);
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(toRad(lat1)) *
-          Math.cos(toRad(lat2)) *
-          Math.sin(dLon / 2) *
-          Math.sin(dLon / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
-    };
+ 
 
-    const km =
-      Number(me?.lat) &&
-      Number(me?.lon) &&
-      Number(selected?.lat) &&
-      Number(selected?.lng)
-        ? Math.round(haversineKm(me.lat, me.lon, selected.lat, selected.lng) * 10) / 10
+       const km =
+      Number(me?.lat) && Number(me?.lon) && Number(selected?.lat) && Number(selected?.lng)
+        ? Math.round(haversineKm(Number(me.lat), Number(me.lon), Number(selected.lat), Number(selected.lng)) * 10) / 10
         : null;
 
     // 🏅 Aro por plan (premium dorado / normal plateado / eco verde)
