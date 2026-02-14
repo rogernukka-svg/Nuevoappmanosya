@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
 import { useRouter } from 'next/navigation';
@@ -33,7 +34,8 @@ const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), 
 const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
 const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
 const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then(m => m.default), { ssr: false });
-const MAX_RADIUS_KM = 12;      // 👈 antes 8
+// 📍 Radio máximo visible y de filtrado (coherente en TODO el archivo)
+const MAX_RADIUS_KM = 12;
 const MAX_RADIUS_M = MAX_RADIUS_KM * 1000;
 
 
@@ -206,11 +208,6 @@ if (typeof window !== 'undefined') {
 }
 
 
-function getMinutesAgo(dateString) {
-  if (!dateString) return null;
-  const diffMs = Date.now() - new Date(dateString).getTime();
-  return Math.floor(diffMs / 60000);
-}
 function minutesSince(dateString) {
   if (!dateString) return null;
   const diffMs = Date.now() - new Date(dateString).getTime();
@@ -265,6 +262,13 @@ export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
+
+  // 🔥 NECESARIO para createPortal (evita error SSR)
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const soundRef = useRef(null);
 const sendSoundRef = useRef(null);
 const gpsWatchIdRef = useRef(null);
@@ -292,14 +296,18 @@ const gpsWatchIdRef = useRef(null);
   const [workers, setWorkers] = useState([]);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
-  // ✅ FIX: selected puede venir con lng o lon
+  const [clusterOpen, setClusterOpen] = useState(false);
+  const [clusterList, setClusterList] = useState([]);
+ // ✅ Coordenadas seguras (selected puede traer lng o lon)
 const selLat = Number(selected?.lat);
-const selLng = Number(selected?.lng ?? selected?.lon);
+const selLng = Number(selected?.lng ?? selected?.lon ?? selected?.long);
+const hasSelCoords = Number.isFinite(selLat) && Number.isFinite(selLng);
+const hasMeCoords  = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
   const [showPrice, setShowPrice] = useState(false);
   const [route, setRoute] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
 const distanceToSelectedKm =
-  Number(me?.lat) && Number(me?.lon) && selLat && selLng
+  hasMeCoords && hasSelCoords
     ? haversineKm(Number(me.lat), Number(me.lon), selLat, selLng)
     : null;
   // 🟢 Panel estilo Uber (3 niveles)
@@ -428,12 +436,12 @@ useEffect(() => {
 useEffect(() => {
   if (gpsCenteredRef.current) return;
   if (!mapRef.current) return;
-  if (!Number(me?.lat) || !Number(me?.lon)) return;
+  if (!hasMeCoords) return;
 
   gpsCenteredRef.current = true;
-  mapRef.current.flyTo([me.lat, me.lon], 11, { duration: 1.2 });
+  mapRef.current.flyTo([Number(me.lat), Number(me.lon)], 11, { duration: 1.2 });
   setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-}, [me?.lat, me?.lon]);
+}, [me?.lat, me?.lon, hasMeCoords]);
 
 const [rating, setRating] = useState(0);
 const [comment, setComment] = useState('') 
@@ -570,11 +578,14 @@ useEffect(() => {
         .eq('user_id', job.worker_id)
         .maybeSingle();
 
-      if (worker && Number(worker?.lat) && Number(worker?.lng)) {
-        setSelected(worker);
-        setRoute([[me.lat, me.lon], [worker.lat, worker.lng]]);
-        toast.success(`Pedido restaurado (${job.status})`);
-      }
+      const wLat = Number(worker?.lat);
+const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
+
+if (Number.isFinite(wLat) && Number.isFinite(wLng)) {
+  setSelected(worker);
+  setRoute([[Number(me.lat), Number(me.lon)], [wLat, wLng]]);
+  toast.success(`Pedido restaurado (${job.status})`);
+}
     } catch (err) {
       console.warn('Sin pedido activo para restaurar:', err?.message || err);
     }
@@ -615,11 +626,11 @@ async function fetchWorkers(serviceFilter = null) {
   setBusy(true);
   try {
     let query = supabase
-      .from('map_workers_view')
-      .select('*')
-      .not('lat', 'is', null)
-      .not('lng', 'is', null)
-      .eq('is_active', true); // ✅ Solo muestra trabajadores activos
+  .from('map_workers_view')
+  .select('*')
+  .not('lat', 'is', null)
+  // ✅ NO obligues lng acá (muchos vienen como lon)
+  .eq('is_active', true); // ✅ Solo muestra trabajadores activos
 
     // ✅ Filtro seguro y compatible con REST
     if (serviceFilter) {
@@ -641,19 +652,8 @@ async function fetchWorkers(serviceFilter = null) {
     // 🧠 Log para verificar qué datos llegan (incluye rating y reviews)
     console.log('🧠 Trabajadores desde Supabase:', data);
 
-   // 🎯 FILTRAR SOLO TRABAJADORES DENTRO DE 50 KM
-let filtered = data || [];
-
-if (Number(me?.lat) && Number(me?.lon)) {
-  filtered = filtered.filter(w => {
-    if (!Number(w.lat) || !Number(w.lng)) return false;
-
-    const distance = haversineKm(me.lat, me.lon, w.lat, w.lng);
-return distance <= MAX_RADIUS_KM; // 👈 RADIO dinámico (30 km)
-  });
-}
-
-setWorkers(filtered);
+ // ✅ Mostrar TODOS sin filtrar por radio
+setWorkers(data || []);
 
     
   } catch (err) {
@@ -683,7 +683,10 @@ useEffect(() => {
       { event: '*', schema: 'public', table: 'worker_profiles' },
       payload => {
         const updated = payload.new;
-        if (!updated?.user_id) return;
+
+const uLat = Number(updated?.lat);
+const uLng = Number(updated?.lng ?? updated?.lon ?? updated?.long);
+if (!Number.isFinite(uLat) || !Number.isFinite(uLng)) return;
 
         setWorkers(prev =>
           prev.map(w =>
@@ -712,55 +715,64 @@ useEffect(() => {
   
 /* === 🛰️ Escuchar actualizaciones en tiempo real de los trabajadores (ubicación + datos generales) === */
 useEffect(() => {
-  // Canal 1: actualizaciones de ubicación con animación
+  // ✅ Canal 1: actualizaciones de ubicación con animación
   const channelLocation = supabase
     .channel('realtime-worker-locations')
     .on(
       'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'worker_profiles' },
+      { event: '*', schema: 'public', table: 'worker_locations' }, // 👈 AJUSTÁ el nombre de tabla si es otro
       (payload) => {
         const updated = payload.new;
-        if (!updated?.lat || !updated?.lng) return;
+
+        // ✅ aceptar lat + (lng o lon/long)
+        const uLat = Number(updated?.lat);
+        const uLng = Number(updated?.lng ?? updated?.lon ?? updated?.long);
+        if (!Number.isFinite(uLat) || !Number.isFinite(uLng)) return;
 
         setWorkers((prev) => {
           const exists = prev.find((w) => w.user_id === updated.user_id);
+
           if (exists) {
-            // 🧭 ANIMACIÓN SUAVE ENTRE POSICIONES
             const marker = markersRef.current?.[updated.user_id];
-            if (marker && exists.lat && exists.lng) {
-              animateMarkerMove(marker, exists.lat, exists.lng, updated.lat, updated.lng);
+
+            const pLat = Number(exists?.lat);
+            const pLng = Number(exists?.lng ?? exists?.lon ?? exists?.long);
+
+            if (marker && Number.isFinite(pLat) && Number.isFinite(pLng)) {
+              function animateMarkerMove(marker, fromLat, fromLng, toLat, toLng) {
+  try {
+    marker.setLatLng([toLat, toLng]);
+  } catch {}
+}
             }
 
-            // 🔄 Actualiza solo la posición
             return prev.map((w) =>
               w.user_id === updated.user_id
                 ? {
                     ...w,
-                    lat: updated.lat,
-                    lng: updated.lng,
+                    lat: uLat,
+                    lng: uLng, // ✅ normalizado
                     updated_at: updated.updated_at,
                     _justUpdated: true,
                   }
                 : w
             );
-          } else {
-            // ➕ Nuevo trabajador agregado dinámicamente
-            return [
-              ...prev,
-              {
-                user_id: updated.user_id,
-                lat: updated.lat,
-                lng: updated.lng,
-                updated_at: updated.updated_at,
-                full_name: updated.full_name || 'Nuevo trabajador',
-                avatar_url: updated.avatar_url || '/avatar-fallback.png',
-                _justUpdated: true,
-              },
-            ];
           }
+
+          return [
+            ...prev,
+            {
+              user_id: updated.user_id,
+              lat: uLat,
+              lng: uLng,
+              updated_at: updated.updated_at,
+              full_name: updated.full_name || 'Nuevo trabajador',
+              avatar_url: updated.avatar_url || '/avatar-fallback.png',
+              _justUpdated: true,
+            },
+          ];
         });
 
-        // 🕒 Eliminar flag visual después de 2 segundos
         setTimeout(() => {
           setWorkers((prev) =>
             prev.map((w) =>
@@ -770,42 +782,30 @@ useEffect(() => {
         }, 2000);
       }
     )
-    .subscribe();
+    .subscribe((status) => console.log('📡 Canal realtime ubicaciones:', status));
 
-  console.log('📡 Canal realtime de ubicaciones conectado');
-
-    // Canal 2a: cambios generales del perfil profesional (no-ubicación)
+  // ✅ Canal 2a: cambios generales del perfil profesional (no-ubicación)
   const channelGeneralWorker = supabase
     .channel('realtime-workers-general-worker')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'worker_profiles' },
-      (payload) => {
-        console.log('🟢 Cambio detectado en worker_profiles:', payload);
-        fetchWorkers();
-      }
-    )
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_profiles' }, () => {
+      fetchWorkers();
+    })
     .subscribe();
 
-  // Canal 2b: cambios del perfil base (nombre, foto)
+  // ✅ Canal 2b: cambios del perfil base (nombre, foto)
   const channelGeneralProfile = supabase
     .channel('realtime-workers-general-profile')
-    .on(
-      'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'profiles' },
-      (payload) => {
-        console.log('🟣 Cambio detectado en profiles:', payload);
-        fetchWorkers();
-      }
-    )
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, () => {
+      fetchWorkers();
+    })
     .subscribe();
 
-  // Limpieza al desmontar
   return () => {
     supabase.removeChannel(channelLocation);
     supabase.removeChannel(channelGeneralWorker);
     supabase.removeChannel(channelGeneralProfile);
   };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
 
   /* === Realtime global jobs (informativo) === */
@@ -1026,10 +1026,11 @@ setSelected(worker);
 setRoute(null);
 
 // ✨ Efecto visual al hacer clic en marcador
-if (mapRef.current && worker?.lat && worker?.lng) {
-  mapRef.current.flyTo([worker.lat, worker.lng], 15, {
-    duration: 1.2,
-  });
+const wLat = Number(worker?.lat);
+const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
+
+if (mapRef.current && Number.isFinite(wLat) && Number.isFinite(wLng)) {
+  mapRef.current.flyTo([wLat, wLng], 15, { duration: 1.2 });
 }
 
 
@@ -1068,41 +1069,39 @@ async function confirmarSolicitud() {
       throw new Error('No se seleccionó un trabajador válido');
     }
 
-    // 3️⃣ 🔒 FIX FK: asegurar que exista el perfil del cliente (para jobs.client_id)
-    const upsertProfile = await supabase
-      .from('profiles')
-      .upsert(
-        { user_id: user.id, email: user.email ?? null },
-        { onConflict: 'user_id', ignoreDuplicates: true }
-      )
-      .select()
-      .maybeSingle();
+  // 3️⃣ 🔒 Asegurar perfil del cliente (profiles.id = auth.user.id)
+const { error: profileErr } = await supabase
+  .from('profiles')
+  .upsert(
+    {
+      id: user.id,               // PK = auth.uid
+      email: user.email ?? null,
+    },
+    { onConflict: 'id' }
+  );
 
-    if (upsertProfile.error && upsertProfile.error.code !== '23505') {
-      console.error('Error real al asegurar el perfil del cliente:', upsertProfile.error);
-    }
-    // 🔒 VALIDACIÓN DE RUTA — blindado 100%
-const canMakeRoute =
-  Number(me?.lat) &&
-  Number(me?.lon) &&
-  selLat &&
-  selLng;
+if (profileErr) {
+  console.error('Error asegurando perfil:', profileErr);
+  throw profileErr; // ✅ cortar acá porque luego FK depende de profiles
+}
+   // 🔒 VALIDACIÓN DE RUTA — blindado 100% (sin errores por 0 o strings)
+const canMakeRoute = hasMeCoords && hasSelCoords;
 
 if (!canMakeRoute) {
-  toast.error("No se puede crear el pedido. Coordenadas incompletas.");
-  console.warn("❌ Ruta inválida — coordenadas incompletas:", {
+  toast.error('No se puede crear el pedido. Coordenadas incompletas.');
+  console.warn('❌ Ruta inválida — coordenadas incompletas:', {
     meLat: me?.lat,
     meLon: me?.lon,
-    workerLat: selected?.lat,
-    workerLng: selected?.lng,
+    selLat,
+    selLng,
   });
   return;
 }
 
 // ✔ Generar ruta ANTES de crear pedido
 setRoute([
-  [me.lat, me.lon],
-  [selLat, selLng]
+  [Number(me.lat), Number(me.lon)],
+  [selLat, selLng],
 ]);
 
 
@@ -1138,11 +1137,13 @@ if (insertError) throw insertError;
     toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
 
     setWorkers([selected]);
-    setRoute([[me.lat, me.lon], [selected.lat, selected.lng]]);
 
-    if (mapRef.current && me.lat && selected?.lat) {
-      mapRef.current.fitBounds([[me.lat, me.lon], [selected.lat, selected.lng]], { padding: [80, 80] });
-    }
+// ✅ ruta SIEMPRE usando selLat/selLng (que ya contempla lon/lng)
+setRoute([[me.lat, me.lon], [selLat, selLng]]);
+
+if (mapRef.current && Number.isFinite(me.lat) && hasSelCoords) {
+  mapRef.current.fitBounds([[me.lat, me.lon], [selLat, selLng]], { padding: [80, 80] });
+}
   } catch (err) {
     console.error('Error al confirmar solicitud:', err?.message || err);
     toast.error(err?.message || 'No se pudo enviar el pedido', { id: 'pedido' });
@@ -1430,16 +1431,15 @@ function calcularPrecio(
   esNocturno = false,
   worker = null
 ) {
-  const tarifas = {
-    plomería:     { tipo: 'fijo', base: 45000, porKm: 2000 },
-    electricidad: { tipo: 'fijo', base: 50000, porKm: 2000 },
-    limpieza:     { tipo: 'hora', hora: 30000, porKm: 1500 },
-    jardinería:   { tipo: 'hora', hora: 25000, porKm: 1500 },
-    mascotas:     { tipo: 'hora', hora: 20000, porKm: 1000 },
-    construcción: { tipo: 'mixto', base: 60000, horaExtra: 25000, porKm: 2500 },
-    emergencia:   { tipo: 'fijo', base: 60000, porKm: 2500, urgencia: 0.3 },
-    // ⭐ Nuevo
-  'car detailing': { tipo: 'fijo', base: 70000, porKm: 2000 },
+ const tarifas = {
+  "plomería":     { tipo: "fijo",  base: 45000, porKm: 2000 },
+  "electricidad": { tipo: "fijo",  base: 50000, porKm: 2000 },
+  "limpieza":     { tipo: "hora",  hora: 30000, porKm: 1500 },
+  "jardinería":   { tipo: "hora",  hora: 25000, porKm: 1500 },
+  "mascotas":     { tipo: "hora",  hora: 20000, porKm: 1000 },
+  "construcción": { tipo: "mixto", base: 60000, horaExtra: 25000, porKm: 2500 },
+  "emergencia":   { tipo: "fijo",  base: 60000, porKm: 2500, urgencia: 0.3 },
+  "car detailing": { tipo: "fijo", base: 70000, porKm: 2000 },
 };
   let servicioBase = servicio?.toLowerCase();
 
@@ -1628,7 +1628,7 @@ useEffect(() => {
       keepBuffer={2}
     />
 
-  {/* 🎯 Radio visible 30km */}
+  {/* 🎯 Radio visible (MAX_RADIUS_KM) */}
   {Number(me?.lat) && Number(me?.lon) && (
     <Circle
       center={[me.lat, me.lon]}
@@ -1644,10 +1644,12 @@ useEffect(() => {
   route.length === 2 &&
   Array.isArray(route[0]) &&
   Array.isArray(route[1]) &&
-  Number(route[0][0]) &&
-  Number(route[0][1]) &&
-  Number(route[1][0]) &&
-  Number(route[1][1]) && (
+  route[0].length === 2 &&
+  route[1].length === 2 &&
+  Number.isFinite(Number(route[0][0])) &&
+  Number.isFinite(Number(route[0][1])) &&
+  Number.isFinite(Number(route[1][0])) &&
+  Number.isFinite(Number(route[1][1])) && (
     <Polyline positions={route} color="#10b981" weight={5} />
   )
 }
@@ -1656,47 +1658,168 @@ useEffect(() => {
    {/* ✅ Bloque final actualizado — oculta 'paused' y muestra estados dinámicos */}
 <MarkerClusterGroup
   chunkedLoading
-  maxClusterRadius={48}
+  maxClusterRadius={42}
   iconCreateFunction={clusterIconCreateFunction}
+  zoomToBoundsOnClick={false}
+  spiderfyOnMaxZoom={true}
+  showCoverageOnHover={false}
+  spiderfyDistanceMultiplier={1.6}
+  eventHandlers={{
+    clusterclick: (e) => {
+      const cluster = e.layer;
+      const children = cluster.getAllChildMarkers?.() || [];
+      const list = children
+        .map((m) => m?.options?.__worker)
+        .filter(Boolean);
+
+      setClusterList(list);
+      setClusterOpen(true);
+    },
+  }}
 >
-  {/* =======================
-      👷 WORKERS (SERVICIOS)
-      ======================= */}
-  {selectedService !== 'taxi' &&
-    workers
-      ?.filter((w) => Number(w?.lat) && Number(w?.lng) && w?.status !== 'paused')
-      .map((w) => {
-        const minutesAgo = getMinutesAgo(w.updated_at);
+ {workers
+  ?.filter((w) => {
+    // ✅ coords válidas del worker
+    const wLat = Number(w?.lat);
+    const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+    if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
 
-        let estadoTexto = 'Disponible ahora';
-        let estadoColor = '#10b981';
+    // ✅ no mostrar pausados / inactivos
+    if (w?.status === 'paused' || w?.status === 'inactive') return false;
+    if (w?.is_active === false) return false;
 
-        if (w.status === 'busy') {
-          const busyUntil = w.busy_until ? new Date(w.busy_until) : null;
-          if (busyUntil) {
-            const diffMin = Math.max(0, Math.round((busyUntil.getTime() - Date.now()) / 60000));
-            estadoTexto = diffMin > 0 ? `Ocupado • libre en ${diffMin} min` : 'Ocupado (finalizando)';
-          } else {
-            estadoTexto = 'Ocupado';
-          }
-          estadoColor = '#f97316';
-        }
+    // ✅ coords válidas del cliente
+    const meLat = Number(me?.lat);
+    const meLng = Number(me?.lon);
+    const meOk = Number.isFinite(meLat) && Number.isFinite(meLng);
 
-        return (
-          <Marker
-  key={`worker-${w.user_id}`}
-  position={[w.lat, w.lng]}
-  icon={avatarIcon(w.avatar_url, w) || undefined}
-  eventHandlers={{ click: () => handleMarkerClick(w) }}
-/>
-        );
-      })}
+    // ✅ Filtrar por radio SOLO si el cliente tiene coords
+    if (meOk) {
+      const km = haversineKm(meLat, meLng, wLat, wLng);
+      if (!Number.isFinite(km)) return false;
+      if (km > MAX_RADIUS_KM) return false;
+    }
+
+    return true;
+  })
+  .map((w) => {
+      const wLat = Number(w?.lat);
+      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+
+      return (
+        <Marker
+          key={`worker-${w.user_id}`}
+          position={[wLat, wLng]}
+          icon={avatarIcon(w.avatar_url, w) || undefined}
+          eventHandlers={{ click: () => handleMarkerClick(w) }}
+          ref={(m) => {
+            if (!m) return;
+            // ✅ importante para el modal del cluster
+            m.options.__worker = w;
+            markersRef.current[w.user_id] = m;
+          }}
+        />
+      );
+    })}
 </MarkerClusterGroup>
 
 </MapContainer>
 
-</div>
+{/* ✅ MODAL CLUSTER (PORTAL + estrellas) */}
+{mounted && createPortal(
+  <AnimatePresence>
+    {clusterOpen && (
+      <motion.div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end justify-center"
+        style={{ zIndex: 60000 }} // 🔥 SIEMPRE arriba del panel inferior
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={() => setClusterOpen(false)}
+      >
+        <motion.div
+          className="w-full max-w-md bg-white rounded-t-3xl p-5 shadow-2xl"
+          initial={{ y: 420 }}
+          animate={{ y: 0 }}
+          exit={{ y: 420 }}
+          transition={{ type: "spring", stiffness: 120, damping: 18 }}
+          onClick={(e) => e.stopPropagation()}
+          style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-extrabold text-gray-800">
+              Profesionales en esta zona ({clusterList.length})
+            </h3>
+            <button
+              onClick={() => setClusterOpen(false)}
+              className="text-gray-500 hover:text-red-500"
+            >
+              <XCircle size={22} />
+            </button>
+          </div>
 
+          <div className="max-h-[55vh] overflow-y-auto space-y-2">
+            {clusterList.map((w) => {
+              const rating = Number(w?.avg_rating || 0);
+              const reviews = Number(w?.total_reviews || 0);
+
+              return (
+                <button
+                  key={w.user_id}
+                  onClick={() => {
+                    setClusterOpen(false);
+                    handleMarkerClick(w);
+                  }}
+                  className="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-emerald-50 active:scale-[0.99] transition"
+                >
+                  <img
+                    src={w.avatar_url || "/avatar-fallback.png"}
+                    onError={(e) => (e.currentTarget.src = "/avatar-fallback.png")}
+                    className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400"
+                    alt="avatar"
+                  />
+
+                  <div className="flex-1 text-left">
+                    <div className="font-bold text-gray-800 leading-5">
+                      {w.full_name || "Profesional"}
+                    </div>
+
+                    {/* ✅ ESTADO */}
+                    <div className="text-xs text-gray-500">
+                      {isOnlineRecent(w) ? "🟢 EN LÍNEA" : "⚪ Inactivo"}
+                    </div>
+
+                    {/* ✅ ESTRELLAS + REVIEWS */}
+                    <div className="flex items-center gap-1 mt-1">
+                      {[0, 1, 2, 3, 4].map((i) => (
+                        <Star
+                          key={i}
+                          size={14}
+                          className={
+                            i < Math.round(rating)
+                              ? "text-yellow-400 fill-yellow-400"
+                              : "text-gray-300"
+                          }
+                        />
+                      ))}
+                      <span className="text-xs text-gray-500 ml-1">
+                        {rating ? rating.toFixed(1) : "0.0"} ({reviews})
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-emerald-700 font-semibold text-sm">Ver</div>
+                </button>
+              );
+            })}
+          </div>
+        </motion.div>
+      </motion.div>
+    )}
+  </AnimatePresence>,
+  document.body
+)}
+</div>
 {/* ===========================
      PANEL MINI PROFESIONAL — FIX (MOBILE SAFE)
    =========================== */}
@@ -1722,54 +1845,185 @@ useEffect(() => {
     ManosYA
   </h2>
 
-  {/* ===== Botones principales ===== */}
-  <div className="flex justify-center gap-2 mb-3 px-3">
+ {/* ===== Botones principales (PREMIUM) ===== */}
+<div className="px-3 mb-3">
+  <div
+    className="
+      grid grid-cols-4 gap-2
+      rounded-2xl p-2
+      bg-white/70 backdrop-blur-xl
+      border border-gray-200/70
+      shadow-[0_12px_40px_rgba(0,0,0,0.08)]
+    "
+  >
+    {/* Buscar Pros (CTA principal) */}
     <button
       onClick={() => fetchWorkers(selectedService)}
-      className="bg-emerald-500 text-white font-semibold px-3 py-2 rounded-lg text-sm shadow-sm active:scale-95 transition"
+      className="
+        col-span-1
+        rounded-2xl px-2 py-3
+        text-white font-extrabold text-[12px]
+        bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700
+        shadow-[0_10px_22px_rgba(16,185,129,0.35)]
+        active:scale-[0.98] transition
+        flex flex-col items-center justify-center gap-1
+      "
     >
-      🚀 Buscar Pros
+      <span className="text-[18px] leading-none">🚀</span>
+      <span className="leading-none">Buscar</span>
+      <span className="text-[10px] font-semibold opacity-90 -mt-0.5">Pros</span>
     </button>
 
+    {/* Más cerca */}
+    <button
+      onClick={() => {
+        if (!workers?.length) {
+          toast.warning('Primero cargá los trabajadores');
+          return;
+        }
+
+        const ranked = [...workers]
+          .map(w => {
+            const wLat = Number(w?.lat);
+            const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+
+            const dist = hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
+              ? haversineKm(Number(me.lat), Number(me.lon), wLat, wLng)
+              : null;
+
+            return {
+              ...w,
+              _dist: dist,
+              _online: isOnlineRecent(w),
+              _rating: Number(w?.avg_rating || 0),
+            };
+          })
+          .sort((a, b) => {
+            if (a._dist != null && b._dist != null) return a._dist - b._dist;
+            if (a._online !== b._online) return a._online ? -1 : 1;
+            if (a._rating !== b._rating) return b._rating - a._rating;
+            return 0;
+          });
+
+        setClusterList(ranked.slice(0, 30));
+        setClusterOpen(true);
+      }}
+      className="
+        col-span-1
+        rounded-2xl px-2 py-3
+        bg-white
+        border border-gray-200/80
+        shadow-[0_10px_26px_rgba(0,0,0,0.07)]
+        active:scale-[0.98] transition
+        flex flex-col items-center justify-center gap-1
+      "
+    >
+      <span className="text-[18px] leading-none">🏆</span>
+      <span className="text-[12px] font-extrabold text-gray-800 leading-none">Más</span>
+      <span className="text-[10px] font-semibold text-gray-500 -mt-0.5">cerca</span>
+    </button>
+
+    {/* Mis pedidos */}
     <button
       onClick={() => router.push('/client/jobs')}
-      className="bg-white border font-semibold px-3 py-2 rounded-lg text-sm shadow-sm active:scale-95 transition"
+      className="
+        col-span-1
+        rounded-2xl px-2 py-3
+        bg-white
+        border border-gray-200/80
+        shadow-[0_10px_26px_rgba(0,0,0,0.07)]
+        active:scale-[0.98] transition
+        flex flex-col items-center justify-center gap-1
+      "
     >
-      📦 Mis pedidos
+      <span className="text-[18px] leading-none">📦</span>
+      <span className="text-[12px] font-extrabold text-gray-800 leading-none">Mis</span>
+      <span className="text-[10px] font-semibold text-gray-500 -mt-0.5">pedidos</span>
     </button>
 
+    {/* Empresarial */}
     <button
       onClick={() => router.push('/client/new')}
-      className="bg-white border font-semibold px-3 py-2 rounded-lg text-sm shadow-sm active:scale-95 transition"
+      className="
+        col-span-1
+        rounded-2xl px-2 py-3
+        bg-white
+        border border-gray-200/80
+        shadow-[0_10px_26px_rgba(0,0,0,0.07)]
+        active:scale-[0.98] transition
+        flex flex-col items-center justify-center gap-1
+      "
     >
-      🏢 Empresarial
+      <span className="text-[18px] leading-none">🏢</span>
+      <span className="text-[12px] font-extrabold text-gray-800 leading-none">Empre</span>
+      <span className="text-[10px] font-semibold text-gray-500 -mt-0.5">sarial</span>
     </button>
   </div>
+</div>
 
   {/* ===========================
-      SERVICIOS (botón + modal)
-   =========================== */}
-  <div className="px-3 pb-3 flex items-center justify-between gap-2">
-   <button
-  onClick={() => setServicesOpen(true)}
-  className="
-    flex-1 py-2.5 rounded-xl
-    bg-cyan-50
-    border border-cyan-200
-    font-semibold text-cyan-700
-    hover:bg-cyan-100
-    active:scale-95
-    transition
-  "
->
-  🧰 SERVICIOS
-</button>
+    SERVICIOS (PREMIUM) + badge
+ =========================== */}
+<div className="px-3 pb-3">
+  <div
+    className="
+      flex items-center gap-2
+      rounded-2xl p-2
+      bg-white/70 backdrop-blur-xl
+      border border-gray-200/70
+      shadow-[0_12px_40px_rgba(0,0,0,0.08)]
+    "
+  >
+    <button
+      onClick={() => setServicesOpen(true)}
+      className="
+        flex-1
+        rounded-2xl px-4 py-3
+        text-left
+        bg-gradient-to-br from-cyan-50 to-emerald-50
+        border border-emerald-200/60
+        active:scale-[0.99] transition
+        shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]
+      "
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[12px] font-extrabold text-gray-800 tracking-tight">
+            🧰 Servicios
+          </div>
+          <div className="text-[11px] font-semibold text-gray-500 mt-0.5">
+            Filtrá y encontrá más rápido
+          </div>
+        </div>
 
-    {/* mini badge del seleccionado */}
-    <div className="px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold">
-      {selectedService ? `✅ ${services.find(s => s.id === selectedService)?.label || selectedService}` : 'Todos'}
+        <div className="text-[11px] font-extrabold text-emerald-700 bg-white/80 border border-emerald-200 rounded-full px-3 py-1">
+          Ver
+        </div>
+      </div>
+    </button>
+
+    {/* Badge seleccionado */}
+    <div
+      className="
+        min-w-[92px]
+        rounded-2xl px-3 py-3
+        bg-white
+        border border-gray-200/80
+        shadow-[0_10px_26px_rgba(0,0,0,0.07)]
+        flex items-center justify-center
+      "
+    >
+      <div className="text-center leading-tight">
+        <div className="text-[10px] font-bold text-gray-500">Filtro</div>
+        <div className="text-[12px] font-extrabold text-emerald-700">
+          {selectedService
+            ? (services.find(s => s.id === selectedService)?.label || selectedService)
+            : 'Todos'}
+        </div>
+      </div>
     </div>
   </div>
+</div>
 
   {/* MODAL SERVICIOS */}
   <AnimatePresence>
@@ -1858,9 +2112,9 @@ useEffect(() => {
  
 
        const km =
-      Number(me?.lat) && Number(me?.lon) && Number(selected?.lat) && Number(selected?.lng)
-        ? Math.round(haversineKm(Number(me.lat), Number(me.lon), Number(selected.lat), Number(selected.lng)) * 10) / 10
-        : null;
+  hasMeCoords && hasSelCoords
+    ? Math.round(haversineKm(Number(me.lat), Number(me.lon), selLat, selLng) * 10) / 10
+    : null;
 
     // 🏅 Aro por plan (premium dorado / normal plateado / eco verde)
     const tier = String(selected?.plan_tier || 'normal').toLowerCase();
@@ -1944,7 +2198,7 @@ useEffect(() => {
               {/* ⏰ Última actividad */}
               <p className="text-xs text-gray-500 mt-1">
                 {(() => {
-                  const mins = getMinutesAgo(selected?.updated_at);
+                  const mins = minutesSince(selected?.updated_at);
                   if (mins == null) return 'Sin actividad reciente';
                   if (mins < 60) return `Activo hace ${mins} min`;
                   if (mins < 1440) return `Activo hace ${Math.floor(mins / 60)} h`;
