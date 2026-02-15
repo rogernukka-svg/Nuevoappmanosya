@@ -257,7 +257,31 @@ function formatKm(km) {
   if (km < 1) return `${Math.round(km * 1000)} m`;
   return `${km.toFixed(1)} km`;
 }
+function animateMarkerMove(markerRef, fromLat, fromLng, toLat, toLng, duration = 900) {
+  try {
+    const marker = markerRef?.leafletElement || markerRef;
+    if (!marker?.setLatLng) return;
 
+    const start = performance.now();
+
+    const step = (now) => {
+      const progress = Math.min(1, (now - start) / duration);
+
+      const lat = fromLat + (toLat - fromLat) * progress;
+      const lng = fromLng + (toLng - fromLng) * progress;
+
+      marker.setLatLng([lat, lng]);
+
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      }
+    };
+
+    requestAnimationFrame(step);
+  } catch (e) {
+    console.warn("animateMarkerMove error:", e);
+  }
+}
 export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
@@ -733,32 +757,28 @@ useEffect(() => {
           const exists = prev.find((w) => w.user_id === updated.user_id);
 
           if (exists) {
-            const marker = markersRef.current?.[updated.user_id];
+  const marker = markersRef.current?.[updated.user_id];
 
-            const pLat = Number(exists?.lat);
-            const pLng = Number(exists?.lng ?? exists?.lon ?? exists?.long);
+  const pLat = Number(exists?.lat);
+  const pLng = Number(exists?.lng ?? exists?.lon ?? exists?.long);
 
-            if (marker && Number.isFinite(pLat) && Number.isFinite(pLng)) {
-              function animateMarkerMove(marker, fromLat, fromLng, toLat, toLng) {
-  try {
-    marker.setLatLng([toLat, toLng]);
-  } catch {}
+  // ✅ Animación suave si hay marcador previo
+  if (marker && Number.isFinite(pLat) && Number.isFinite(pLng)) {
+    animateMarkerMove(marker, pLat, pLng, uLat, uLng);
+  }
+
+  return prev.map((w) =>
+    w.user_id === updated.user_id
+      ? {
+          ...w,
+          lat: uLat,
+          lng: uLng,
+          updated_at: updated.updated_at,
+          _justUpdated: true,
+        }
+      : w
+  );
 }
-            }
-
-            return prev.map((w) =>
-              w.user_id === updated.user_id
-                ? {
-                    ...w,
-                    lat: uLat,
-                    lng: uLng, // ✅ normalizado
-                    updated_at: updated.updated_at,
-                    _justUpdated: true,
-                  }
-                : w
-            );
-          }
-
           return [
             ...prev,
             {
@@ -1656,21 +1676,23 @@ useEffect(() => {
 
 
    {/* ✅ Bloque final actualizado — oculta 'paused' y muestra estados dinámicos */}
+{/* ✅ BLOQUE CLUSTER + FILTRO FINAL (reemplazar completo) */}
 <MarkerClusterGroup
   chunkedLoading
   maxClusterRadius={42}
   iconCreateFunction={clusterIconCreateFunction}
   zoomToBoundsOnClick={false}
-  spiderfyOnMaxZoom={true}
+  spiderfyOnMaxZoom={false}
   showCoverageOnHover={false}
   spiderfyDistanceMultiplier={1.6}
   eventHandlers={{
     clusterclick: (e) => {
+      e?.originalEvent?.preventDefault?.();
+      e?.originalEvent?.stopPropagation?.();
+
       const cluster = e.layer;
       const children = cluster.getAllChildMarkers?.() || [];
-      const list = children
-        .map((m) => m?.options?.__worker)
-        .filter(Boolean);
+      const list = children.map((m) => m?.options?.__worker).filter(Boolean);
 
       setClusterList(list);
       setClusterOpen(true);
@@ -1679,21 +1701,17 @@ useEffect(() => {
 >
  {workers
   ?.filter((w) => {
-    // ✅ coords válidas del worker
     const wLat = Number(w?.lat);
     const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
     if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
 
-    // ✅ no mostrar pausados / inactivos
     if (w?.status === 'paused' || w?.status === 'inactive') return false;
     if (w?.is_active === false) return false;
 
-    // ✅ coords válidas del cliente
     const meLat = Number(me?.lat);
     const meLng = Number(me?.lon);
     const meOk = Number.isFinite(meLat) && Number.isFinite(meLng);
 
-    // ✅ Filtrar por radio SOLO si el cliente tiene coords
     if (meOk) {
       const km = haversineKm(meLat, meLng, wLat, wLng);
       if (!Number.isFinite(km)) return false;
@@ -1703,24 +1721,24 @@ useEffect(() => {
     return true;
   })
   .map((w) => {
-      const wLat = Number(w?.lat);
-      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+    const wLat = Number(w?.lat);
+    const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
 
-      return (
-        <Marker
-          key={`worker-${w.user_id}`}
-          position={[wLat, wLng]}
-          icon={avatarIcon(w.avatar_url, w) || undefined}
-          eventHandlers={{ click: () => handleMarkerClick(w) }}
-          ref={(m) => {
-            if (!m) return;
-            // ✅ importante para el modal del cluster
-            m.options.__worker = w;
-            markersRef.current[w.user_id] = m;
-          }}
-        />
-      );
-    })}
+    return (
+      <Marker
+        key={`worker-${w.user_id}`}
+        position={[wLat, wLng]}
+        icon={avatarIcon(w.avatar_url, w) || undefined}
+        eventHandlers={{ click: () => handleMarkerClick(w) }}
+        __worker={w}              // 🔥 ahora queda disponible para cluster
+        __worker_id={w.user_id}   // útil para debug
+        ref={(m) => {
+          if (!m) return;
+          markersRef.current[w.user_id] = m; // solo animación
+        }}
+      />
+    );
+  })}
 </MarkerClusterGroup>
 
 </MapContainer>
