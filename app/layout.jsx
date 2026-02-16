@@ -60,16 +60,15 @@ export default function RootLayout({ children }) {
       </head>
 
       {/* ⛔ FIX: evita que los celulares agranden la letra */}
-      <body
-        style={{ WebkitTextSizeAdjust: "none", textSizeAdjust: "none" }}
-        className="
-          min-h-screen flex flex-col
-          bg-[#F9FAFB] text-gray-900 antialiased
-          overflow-x-hidden
-          overflow-y-auto
-          selection:bg-emerald-200 selection:text-emerald-800
-        "
-      >
+     <body
+  style={{ WebkitTextSizeAdjust: "none", textSizeAdjust: "none" }}
+  className="
+    min-h-[100dvh]
+    bg-[#F9FAFB] text-gray-900 antialiased
+    overflow-x-hidden
+    selection:bg-emerald-200 selection:text-emerald-800
+  "
+>
         {/* 🌟 Sistema global de notificaciones */}
         <Toaster position="top-center" richColors />
 
