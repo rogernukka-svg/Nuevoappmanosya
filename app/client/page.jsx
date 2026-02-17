@@ -257,17 +257,9 @@ function formatKm(km) {
   if (km < 1) return `${Math.round(km * 1000)} m`;
   return `${km.toFixed(1)} km`;
 }
-function distanceFromClientKm(meLatNum, meLonNum, worker) {
-  const wLat = Number(worker?.lat);
-  const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
-
-  if (!Number.isFinite(meLatNum) || !Number.isFinite(meLonNum)) return null;
-  if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return null;
-
-  return haversineKm(meLatNum, meLonNum, wLat, wLng);
-}
-function animateMarkerMove(marker, fromLat, fromLng, toLat, toLng, duration = 900) {
+function animateMarkerMove(markerRef, fromLat, fromLng, toLat, toLng, duration = 900) {
   try {
+    const marker = markerRef?.leafletElement || markerRef;
     if (!marker?.setLatLng) return;
 
     const start = performance.now();
@@ -280,7 +272,9 @@ function animateMarkerMove(marker, fromLat, fromLng, toLat, toLng, duration = 90
 
       marker.setLatLng([lat, lng]);
 
-      if (progress < 1) requestAnimationFrame(step);
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      }
     };
 
     requestAnimationFrame(step);
@@ -296,28 +290,29 @@ export default function MapPage() {
   // 🔥 NECESARIO para createPortal (evita error SSR)
   const [mounted, setMounted] = useState(false);
 
-  // ✅ primero state que vas a usar en effects
-  const [followMe, setFollowMe] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
-
-   // ✅ refs
-  const soundRef = useRef(null);
-  const sendSoundRef = useRef(null);
-  const gpsWatchIdRef = useRef(null);
-  const markersRef = useRef({});
-  const followMeRef = useRef(false);
-
-  // ✅ FIX: evita recenter repetido / loops
-  const gpsCenteredRef = useRef(false);
-
-  // ✅ ahora sí: effects que dependen de followMe
-  useEffect(() => {
-    followMeRef.current = followMe;
-  }, [followMe]);
-
   useEffect(() => {
     setMounted(true);
   }, []);
+  const soundRef = useRef(null);
+const sendSoundRef = useRef(null);
+const gpsWatchIdRef = useRef(null);
+  const markersRef = useRef({}); // guarda refs de marcadores por user_id
+ /* === Fix altura real para móviles (Android/iPhone) === */
+ const centeredOnceRef = useRef(false);
+ const gpsCenteredRef = useRef(false);
+ const [isTyping, setIsTyping] = useState(false);
+
+  useEffect(() => {
+  if (typeof window === 'undefined') return;
+
+  const setVH = () => {
+    document.documentElement.style.setProperty('--real-vh', `${window.innerHeight}px`);
+  };
+
+  setVH();
+  window.addEventListener('resize', setVH);
+  return () => window.removeEventListener('resize', setVH);
+}, []);
 
   const DEFAULT_CENTER = [-23.4437, -58.4400]; // Centro real del país
   const [center, setCenter] = useState(DEFAULT_CENTER);
@@ -327,31 +322,17 @@ export default function MapPage() {
   const [selected, setSelected] = useState(null);
   const [clusterOpen, setClusterOpen] = useState(false);
   const [clusterList, setClusterList] = useState([]);
-// ✅ Coordenadas seguras (evita el bug: Number(null) = 0)
-const toNumOrNull = (v) => {
-  if (v === null || v === undefined || v === '') return null;
-  const n = typeof v === 'number' ? v : Number(v);
-  return Number.isFinite(n) ? n : null;
-};
-
-const meLatNum = toNumOrNull(me?.lat);
-const meLonNum = toNumOrNull(me?.lon);
-
-const selLatNum = toNumOrNull(selected?.lat);
-const selLngNum = toNumOrNull(selected?.lng ?? selected?.lon ?? selected?.long);
-
-const hasMeCoords = meLatNum !== null && meLonNum !== null;
-const hasSelCoords = selLatNum !== null && selLngNum !== null;
-
-// ✅ valores “canon” para usar en todo el archivo
-const selLat = selLatNum;
-const selLng = selLngNum;
+ // ✅ Coordenadas seguras (selected puede traer lng o lon)
+const selLat = Number(selected?.lat);
+const selLng = Number(selected?.lng ?? selected?.lon ?? selected?.long);
+const hasSelCoords = Number.isFinite(selLat) && Number.isFinite(selLng);
+const hasMeCoords  = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
   const [showPrice, setShowPrice] = useState(false);
   const [route, setRoute] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
 const distanceToSelectedKm =
   hasMeCoords && hasSelCoords
-    ? haversineKm(meLatNum, meLonNum, selLatNum, selLngNum)
+    ? haversineKm(Number(me.lat), Number(me.lon), selLat, selLng)
     : null;
   // 🟢 Panel estilo Uber (3 niveles)
 const [panelLevel, setPanelLevel] = useState("hidden"); 
@@ -374,7 +355,6 @@ const bottomRef = useRef(null);
 const chatChannelRef = useRef(null);
 const [gpsStatus, setGpsStatus] = useState('init'); // init | requesting | granted | denied | error
 const [gpsError, setGpsError] = useState(null);
-
 // eslint-disable-next-line no-unused-vars
 const [tick, setTick] = useState(0);
 
@@ -382,58 +362,11 @@ useEffect(() => {
   const t = setInterval(() => setTick(x => x + 1), 60000); // cada 1 minuto
   return () => clearInterval(t);
 }, []);
-function stopGPSWatch() {
-  if (typeof window === 'undefined') return;
-  if (!navigator.geolocation) return;
-
-  if (gpsWatchIdRef.current != null) {
-    navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-    gpsWatchIdRef.current = null;
-  }
-}
-
-function startWatchHighAccuracy() {
-  if (typeof window === 'undefined') return;
-  if (!navigator.geolocation) return;
-
-  // 🔁 reinicia watcher
-  stopGPSWatch();
-
-  gpsWatchIdRef.current = navigator.geolocation.watchPosition(
-    (p) => {
-      const la = Number(p.coords.latitude);
-      const lo = Number(p.coords.longitude);
-
-      if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
-
-      // ✅ setMe UNA sola vez (evita duplicados)
-      setMe((prev) => ({ ...prev, lat: la, lon: lo }));
-
-      // ✅ usar ref para evitar "stale state" en el watcher
-      if (followMeRef.current && mapRef.current) {
-        mapRef.current.flyTo([la, lo], mapRef.current.getZoom(), { duration: 0.6 });
-      }
-
-      setGpsStatus('granted');
-    },
-    (err) => {
-      console.warn('GPS watchPosition error:', err);
-      // no spamear toast acá
-    },
-    {
-      enableHighAccuracy: true,
-      maximumAge: 3000,
-      timeout: 25000,
-    }
-  );
-}
-
 async function requestGPS() {
   if (typeof window === 'undefined') return;
-
   if (!navigator.geolocation) {
     setGpsStatus('error');
-    setGpsError('Este dispositivo no soporta GPS.');
+    setGpsError('Este dispositivo no soporta GPS (geolocation).');
     toast.error('Tu dispositivo no soporta GPS.');
     return;
   }
@@ -441,159 +374,87 @@ async function requestGPS() {
   setGpsStatus('requesting');
   setGpsError(null);
 
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const timeoutValue = isIOS ? 35000 : 25000;
+  // 1) Primero: pedir una posición inmediata (esto suele disparar el prompt bien en PWA)
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
 
-  const onSuccess = (pos) => {
-    const lat = Number(pos.coords.latitude);
-const lon = Number(pos.coords.longitude);
-if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-  setGpsStatus('error');
-  setGpsError('Ubicación inválida.');
-  return;
+      setMe((prev) => ({ ...prev, lat, lon }));
+      setCenter([lat, lon]);
+
+      // centrar el mapa una sola vez
+      if (!gpsCenteredRef.current && mapRef.current) {
+        gpsCenteredRef.current = true;
+        mapRef.current.flyTo([lat, lon], 13, { duration: 1.2 });
+        setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+      }
+
+      setGpsStatus('granted');
+      toast.success('📍 GPS activado');
+    },
+    (err) => {
+      // 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
+      const msg =
+        err.code === 1
+          ? 'Permiso de ubicación denegado (activar en Permisos de la app).'
+          : err.code === 2
+          ? 'Ubicación no disponible (GPS apagado o sin señal).'
+          : 'Timeout obteniendo ubicación (probá otra vez).';
+
+      setGpsStatus(err.code === 1 ? 'denied' : 'error');
+      setGpsError(msg);
+      console.warn('GPS getCurrentPosition error:', err);
+      toast.error(`📍 ${msg}`);
+    },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
+  );
+
+  // 2) Segundo: iniciar watcher para mantener actualizado
+  const watcher = navigator.geolocation.watchPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+
+      setMe((prev) => ({ ...prev, lat, lon }));
+      setCenter([lat, lon]);
+
+      if (!gpsCenteredRef.current && mapRef.current) {
+        gpsCenteredRef.current = true;
+        mapRef.current.flyTo([lat, lon], 13, { duration: 1.2 });
+        setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+      }
+
+      setGpsStatus('granted');
+    },
+    (err) => {
+      const msg =
+        err.code === 1
+          ? 'Permiso de ubicación denegado.'
+          : err.code === 2
+          ? 'Ubicación no disponible.'
+          : 'Timeout GPS.';
+
+      setGpsStatus(err.code === 1 ? 'denied' : 'error');
+      setGpsError(msg);
+      console.warn('GPS watchPosition error:', err);
+    },
+    { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+  );
+  gpsWatchIdRef.current = watcher;
 }
 
-    setMe((prev) => ({ ...prev, lat, lon }));
-    setCenter([lat, lon]);
-
-    setTimeout(() => {
-      if (mapRef.current) {
-        mapRef.current.invalidateSize();
-        mapRef.current.flyTo([lat, lon], 13, { duration: 1.4 });
-      }
-    }, 400);
-
-    gpsCenteredRef.current = true;
-    setGpsStatus('granted');
-    toast.success('📍 GPS activado');
-
-    startWatchHighAccuracy();
-  };
-
-  const onFail = (err) => {
-  console.warn('GPS error:', err);
-
-  const code = err?.code;
-  const msg =
-    code === 1 ? 'Permiso denegado.' :
-    code === 2 ? 'Ubicación no disponible (GPS sin señal / sin fix).' :
-    code === 3 ? 'Timeout (tardó demasiado en obtener ubicación).' :
-    'Error desconocido de ubicación.';
-
-  setGpsStatus(code === 1 ? 'denied' : 'error');
-  setGpsError(`${msg} (${code || '—'})`);
-
-  toast.error(`${msg}`);
-};
-
-  navigator.geolocation.getCurrentPosition(onSuccess, onFail, {
-  enableHighAccuracy: true,
-  maximumAge: 0,
-  timeout: 45000,
- });
-} // 
-// ✅ NO forzar GPS “agresivo” al montar.
-// Hacemos un intento suave, pero el botón "Activar GPS" es el intento fuerte.
+// ✅ En web puede funcionar solo; en PWA a veces necesitás gesto.
+// Intentamos auto-activar, pero también damos botón manual (abajo).
 useEffect(() => {
-  if (typeof window === 'undefined') return;
-
-  let cancelled = false;
-
-  async function initGPS() {
-    // intento suave: no spamear permisos ni toasts
-    try {
-      if (!navigator.geolocation) {
-        setGpsStatus('error');
-        setGpsError('Este dispositivo no soporta GPS.');
-        return;
-      }
-
-      // Si existe Permissions API, consultamos sin pedir popup
-      if (navigator.permissions?.query) {
-        const perm = await navigator.permissions.query({ name: 'geolocation' });
-
-        if (cancelled) return;
-
-        if (perm.state === 'granted') {
-          // ✅ Ya está permitido: centramos y activamos watch
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              if (cancelled) return;
-              const lat = Number(pos.coords.latitude);
-              const lon = Number(pos.coords.longitude);
-              if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-
-              setMe((prev) => ({ ...prev, lat, lon }));
-              setCenter([lat, lon]);
-              setGpsStatus('granted');
-
-              setTimeout(() => {
-                mapRef.current?.invalidateSize?.();
-                mapRef.current?.flyTo?.([lat, lon], 13, { duration: 1.2 });
-              }, 250);
-
-              gpsCenteredRef.current = true;
-              startWatchHighAccuracy();
-            },
-            () => {
-              // si falla igual, dejamos que el usuario toque "Activar GPS"
-              setGpsStatus('error');
-              setGpsError('No se pudo obtener ubicación.');
-            },
-            { enableHighAccuracy: true, maximumAge: 10000, timeout: 25000 }
-          );
-          return;
-        }
-
-        if (perm.state === 'denied') {
-          setGpsStatus('denied');
-          setGpsError('Permiso denegado. Activá ubicación en Ajustes.');
-          return;
-        }
-
-        // perm.state === 'prompt' → NO pedimos todavía (esperamos el botón)
-        setGpsStatus('init');
-        return;
-      }
-
-      // Si no hay permissions API, hacemos un intento suave SIN toast
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (cancelled) return;
-          const lat = Number(pos.coords.latitude);
-          const lon = Number(pos.coords.longitude);
-          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-
-          setMe((prev) => ({ ...prev, lat, lon }));
-          setCenter([lat, lon]);
-          setGpsStatus('granted');
-
-          setTimeout(() => {
-            mapRef.current?.invalidateSize?.();
-            mapRef.current?.flyTo?.([lat, lon], 13, { duration: 1.2 });
-          }, 250);
-
-          gpsCenteredRef.current = true;
-          startWatchHighAccuracy();
-        },
-        () => {
-          // sin permissions API, no sabemos si negó o solo falló → dejamos banner
-          setGpsStatus('init');
-        },
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
-      );
-    } catch {
-      setGpsStatus('init');
-    }
-  }
-
-  initGPS();
+  requestGPS();
 
   return () => {
-    cancelled = true;
-    stopGPSWatch();
+    if (gpsWatchIdRef.current != null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+      gpsWatchIdRef.current = null;
+    }
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
 // ✅ Reintento de centrado: cuando el mapa ya existe y el GPS ya llegó
 useEffect(() => {
@@ -602,10 +463,9 @@ useEffect(() => {
   if (!hasMeCoords) return;
 
   gpsCenteredRef.current = true;
-
-  mapRef.current.flyTo([meLatNum, meLonNum], 11, { duration: 1.2 });
+  mapRef.current.flyTo([Number(me.lat), Number(me.lon)], 11, { duration: 1.2 });
   setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-}, [hasMeCoords, meLatNum, meLonNum]);
+}, [me?.lat, me?.lon, hasMeCoords]);
 
 const [rating, setRating] = useState(0);
 const [comment, setComment] = useState('') 
@@ -662,11 +522,11 @@ useEffect(() => {
   if (!jobId) return;
   if (jobStatus === 'completed' || jobStatus === 'cancelled') return;
 
-  if (!hasMeCoords) return;
-  if (!hasSelCoords) return;
+  if (!Number(me?.lat) || !Number(me?.lon)) return;
+  if (!selLat || !selLng) return;
 
-  setRoute([[meLatNum, meLonNum], [selLatNum, selLngNum]]);
-}, [jobId, jobStatus, hasMeCoords, hasSelCoords, meLatNum, meLonNum, selLatNum, selLngNum]);
+  setRoute([[me.lat, me.lon], [selLat, selLng]]);
+}, [jobId, jobStatus, me?.lat, me?.lon, selLat, selLng]);
 /* 💬 Banner elegante de estado */
 useEffect(() => {
   if (jobStatus === 'completed') {
@@ -771,12 +631,10 @@ useEffect(() => {
 
     if (alive) setMe((prev) => ({ ...prev, id: uid }));
 
-    
-
     // 🔊 audios (una sola vez)
     if (typeof Audio !== 'undefined') {
       soundRef.current = new Audio('/notify.mp3');
-      sendSoundRef.current = new Audio('/send.mp3');
+      sendSoundRef.current = new Audio('/send.mp3'); // si no existe, podés comentar esta línea
     }
   })();
 
@@ -784,6 +642,7 @@ useEffect(() => {
     alive = false;
   };
 }, [router, supabase]);
+
 
 
 /* === Cargar trabajadores === */
@@ -1187,10 +1046,10 @@ setSelected(worker);
 setRoute(null);
 
 // ✨ Efecto visual al hacer clic en marcador
-const wLat = toNumOrNull(worker?.lat);
-const wLng = toNumOrNull(worker?.lng ?? worker?.lon ?? worker?.long);
+const wLat = Number(worker?.lat);
+const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
 
-if (mapRef.current && wLat !== null && wLng !== null) {
+if (mapRef.current && Number.isFinite(wLat) && Number.isFinite(wLng)) {
   mapRef.current.flyTo([wLat, wLng], 15, { duration: 1.2 });
 }
 
@@ -1261,8 +1120,8 @@ if (!canMakeRoute) {
 
 // ✔ Generar ruta ANTES de crear pedido
 setRoute([
-  [meLatNum, meLonNum],
-  [selLatNum, selLngNum],
+  [Number(me.lat), Number(me.lon)],
+  [selLat, selLng],
 ]);
 
 
@@ -1276,10 +1135,10 @@ const { data: inserted, error: insertError } = await supabase
       status: 'open',
       client_id: user.id, // ← FK a profiles.user_id (asegurado arriba)
       worker_id: selected.user_id,
-    client_lat: meLatNum,
-client_lng: meLonNum,
-worker_lat: selLatNum,
-worker_lng: selLngNum,
+      client_lat: me.lat,
+      client_lng: me.lon,
+      worker_lat: selLat,
+      worker_lng: selLng,
       created_at: new Date().toISOString(),
 
       // 🧩 Nuevos campos agregados
@@ -1297,13 +1156,13 @@ if (insertError) throw insertError;
     setJobStatus(inserted.status);
     toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
 
-   
+    setWorkers([selected]);
 
 // ✅ ruta SIEMPRE usando selLat/selLng (que ya contempla lon/lng)
-setRoute([[meLatNum, meLonNum], [selLatNum, selLngNum]]);
+setRoute([[me.lat, me.lon], [selLat, selLng]]);
 
-if (mapRef.current && hasMeCoords && hasSelCoords) {
-  mapRef.current.fitBounds([[meLatNum, meLonNum], [selLatNum, selLngNum]], { padding: [80, 80] });
+if (mapRef.current && Number.isFinite(me.lat) && hasSelCoords) {
+  mapRef.current.fitBounds([[me.lat, me.lon], [selLat, selLng]], { padding: [80, 80] });
 }
   } catch (err) {
     console.error('Error al confirmar solicitud:', err?.message || err);
@@ -1511,7 +1370,7 @@ function resetJobState() {
   setIsChatOpen(false);
   setMessages([]);
   localStorage.removeItem('activeJobChat');
-  fetchWorkers(null); // o el que quieras por defecto
+  fetchWorkers(selectedService || null);
 
   // 🗺️ Recentrar mapa al cliente con animación suave
   if (mapRef.current && me?.lat && me?.lon) {
@@ -1646,12 +1505,18 @@ const [distanciaKm, setDistanciaKm] = useState(0);
 const [precioEstimado, setPrecioEstimado] = useState(55000);
 // ✅ Distancia real al seleccionado (para precio) — ahora sí, después de declarar setDistanciaKm
 useEffect(() => {
-  if (!hasMeCoords) return;
-  if (!hasSelCoords) return;
+  if (!Number(me?.lat) || !Number(me?.lon)) return;
+  if (!selLat || !selLng) return;
 
-  const km = haversineKm(meLatNum, meLonNum, selLatNum, selLngNum);
+  const km = haversineKm(
+    Number(me.lat),
+    Number(me.lon),
+    selLat,
+    selLng
+  );
+
   setDistanciaKm(km);
-}, [hasMeCoords, hasSelCoords, meLatNum, meLonNum, selLatNum, selLngNum]);
+}, [me?.lat, me?.lon, selLat, selLng]);
 
 /* 🔁 Recalcular automáticamente el precio */
 useEffect(() => {
@@ -1717,19 +1582,11 @@ useEffect(() => {
     {statusBanner.text}
   </div>
 )}
-{(!hasMeCoords || gpsStatus === 'denied' || gpsStatus === 'error') && (
+{(gpsStatus === 'denied' || gpsStatus === 'error') && (
   <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[20000]">
     <div className="bg-white/95 border border-gray-200 shadow-lg rounded-2xl px-4 py-3 text-sm">
-      <div className="font-semibold text-gray-800">📍 Activá tu ubicación</div>
-
-      <div className="text-gray-500 mt-1">
-        {gpsStatus === 'denied'
-          ? 'Permiso denegado. Activá ubicación en Ajustes.'
-          : gpsStatus === 'error'
-          ? (gpsError || 'No se pudo obtener ubicación.')
-          : 'Tocá “Activar GPS” para centrar el mapa.'}
-      </div>
-
+      <div className="font-semibold text-gray-800">📍 No se pudo activar tu ubicación</div>
+      {gpsError && <div className="text-gray-500 mt-1">{gpsError}</div>}
       <div className="flex gap-2 mt-3">
         <button
           onClick={requestGPS}
@@ -1737,7 +1594,6 @@ useEffect(() => {
         >
           Activar GPS
         </button>
-
         <button
           onClick={() => toast('Abrí: Ajustes > Apps > ManosYA > Permisos > Ubicación')}
           className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 font-semibold active:scale-95"
@@ -1757,36 +1613,10 @@ useEffect(() => {
     touchAction: 'pan-x pan-y', // ✅ permite drag del mapa en móvil
   }}
 >
-  {/* 🎯 Botón flotante: Centrarme */}
-<div className="absolute right-4 bottom-24 z-[12000] pointer-events-auto">
-  <button
-    onClick={() => {
-      if (!hasMeCoords) {
-        toast.warning('Primero activá tu GPS');
-        return;
-      }
-
-      // 🔥 Centra el mapa en tu ubicación
-      mapRef.current?.invalidateSize?.();
-      mapRef.current?.flyTo([meLatNum, meLonNum], 15, { duration: 1.2 });
-    }}
-    className="
-      w-12 h-12 rounded-2xl
-      bg-white/90 backdrop-blur
-      border border-gray-200
-      shadow-[0_12px_30px_rgba(0,0,0,0.18)]
-      flex items-center justify-center
-      active:scale-95 transition
-    "
-    title="Centrarme"
-  >
-    🎯
-  </button>
-</div>
- <MapContainer
-  key={hasMeCoords ? 'gps' : 'nogps'}
-  center={center}
-  zoom={hasMeCoords ? 11 : 7}
+  <MapContainer
+  key={Number(me?.lat) && Number(me?.lon) ? 'gps' : 'nogps'}
+    center={center} // puede quedar así (pero ya no lo actualizamos por GPS)
+    zoom={Number(me?.lat) && Number(me?.lon) ? 11 : 7}
     minZoom={5}
     maxZoom={19}
     zoomControl={false}
@@ -1819,17 +1649,17 @@ useEffect(() => {
     />
 
   {/* 🎯 Radio visible (MAX_RADIUS_KM) */}
- {hasMeCoords && (
-  <Circle
-    center={[meLatNum, meLonNum]}
-    radius={MAX_RADIUS_M}
-    pathOptions={{
-      color: '#10b981',
-      weight: 2,
-      fillOpacity: 0.08,
-    }}
-  />
-)}
+  {Number(me?.lat) && Number(me?.lon) && (
+    <Circle
+      center={[me.lat, me.lon]}
+      radius={MAX_RADIUS_M}
+      pathOptions={{
+        color: '#10b981',
+        weight: 2,
+        fillOpacity: 0.08,
+      }}
+    />
+  )}
    {Array.isArray(route) &&
   route.length === 2 &&
   Array.isArray(route[0]) &&
@@ -1845,7 +1675,8 @@ useEffect(() => {
 }
 
 
-{/* ✅ BLOQUE CLUSTER + FILTRO FINAL — ESTABLE */}
+   {/* ✅ Bloque final actualizado — oculta 'paused' y muestra estados dinámicos */}
+{/* ✅ BLOQUE CLUSTER + FILTRO FINAL (reemplazar completo) */}
 <MarkerClusterGroup
   chunkedLoading
   maxClusterRadius={42}
@@ -1856,374 +1687,154 @@ useEffect(() => {
   spiderfyDistanceMultiplier={1.6}
   eventHandlers={{
     clusterclick: (e) => {
-  e?.originalEvent?.preventDefault?.();
-  e?.originalEvent?.stopPropagation?.();
+      e?.originalEvent?.preventDefault?.();
+      e?.originalEvent?.stopPropagation?.();
 
-  const clusterLayer = e?.layer;
-  const children = clusterLayer?.getAllChildMarkers?.() || [];
+      const cluster = e.layer;
+      const children = cluster.getAllChildMarkers?.() || [];
+      const list = children.map((m) => m?.options?.__worker).filter(Boolean);
 
- const listRaw = children
-  .map((m) => m?.options?.__worker)
-  .filter(Boolean);
+      setClusterList(list);
+      setClusterOpen(true);
+    },
+  }}
+>
+ {workers
+  ?.filter((w) => {
+    const wLat = Number(w?.lat);
+    const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+    if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
 
-const ranked = listRaw
+    if (w?.status === 'paused' || w?.status === 'inactive') return false;
+    if (w?.is_active === false) return false;
+
+    const meLat = Number(me?.lat);
+    const meLng = Number(me?.lon);
+    const meOk = Number.isFinite(meLat) && Number.isFinite(meLng);
+
+    if (meOk) {
+      const km = haversineKm(meLat, meLng, wLat, wLng);
+      if (!Number.isFinite(km)) return false;
+      if (km > MAX_RADIUS_KM) return false;
+    }
+
+    return true;
+  })
   .map((w) => {
     const wLat = Number(w?.lat);
     const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
 
-    const dist =
-      hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
-        ? haversineKm(meLatNum, meLonNum, wLat, wLng)
-        : null;
-
-    return {
-      ...w,
-      _dist: dist,                       // km (number) o null
-      _online: isOnlineRecent(w),
-      _rating: Number(w?.avg_rating || 0),
-    };
-  })
-  // ✅ FILTRO por radio (solo si hay GPS)
-  .filter((w) => {
-    if (!hasMeCoords) return true;       // si no hay GPS, no filtra por distancia
-    if (w._dist == null) return false;   // si hay GPS pero no se puede calcular, fuera
-    return w._dist <= MAX_RADIUS_KM;     // 👈 filtro por km
-  })
-  // ✅ ORDEN: más cerca primero, luego online, luego rating
-  .sort((a, b) => {
-    if (a._dist != null && b._dist != null) return a._dist - b._dist;
-    if (a._online !== b._online) return a._online ? -1 : 1;
-    if (a._rating !== b._rating) return b._rating - a._rating;
-    return 0;
-  });
-
-setClusterList(ranked);
-setClusterOpen(true);
-},
-  }}
->
-  {(workers || [])
-    .filter((w) => {
-      const wLat = Number(w?.lat);
-      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-      if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
-
-      if (w?.status === 'paused' || w?.status === 'inactive') return false;
-      if (w?.is_active === false) return false;
-
-      if (hasMeCoords) {
-        const km = haversineKm(meLatNum, meLonNum, wLat, wLng);
-        if (!Number.isFinite(km)) return false;
-        if (km > MAX_RADIUS_KM) return false;
-      }
-      return true;
-    })
-    .map((w) => {
-      const wLat = Number(w?.lat);
-      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-
-      return (
-        <Marker
-  key={`worker-${w.user_id}`}
-  position={[wLat, wLng]}
-  icon={avatarIcon(w.avatar_url, w) || undefined}
-  eventHandlers={{
-    click: () => handleMarkerClick(w),
-    add: (e) => {
-      const mk = e?.target; // ✅ Leaflet Marker real
-      if (!mk) return;
-
-      // ✅ para el modal de cluster
-      mk.options.__worker = w;
-
-      // ✅ para animación suave (animateMarkerMove)
-      markersRef.current[w.user_id] = mk;
-    },
-  }}
-/>
-      );
-    })}
+    return (
+      <Marker
+        key={`worker-${w.user_id}`}
+        position={[wLat, wLng]}
+        icon={avatarIcon(w.avatar_url, w) || undefined}
+        eventHandlers={{ click: () => handleMarkerClick(w) }}
+        __worker={w}              // 🔥 ahora queda disponible para cluster
+        __worker_id={w.user_id}   // útil para debug
+        ref={(m) => {
+          if (!m) return;
+          markersRef.current[w.user_id] = m; // solo animación
+        }}
+      />
+    );
+  })}
 </MarkerClusterGroup>
 
 </MapContainer>
-{/* ✅ MODAL CLUSTER (LISTA DE TRABAJADORES DEL CÚMULO) */}
+
+{/* ✅ MODAL CLUSTER (PORTAL + estrellas) */}
 {mounted && createPortal(
   <AnimatePresence>
     {clusterOpen && (
       <motion.div
-        className="fixed inset-0 z-[20010] bg-black/55 backdrop-blur-sm flex items-end justify-center"
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end justify-center"
+        style={{ zIndex: 60000 }} // 🔥 SIEMPRE arriba del panel inferior
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={() => setClusterOpen(false)}
       >
         <motion.div
-          className="w-full max-w-md bg-white rounded-t-3xl p-5 shadow-2xl border border-gray-200"
-          style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}
+          className="w-full max-w-md bg-white rounded-t-3xl p-5 shadow-2xl"
           initial={{ y: 420 }}
           animate={{ y: 0 }}
           exit={{ y: 420 }}
           transition={{ type: "spring", stiffness: 120, damping: 18 }}
           onClick={(e) => e.stopPropagation()}
+          style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}
         >
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-extrabold text-gray-800">
-              Profesionales cerca ({clusterList?.length || 0})
+              Profesionales en esta zona ({clusterList.length})
             </h3>
             <button
               onClick={() => setClusterOpen(false)}
-              className="text-gray-500 hover:text-red-500 transition"
+              className="text-gray-500 hover:text-red-500"
             >
               <XCircle size={22} />
             </button>
           </div>
 
-          <div className="max-h-[55vh] overflow-y-auto space-y-2 pr-1">
-            {(clusterList || []).map((w) => (
-              <button
-                key={`cl-${w.user_id}`}
-                onClick={() => {
-                  setClusterOpen(false);
-                  handleMarkerClick(w); // ✅ reutiliza tu lógica
-                }}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-emerald-50 active:scale-[0.99] transition"
-              >
-                <img
-                  src={w.avatar_url || "/avatar-fallback.png"}
-                  onError={(e) => (e.currentTarget.src = "/avatar-fallback.png")}
-                  className="w-12 h-12 rounded-full object-cover border border-gray-200"
-                  alt="avatar"
-                />
+          <div className="max-h-[55vh] overflow-y-auto space-y-2">
+            {clusterList.map((w) => {
+              const rating = Number(w?.avg_rating || 0);
+              const reviews = Number(w?.total_reviews || 0);
 
-                <div className="flex-1 text-left">
-                  <div className="font-bold text-gray-800 leading-tight">
-                    {w.full_name || "Profesional"}
+              return (
+                <button
+                  key={w.user_id}
+                  onClick={() => {
+                    setClusterOpen(false);
+                    handleMarkerClick(w);
+                  }}
+                  className="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-emerald-50 active:scale-[0.99] transition"
+                >
+                  <img
+                    src={w.avatar_url || "/avatar-fallback.png"}
+                    onError={(e) => (e.currentTarget.src = "/avatar-fallback.png")}
+                    className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400"
+                    alt="avatar"
+                  />
+
+                  <div className="flex-1 text-left">
+                    <div className="font-bold text-gray-800 leading-5">
+                      {w.full_name || "Profesional"}
+                    </div>
+
+                    {/* ✅ ESTADO */}
+                    <div className="text-xs text-gray-500">
+                      {isOnlineRecent(w) ? "🟢 EN LÍNEA" : "⚪ Inactivo"}
+                    </div>
+
+                    {/* ✅ ESTRELLAS + REVIEWS */}
+                    <div className="flex items-center gap-1 mt-1">
+                      {[0, 1, 2, 3, 4].map((i) => (
+                        <Star
+                          key={i}
+                          size={14}
+                          className={
+                            i < Math.round(rating)
+                              ? "text-yellow-400 fill-yellow-400"
+                              : "text-gray-300"
+                          }
+                        />
+                      ))}
+                      <span className="text-xs text-gray-500 ml-1">
+                        {rating ? rating.toFixed(1) : "0.0"} ({reviews})
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-500 mt-0.5 flex items-center justify-between gap-2">
-  <span>
-    {isOnlineRecent(w) ? "🟢 En línea" : "⚪️ Offline"} • ⭐ {Number(w.avg_rating || 0).toFixed(1)} • ({w.total_reviews || 0})
-  </span>
 
-  {/* ✅ KM claro (usa _dist si ya lo calculamos; si no, lo calcula) */}
-  <span className="text-[12px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full whitespace-nowrap">
-    📍 {(() => {
-      const km =
-        w?._dist != null
-          ? w._dist
-          : distanceFromClientKm(meLatNum, meLonNum, w);
-      return km != null ? formatKm(km) : "—";
-    })()}
-  </span>
-</div>
-                </div>
-
-                <div className="text-xs font-extrabold text-emerald-700">
-                  Ver
-                </div>
-              </button>
-            ))}
+                  <div className="text-emerald-700 font-semibold text-sm">Ver</div>
+                </button>
+              );
+            })}
           </div>
-
-          <p className="text-xs text-gray-500 mt-3">
-            Tip: tocá un profesional para abrir su perfil.
-          </p>
         </motion.div>
       </motion.div>
     )}
   </AnimatePresence>,
-  document.body
-)}
-{/* ✅ MODAL CLUSTER (PORTAL + estrellas) */}
-{mounted && createPortal(
-  <AnimatePresence>
-  {selected && !showPrice && (() => {
-    // ✅ calculamos km acá adentro (porque acá existe selected)
-    const km = distanceFromClientKm(meLatNum, meLonNum, selected);
-
-    // 🏅 Aro por plan (premium dorado / normal plateado / eco verde)
-    const tier = String(selected?.plan_tier || 'normal').toLowerCase();
-    const ringClass =
-      tier === 'premium'
-        ? 'border-yellow-400'
-        : tier === 'eco'
-        ? 'border-emerald-500'
-        : 'border-gray-300';
-
-    const tierLabel =
-      tier === 'premium' ? '⭐ Premium' : tier === 'eco' ? '🌿 Eco' : '🩶 Normal';
-
-    return (
-      <motion.div
-        key="perfil"
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
-        transition={{ type: 'spring', stiffness: 120, damping: 18 }}
-        className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
-      >
-        <div className="text-center">
-          <>
-            {/* 🧑 Avatar con verificación */}
-            <div className="relative w-20 h-20 mx-auto mb-2">
-              <img
-                src={selected.avatar_url || '/avatar-fallback.png'}
-                onError={(e) => {
-                  e.currentTarget.src = '/avatar-fallback.png';
-                }}
-                className={`w-20 h-20 rounded-full border-4 ${ringClass} shadow-md object-cover object-center`}
-                alt="avatar"
-              />
-
-              {selected.worker_verified && selected.profile_verified && (
-                <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-1.5 border-2 border-white shadow">
-                  <CheckCircle2 size={14} className="text-white" />
-                </div>
-              )}
-            </div>
-
-            {/* 🧾 Nombre y descripción */}
-            <h2 className="font-bold text-lg">{selected.full_name}</h2>
-            <p className="text-sm italic text-gray-500 mb-2">
-              “{selected.bio || 'Sin descripción'}”
-            </p>
-
-            {/* 🏷️ Plan */}
-            <div className="text-xs font-bold text-gray-600 mb-2">
-              {tierLabel}
-            </div>
-
-            {/* ⭐ Calificación dinámica */}
-            <div className="flex justify-center items-center gap-1 mb-2">
-              {[...Array(5)].map((_, i) => (
-                <Star
-                  key={i}
-                  size={14}
-                  className={
-                    i < Math.round(Number(selected.avg_rating || 0))
-                      ? 'text-yellow-400 fill-yellow-400'
-                      : 'text-gray-300'
-                  }
-                />
-              ))}
-              <span className="text-xs text-gray-500 ml-1">
-                ({selected.total_reviews || 0})
-              </span>
-            </div>
-
-            {/* 🧠 Experiencia */}
-            <p className="text-sm text-gray-600">
-              <Clock3 size={14} className="inline mr-1" />
-              {selected?.years_experience
-                ? `${selected.years_experience} ${
-                    selected.years_experience === 1 ? 'año' : 'años'
-                  } de experiencia`
-                : 'Sin experiencia registrada'}
-            </p>
-
-            {/* ⏰ Última actividad */}
-            <p className="text-xs text-gray-500 mt-1">
-              {(() => {
-                const mins = minutesSince(selected?.updated_at);
-                if (mins == null) return 'Sin actividad reciente';
-                if (mins < 60) return `Activo hace ${mins} min`;
-                if (mins < 1440) return `Activo hace ${Math.floor(mins / 60)} h`;
-                return `Activo hace ${Math.floor(mins / 1440)} d`;
-              })()}
-            </p>
-
-            {/* 📍 Distancia */}
-            <p className="text-sm text-gray-600 mt-1">
-              📍 {km != null ? formatKm(km) : '—'}
-            </p>
-
-            {/* 🧰 Especialidades */}
-            <div className="mt-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Especialidades</h3>
-              <div className="flex flex-wrap justify-center gap-2">
-                {(() => {
-                  let skillsList = [];
-
-                  if (Array.isArray(selected?.skills)) {
-                    skillsList = selected.skills;
-                  } else if (typeof selected?.skills === 'string') {
-                    skillsList = selected.skills.split(',');
-                  } else {
-                    skillsList = ['Limpieza', 'Plomería', 'Jardinería'];
-                  }
-
-                  return skillsList.map((skill, i) => (
-                    <span
-                      key={i}
-                      className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium text-sm shadow-sm border border-emerald-200"
-                    >
-                      {skill.trim()}
-                    </span>
-                  ));
-                })()}
-              </div>
-            </div>
-
-            {/* Estado de pedido si existe */}
-            <div className="mt-3">{jobId && <StatusBadge />}</div>
-
-            {/* 🔘 Botones dinámicos */}
-            {!route ? (
-              <div className="flex justify-center gap-3 mt-5">
-                <button
-                  onClick={() => setSelected(null)}
-                  className="px-5 py-3 rounded-xl border text-gray-700"
-                >
-                  Cerrar
-                </button>
-                <button
-                  onClick={solicitar}
-                  className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
-                >
-                  🚀 Solicitar
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-3 mt-5">
-                <button
-                  onClick={() => {
-                    openChat();
-                    setHasUnread(false);
-                  }}
-                  className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
-                >
-                  <MessageCircle size={18} className="text-emerald-600" />
-                  Chatear
-                  {hasUnread && (
-                    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
-                  )}
-                  {hasUnread && (
-                    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
-                  )}
-                </button>
-
-                {jobStatus === 'accepted' || jobStatus === 'assigned' ? (
-                  <button
-                    onClick={finalizarPedido}
-                    className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
-                  >
-                    <CheckCircle2 size={16} /> Finalizar pedido
-                  </button>
-                ) : jobStatus === 'open' ? (
-                  <button
-                    onClick={cancelarPedido}
-                    className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
-                  >
-                    <XCircle size={16} /> Cancelar pedido
-                  </button>
-                ) : null}
-              </div>
-            )}
-          </>
-        </div>
-      </motion.div>
-    );
-  })()}
-</AnimatePresence>,
   document.body
 )}
 </div>
@@ -2251,6 +1862,7 @@ setClusterOpen(true);
   <h2 className="text-center text-[17px] font-bold text-emerald-600 mb-2 tracking-tight">
     ManosYA
   </h2>
+
  {/* ===== Botones principales (PREMIUM) ===== */}
 <div className="px-3 mb-3">
   <div
@@ -2293,9 +1905,9 @@ setClusterOpen(true);
             const wLat = Number(w?.lat);
             const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
 
-           const dist = hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
-  ? haversineKm(meLatNum, meLonNum, wLat, wLng)
-  : null;
+            const dist = hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
+              ? haversineKm(Number(me.lat), Number(me.lon), wLat, wLng)
+              : null;
 
             return {
               ...w,
@@ -2431,8 +2043,7 @@ setClusterOpen(true);
   </div>
 </div>
 
- {/* MODAL SERVICIOS — PORTAL (FIX: siempre arriba) */}
-{mounted && createPortal(
+  {/* MODAL SERVICIOS */}
   <AnimatePresence>
     {servicesOpen && (
       <motion.div
@@ -2449,17 +2060,17 @@ setClusterOpen(true);
             p-5 shadow-2xl
             border border-gray-200
           "
-          style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}
+          style={{
+            paddingBottom: "calc(16px + env(safe-area-inset-bottom))",
+          }}
           initial={{ y: 380 }}
           animate={{ y: 0 }}
           exit={{ y: 380 }}
-          transition={{ type: "spring", stiffness: 120, damping: 18 }}
+          transition={{ type: 'spring', stiffness: 120, damping: 18 }}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-extrabold text-gray-800">
-              Seleccionar servicio
-            </h3>
+            <h3 className="text-lg font-extrabold text-gray-800">Seleccionar servicio</h3>
             <button
               onClick={() => setServicesOpen(false)}
               className="text-gray-500 hover:text-red-500 transition"
@@ -2469,6 +2080,7 @@ setClusterOpen(true);
           </div>
 
           <div className="grid grid-cols-2 gap-3">
+            {/* Opción: ver todos */}
             <button
               onClick={() => {
                 toggleService(null);
@@ -2476,9 +2088,7 @@ setClusterOpen(true);
               }}
               className={`
                 p-3 rounded-2xl border font-semibold text-sm
-                ${!selectedService
-                  ? "bg-emerald-500 text-white border-emerald-500"
-                  : "bg-gray-50 text-gray-700 border-gray-200"}
+                ${!selectedService ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-50 text-gray-700 border-gray-200'}
                 active:scale-95 transition
               `}
             >
@@ -2495,9 +2105,7 @@ setClusterOpen(true);
                 className={`
                   p-3 rounded-2xl border font-semibold text-sm
                   flex items-center justify-center gap-2
-                  ${selectedService === s.id
-                    ? "bg-emerald-500 text-white border-emerald-500"
-                    : "bg-gray-50 text-gray-700 border-gray-200"}
+                  ${selectedService === s.id ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-50 text-gray-700 border-gray-200'}
                   active:scale-95 transition
                 `}
               >
@@ -2513,10 +2121,197 @@ setClusterOpen(true);
         </motion.div>
       </motion.div>
     )}
-  </AnimatePresence>,
-  document.body
-)}
+  </AnimatePresence>
 </motion.div>
+  {/* PERFIL DEL TRABAJADOR / CHOFER (MODIFICADO) */}
+<AnimatePresence>
+  {selected && !showPrice && (() => {
+    
+ 
+
+       const km =
+  hasMeCoords && hasSelCoords
+    ? Math.round(haversineKm(Number(me.lat), Number(me.lon), selLat, selLng) * 10) / 10
+    : null;
+
+    // 🏅 Aro por plan (premium dorado / normal plateado / eco verde)
+    const tier = String(selected?.plan_tier || 'normal').toLowerCase();
+    const ringClass =
+      tier === 'premium'
+        ? 'border-yellow-400'
+        : tier === 'eco'
+        ? 'border-emerald-500'
+        : 'border-gray-300';
+
+    const tierLabel =
+      tier === 'premium' ? '⭐ Premium' : tier === 'eco' ? '🌿 Eco' : '🩶 Normal';
+
+    return (
+      <motion.div
+        key="perfil"
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 120, damping: 18 }}
+        className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
+      >
+        <div className="text-center">
+        
+            <>
+              {/* 🧑 Avatar con verificación */}
+              <div className="relative w-20 h-20 mx-auto mb-2">
+                <img
+                  src={selected.avatar_url || '/avatar-fallback.png'}
+                  onError={(e) => {
+                    e.currentTarget.src = '/avatar-fallback.png';
+                  }}
+                  className="
+                    w-20 h-20 rounded-full border-4 border-emerald-500 shadow-md
+                    object-cover object-center
+                  "
+                  alt="avatar"
+                />
+
+                {selected.worker_verified && selected.profile_verified && (
+                  <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-1.5 border-2 border-white shadow">
+                    <CheckCircle2 size={14} className="text-white" />
+                  </div>
+                )}
+              </div>
+
+              {/* 🧾 Nombre y descripción */}
+              <h2 className="font-bold text-lg">{selected.full_name}</h2>
+              <p className="text-sm italic text-gray-500 mb-2">
+                “{selected.bio || 'Sin descripción'}”
+              </p>
+
+              {/* ⭐ Calificación dinámica */}
+              <div className="flex justify-center items-center gap-1 mb-2">
+                {[...Array(5)].map((_, i) => (
+                  <Star
+                    key={i}
+                    size={14}
+                    className={
+                      i < Math.round(selected.avg_rating)
+                        ? 'text-yellow-400 fill-yellow-400'
+                        : 'text-gray-300'
+                    }
+                  />
+                ))}
+                <span className="text-xs text-gray-500 ml-1">
+                  ({selected.total_reviews || 0})
+                </span>
+              </div>
+
+              {/* 🧠 Experiencia dinámica */}
+              <p className="text-sm text-gray-600">
+                <Clock3 size={14} className="inline mr-1" />
+                {selected?.years_experience
+                  ? `${selected.years_experience} ${
+                      selected.years_experience === 1 ? 'año' : 'años'
+                    } de experiencia`
+                  : 'Sin experiencia registrada'}
+              </p>
+
+              {/* ⏰ Última actividad */}
+              <p className="text-xs text-gray-500 mt-1">
+                {(() => {
+                  const mins = minutesSince(selected?.updated_at);
+                  if (mins == null) return 'Sin actividad reciente';
+                  if (mins < 60) return `Activo hace ${mins} min`;
+                  if (mins < 1440) return `Activo hace ${Math.floor(mins / 60)} h`;
+                  return `Activo hace ${Math.floor(mins / 1440)} d`;
+                })()}
+              </p>
+
+              {/* 🧰 Especialidades */}
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Especialidades</h3>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {(() => {
+                    let skillsList = [];
+
+                    if (Array.isArray(selected?.skills)) {
+                      skillsList = selected.skills;
+                    } else if (typeof selected?.skills === 'string') {
+                      skillsList = selected.skills.split(',');
+                    } else {
+                      skillsList = ['Limpieza', 'Plomería', 'Jardinería'];
+                    }
+
+                    return skillsList.map((skill, i) => (
+                      <span
+                        key={i}
+                        className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium text-sm shadow-sm border border-emerald-200"
+                      >
+                        {skill.trim()}
+                      </span>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Estado de pedido si existe */}
+              <div className="mt-3">{jobId && <StatusBadge />}</div>
+
+              {/* 🔘 Botones dinámicos */}
+              {!route ? (
+                <div className="flex justify-center gap-3 mt-5">
+                  <button
+                    onClick={() => setSelected(null)}
+                    className="px-5 py-3 rounded-xl border text-gray-700"
+                  >
+                    Cerrar
+                  </button>
+                  <button
+                    onClick={solicitar}
+                    className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
+                  >
+                    🚀 Solicitar
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3 mt-5">
+                  <button
+                    onClick={() => {
+                      openChat();
+                      setHasUnread(false);
+                    }}
+                    className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
+                  >
+                    <MessageCircle size={18} className="text-emerald-600" />
+                    Chatear
+                    {hasUnread && (
+                      <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
+                    )}
+                    {hasUnread && (
+                      <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
+                    )}
+                  </button>
+
+                  {jobStatus === 'accepted' || jobStatus === 'assigned' ? (
+                    <button
+                      onClick={finalizarPedido}
+                      className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
+                    >
+                      <CheckCircle2 size={16} /> Finalizar pedido
+                    </button>
+                  ) : jobStatus === 'open' ? (
+                    <button
+                      onClick={cancelarPedido}
+                      className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
+                    >
+                      <XCircle size={16} /> Cancelar pedido
+                    </button>
+                  ) : null}
+                </div>
+              )}
+                        </>
+        </div>
+      </motion.div>
+    );
+  })()}
+</AnimatePresence>
 
     {/* 💵 MODAL PRECIO — versión final (dinámica y adaptativa) */}
 <AnimatePresence>
@@ -2668,9 +2463,9 @@ setClusterOpen(true);
             setJobStatus(null);
             setTimeout(() => {
               resetJobState();
-              if (mapRef.current && hasMeCoords) {
-  mapRef.current.flyTo([meLatNum, meLonNum], 13, { duration: 1.2 });
-}
+              if (mapRef.current && me?.lat && me?.lon) {
+                mapRef.current.flyTo([me.lat, me.lon], 13, { duration: 1.2 });
+              }
             }, 400);
           }}
           className="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition"
