@@ -266,9 +266,8 @@ function distanceFromClientKm(meLatNum, meLonNum, worker) {
 
   return haversineKm(meLatNum, meLonNum, wLat, wLng);
 }
-function animateMarkerMove(markerRef, fromLat, fromLng, toLat, toLng, duration = 900) {
+function animateMarkerMove(marker, fromLat, fromLng, toLat, toLng, duration = 900) {
   try {
-    const marker = markerRef?.getLatLng ? markerRef : markerRef?.leafletElement;
     if (!marker?.setLatLng) return;
 
     const start = performance.now();
@@ -281,9 +280,7 @@ function animateMarkerMove(markerRef, fromLat, fromLng, toLat, toLng, duration =
 
       marker.setLatLng([lat, lng]);
 
-      if (progress < 1) {
-        requestAnimationFrame(step);
-      }
+      if (progress < 1) requestAnimationFrame(step);
     };
 
     requestAnimationFrame(step);
@@ -474,26 +471,27 @@ if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
   };
 
   const onFail = (err) => {
-    console.warn('GPS error:', err);
+  console.warn('GPS error:', err);
 
-    if (err.code === 1) {
-      setGpsStatus('denied');
-      setGpsError('Permiso denegado. Activá ubicación en Ajustes.');
-      toast.error('Activá permisos de ubicación.');
-      return;
-    }
+  const code = err?.code;
+  const msg =
+    code === 1 ? 'Permiso denegado.' :
+    code === 2 ? 'Ubicación no disponible (GPS sin señal / sin fix).' :
+    code === 3 ? 'Timeout (tardó demasiado en obtener ubicación).' :
+    'Error desconocido de ubicación.';
 
-    setGpsStatus('error');
-    setGpsError('No se pudo obtener ubicación.');
-    toast.error('No se pudo obtener ubicación.');
-  };
+  setGpsStatus(code === 1 ? 'denied' : 'error');
+  setGpsError(`${msg} (${code || '—'})`);
+
+  toast.error(`${msg}`);
+};
 
   navigator.geolocation.getCurrentPosition(onSuccess, onFail, {
-    enableHighAccuracy: true,
-    maximumAge: 10000,
-    timeout: timeoutValue,
-  });
-}
+  enableHighAccuracy: true,
+  maximumAge: 0,
+  timeout: 45000,
+ });
+} // 
 // ✅ NO forzar GPS “agresivo” al montar.
 // Hacemos un intento suave, pero el botón "Activar GPS" es el intento fuerte.
 useEffect(() => {
@@ -1719,11 +1717,19 @@ useEffect(() => {
     {statusBanner.text}
   </div>
 )}
-{(gpsStatus === 'denied' || gpsStatus === 'error') && (
+{(!hasMeCoords || gpsStatus === 'denied' || gpsStatus === 'error') && (
   <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[20000]">
     <div className="bg-white/95 border border-gray-200 shadow-lg rounded-2xl px-4 py-3 text-sm">
-      <div className="font-semibold text-gray-800">📍 No se pudo activar tu ubicación</div>
-      {gpsError && <div className="text-gray-500 mt-1">{gpsError}</div>}
+      <div className="font-semibold text-gray-800">📍 Activá tu ubicación</div>
+
+      <div className="text-gray-500 mt-1">
+        {gpsStatus === 'denied'
+          ? 'Permiso denegado. Activá ubicación en Ajustes.'
+          : gpsStatus === 'error'
+          ? (gpsError || 'No se pudo obtener ubicación.')
+          : 'Tocá “Activar GPS” para centrar el mapa.'}
+      </div>
+
       <div className="flex gap-2 mt-3">
         <button
           onClick={requestGPS}
@@ -1731,6 +1737,7 @@ useEffect(() => {
         >
           Activar GPS
         </button>
+
         <button
           onClick={() => toast('Abrí: Ajustes > Apps > ManosYA > Permisos > Ubicación')}
           className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 font-semibold active:scale-95"
@@ -1917,21 +1924,23 @@ setClusterOpen(true);
 
       return (
         <Marker
-          key={`worker-${w.user_id}`}
-          position={[wLat, wLng]}
-          icon={avatarIcon(w.avatar_url, w) || undefined}
-          eventHandlers={{
-            click: () => handleMarkerClick(w),
-            add: (e) => {
-              const mk = e?.target;
-              if (mk?.options) mk.options.__worker = w;
-            },
-          }}
-          ref={(m) => {
-            if (!m) return;
-            markersRef.current[w.user_id] = m;
-          }}
-        />
+  key={`worker-${w.user_id}`}
+  position={[wLat, wLng]}
+  icon={avatarIcon(w.avatar_url, w) || undefined}
+  eventHandlers={{
+    click: () => handleMarkerClick(w),
+    add: (e) => {
+      const mk = e?.target; // ✅ Leaflet Marker real
+      if (!mk) return;
+
+      // ✅ para el modal de cluster
+      mk.options.__worker = w;
+
+      // ✅ para animación suave (animateMarkerMove)
+      markersRef.current[w.user_id] = mk;
+    },
+  }}
+/>
       );
     })}
 </MarkerClusterGroup>
