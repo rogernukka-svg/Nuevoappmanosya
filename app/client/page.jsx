@@ -299,29 +299,28 @@ export default function MapPage() {
   // 🔥 NECESARIO para createPortal (evita error SSR)
   const [mounted, setMounted] = useState(false);
 
+  // ✅ primero state que vas a usar en effects
+  const [followMe, setFollowMe] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+
+   // ✅ refs
+  const soundRef = useRef(null);
+  const sendSoundRef = useRef(null);
+  const gpsWatchIdRef = useRef(null);
+  const markersRef = useRef({});
+  const followMeRef = useRef(false);
+
+  // ✅ FIX: evita recenter repetido / loops
+  const gpsCenteredRef = useRef(false);
+
+  // ✅ ahora sí: effects que dependen de followMe
+  useEffect(() => {
+    followMeRef.current = followMe;
+  }, [followMe]);
+
   useEffect(() => {
     setMounted(true);
   }, []);
-  const soundRef = useRef(null);
-const sendSoundRef = useRef(null);
-const gpsWatchIdRef = useRef(null);
-  const markersRef = useRef({}); // guarda refs de marcadores por user_id
- /* === Fix altura real para móviles (Android/iPhone) === */
- const centeredOnceRef = useRef(false);
- const gpsCenteredRef = useRef(false);
- const [isTyping, setIsTyping] = useState(false);
-
-  useEffect(() => {
-  if (typeof window === 'undefined') return;
-
-  const setVH = () => {
-    document.documentElement.style.setProperty('--real-vh', `${window.innerHeight}px`);
-  };
-
-  setVH();
-  window.addEventListener('resize', setVH);
-  return () => window.removeEventListener('resize', setVH);
-}, []);
 
   const DEFAULT_CENTER = [-23.4437, -58.4400]; // Centro real del país
   const [center, setCenter] = useState(DEFAULT_CENTER);
@@ -378,6 +377,7 @@ const bottomRef = useRef(null);
 const chatChannelRef = useRef(null);
 const [gpsStatus, setGpsStatus] = useState('init'); // init | requesting | granted | denied | error
 const [gpsError, setGpsError] = useState(null);
+
 // eslint-disable-next-line no-unused-vars
 const [tick, setTick] = useState(0);
 
@@ -385,11 +385,58 @@ useEffect(() => {
   const t = setInterval(() => setTick(x => x + 1), 60000); // cada 1 minuto
   return () => clearInterval(t);
 }, []);
+function stopGPSWatch() {
+  if (typeof window === 'undefined') return;
+  if (!navigator.geolocation) return;
+
+  if (gpsWatchIdRef.current != null) {
+    navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+    gpsWatchIdRef.current = null;
+  }
+}
+
+function startWatchHighAccuracy() {
+  if (typeof window === 'undefined') return;
+  if (!navigator.geolocation) return;
+
+  // 🔁 reinicia watcher
+  stopGPSWatch();
+
+  gpsWatchIdRef.current = navigator.geolocation.watchPosition(
+    (p) => {
+      const la = Number(p.coords.latitude);
+      const lo = Number(p.coords.longitude);
+
+      if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
+
+      // ✅ setMe UNA sola vez (evita duplicados)
+      setMe((prev) => ({ ...prev, lat: la, lon: lo }));
+
+      // ✅ usar ref para evitar "stale state" en el watcher
+      if (followMeRef.current && mapRef.current) {
+        mapRef.current.flyTo([la, lo], mapRef.current.getZoom(), { duration: 0.6 });
+      }
+
+      setGpsStatus('granted');
+    },
+    (err) => {
+      console.warn('GPS watchPosition error:', err);
+      // no spamear toast acá
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 3000,
+      timeout: 25000,
+    }
+  );
+}
+
 async function requestGPS() {
   if (typeof window === 'undefined') return;
+
   if (!navigator.geolocation) {
     setGpsStatus('error');
-    setGpsError('Este dispositivo no soporta GPS (geolocation).');
+    setGpsError('Este dispositivo no soporta GPS.');
     toast.error('Tu dispositivo no soporta GPS.');
     return;
   }
@@ -397,87 +444,158 @@ async function requestGPS() {
   setGpsStatus('requesting');
   setGpsError(null);
 
-  // 1) Primero: pedir una posición inmediata (esto suele disparar el prompt bien en PWA)
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const timeoutValue = isIOS ? 35000 : 25000;
 
-      setMe((prev) => ({ ...prev, lat, lon }));
-      setCenter([lat, lon]);
-
-      // centrar el mapa una sola vez
-      if (!gpsCenteredRef.current && mapRef.current) {
-        gpsCenteredRef.current = true;
-        mapRef.current.flyTo([lat, lon], 13, { duration: 1.2 });
-        setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-      }
-
-      setGpsStatus('granted');
-      toast.success('📍 GPS activado');
-    },
-    (err) => {
-      // 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
-      const msg =
-        err.code === 1
-          ? 'Permiso de ubicación denegado (activar en Permisos de la app).'
-          : err.code === 2
-          ? 'Ubicación no disponible (GPS apagado o sin señal).'
-          : 'Timeout obteniendo ubicación (probá otra vez).';
-
-      setGpsStatus(err.code === 1 ? 'denied' : 'error');
-      setGpsError(msg);
-      console.warn('GPS getCurrentPosition error:', err);
-      toast.error(`📍 ${msg}`);
-    },
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
-  );
-
-  // 2) Segundo: iniciar watcher para mantener actualizado
-  const watcher = navigator.geolocation.watchPosition(
-    (pos) => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
-
-      setMe((prev) => ({ ...prev, lat, lon }));
-      setCenter([lat, lon]);
-
-      if (!gpsCenteredRef.current && mapRef.current) {
-        gpsCenteredRef.current = true;
-        mapRef.current.flyTo([lat, lon], 13, { duration: 1.2 });
-        setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-      }
-
-      setGpsStatus('granted');
-    },
-    (err) => {
-      const msg =
-        err.code === 1
-          ? 'Permiso de ubicación denegado.'
-          : err.code === 2
-          ? 'Ubicación no disponible.'
-          : 'Timeout GPS.';
-
-      setGpsStatus(err.code === 1 ? 'denied' : 'error');
-      setGpsError(msg);
-      console.warn('GPS watchPosition error:', err);
-    },
-    { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
-  );
-  gpsWatchIdRef.current = watcher;
+  const onSuccess = (pos) => {
+    const lat = Number(pos.coords.latitude);
+const lon = Number(pos.coords.longitude);
+if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+  setGpsStatus('error');
+  setGpsError('Ubicación inválida.');
+  return;
 }
 
-// ✅ En web puede funcionar solo; en PWA a veces necesitás gesto.
-// Intentamos auto-activar, pero también damos botón manual (abajo).
+    setMe((prev) => ({ ...prev, lat, lon }));
+    setCenter([lat, lon]);
+
+    setTimeout(() => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize();
+        mapRef.current.flyTo([lat, lon], 13, { duration: 1.4 });
+      }
+    }, 400);
+
+    gpsCenteredRef.current = true;
+    setGpsStatus('granted');
+    toast.success('📍 GPS activado');
+
+    startWatchHighAccuracy();
+  };
+
+  const onFail = (err) => {
+    console.warn('GPS error:', err);
+
+    if (err.code === 1) {
+      setGpsStatus('denied');
+      setGpsError('Permiso denegado. Activá ubicación en Ajustes.');
+      toast.error('Activá permisos de ubicación.');
+      return;
+    }
+
+    setGpsStatus('error');
+    setGpsError('No se pudo obtener ubicación.');
+    toast.error('No se pudo obtener ubicación.');
+  };
+
+  navigator.geolocation.getCurrentPosition(onSuccess, onFail, {
+    enableHighAccuracy: true,
+    maximumAge: 10000,
+    timeout: timeoutValue,
+  });
+}
+// ✅ NO forzar GPS “agresivo” al montar.
+// Hacemos un intento suave, pero el botón "Activar GPS" es el intento fuerte.
 useEffect(() => {
-  requestGPS();
+  if (typeof window === 'undefined') return;
+
+  let cancelled = false;
+
+  async function initGPS() {
+    // intento suave: no spamear permisos ni toasts
+    try {
+      if (!navigator.geolocation) {
+        setGpsStatus('error');
+        setGpsError('Este dispositivo no soporta GPS.');
+        return;
+      }
+
+      // Si existe Permissions API, consultamos sin pedir popup
+      if (navigator.permissions?.query) {
+        const perm = await navigator.permissions.query({ name: 'geolocation' });
+
+        if (cancelled) return;
+
+        if (perm.state === 'granted') {
+          // ✅ Ya está permitido: centramos y activamos watch
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              if (cancelled) return;
+              const lat = Number(pos.coords.latitude);
+              const lon = Number(pos.coords.longitude);
+              if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+              setMe((prev) => ({ ...prev, lat, lon }));
+              setCenter([lat, lon]);
+              setGpsStatus('granted');
+
+              setTimeout(() => {
+                mapRef.current?.invalidateSize?.();
+                mapRef.current?.flyTo?.([lat, lon], 13, { duration: 1.2 });
+              }, 250);
+
+              gpsCenteredRef.current = true;
+              startWatchHighAccuracy();
+            },
+            () => {
+              // si falla igual, dejamos que el usuario toque "Activar GPS"
+              setGpsStatus('error');
+              setGpsError('No se pudo obtener ubicación.');
+            },
+            { enableHighAccuracy: true, maximumAge: 10000, timeout: 25000 }
+          );
+          return;
+        }
+
+        if (perm.state === 'denied') {
+          setGpsStatus('denied');
+          setGpsError('Permiso denegado. Activá ubicación en Ajustes.');
+          return;
+        }
+
+        // perm.state === 'prompt' → NO pedimos todavía (esperamos el botón)
+        setGpsStatus('init');
+        return;
+      }
+
+      // Si no hay permissions API, hacemos un intento suave SIN toast
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (cancelled) return;
+          const lat = Number(pos.coords.latitude);
+          const lon = Number(pos.coords.longitude);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+          setMe((prev) => ({ ...prev, lat, lon }));
+          setCenter([lat, lon]);
+          setGpsStatus('granted');
+
+          setTimeout(() => {
+            mapRef.current?.invalidateSize?.();
+            mapRef.current?.flyTo?.([lat, lon], 13, { duration: 1.2 });
+          }, 250);
+
+          gpsCenteredRef.current = true;
+          startWatchHighAccuracy();
+        },
+        () => {
+          // sin permissions API, no sabemos si negó o solo falló → dejamos banner
+          setGpsStatus('init');
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+      );
+    } catch {
+      setGpsStatus('init');
+    }
+  }
+
+  initGPS();
 
   return () => {
-    if (gpsWatchIdRef.current != null && navigator.geolocation) {
-      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-      gpsWatchIdRef.current = null;
-    }
+    cancelled = true;
+    stopGPSWatch();
   };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
 // ✅ Reintento de centrado: cuando el mapa ya existe y el GPS ya llegó
 useEffect(() => {
@@ -486,9 +604,10 @@ useEffect(() => {
   if (!hasMeCoords) return;
 
   gpsCenteredRef.current = true;
-  mapRef.current.flyTo([Number(me.lat), Number(me.lon)], 11, { duration: 1.2 });
+
+  mapRef.current.flyTo([meLatNum, meLonNum], 11, { duration: 1.2 });
   setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-}, [me?.lat, me?.lon, hasMeCoords]);
+}, [hasMeCoords, meLatNum, meLonNum]);
 
 const [rating, setRating] = useState(0);
 const [comment, setComment] = useState('') 
@@ -654,10 +773,12 @@ useEffect(() => {
 
     if (alive) setMe((prev) => ({ ...prev, id: uid }));
 
+    
+
     // 🔊 audios (una sola vez)
     if (typeof Audio !== 'undefined') {
       soundRef.current = new Audio('/notify.mp3');
-      sendSoundRef.current = new Audio('/send.mp3'); // si no existe, podés comentar esta línea
+      sendSoundRef.current = new Audio('/send.mp3');
     }
   })();
 
@@ -665,7 +786,6 @@ useEffect(() => {
     alive = false;
   };
 }, [router, supabase]);
-
 
 
 /* === Cargar trabajadores === */
@@ -1069,10 +1189,10 @@ setSelected(worker);
 setRoute(null);
 
 // ✨ Efecto visual al hacer clic en marcador
-const wLat = Number(worker?.lat);
-const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
+const wLat = toNumOrNull(worker?.lat);
+const wLng = toNumOrNull(worker?.lng ?? worker?.lon ?? worker?.long);
 
-if (mapRef.current && Number.isFinite(wLat) && Number.isFinite(wLng)) {
+if (mapRef.current && wLat !== null && wLng !== null) {
   mapRef.current.flyTo([wLat, wLng], 15, { duration: 1.2 });
 }
 
@@ -1158,10 +1278,10 @@ const { data: inserted, error: insertError } = await supabase
       status: 'open',
       client_id: user.id, // ← FK a profiles.user_id (asegurado arriba)
       worker_id: selected.user_id,
-      client_lat: me.lat,
-      client_lng: me.lon,
-      worker_lat: selLat,
-      worker_lng: selLng,
+    client_lat: meLatNum,
+client_lng: meLonNum,
+worker_lat: selLatNum,
+worker_lng: selLngNum,
       created_at: new Date().toISOString(),
 
       // 🧩 Nuevos campos agregados
@@ -1179,7 +1299,7 @@ if (insertError) throw insertError;
     setJobStatus(inserted.status);
     toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
 
-    setWorkers([selected]);
+   
 
 // ✅ ruta SIEMPRE usando selLat/selLng (que ya contempla lon/lng)
 setRoute([[meLatNum, meLonNum], [selLatNum, selLngNum]]);
@@ -1393,7 +1513,7 @@ function resetJobState() {
   setIsChatOpen(false);
   setMessages([]);
   localStorage.removeItem('activeJobChat');
-  fetchWorkers(selectedService || null);
+  fetchWorkers(null); // o el que quieras por defecto
 
   // 🗺️ Recentrar mapa al cliente con animación suave
   if (mapRef.current && me?.lat && me?.lon) {
@@ -1630,6 +1750,32 @@ useEffect(() => {
     touchAction: 'pan-x pan-y', // ✅ permite drag del mapa en móvil
   }}
 >
+  {/* 🎯 Botón flotante: Centrarme */}
+<div className="absolute right-4 bottom-24 z-[12000] pointer-events-auto">
+  <button
+    onClick={() => {
+      if (!hasMeCoords) {
+        toast.warning('Primero activá tu GPS');
+        return;
+      }
+
+      // 🔥 Centra el mapa en tu ubicación
+      mapRef.current?.invalidateSize?.();
+      mapRef.current?.flyTo([meLatNum, meLonNum], 15, { duration: 1.2 });
+    }}
+    className="
+      w-12 h-12 rounded-2xl
+      bg-white/90 backdrop-blur
+      border border-gray-200
+      shadow-[0_12px_30px_rgba(0,0,0,0.18)]
+      flex items-center justify-center
+      active:scale-95 transition
+    "
+    title="Centrarme"
+  >
+    🎯
+  </button>
+</div>
  <MapContainer
   key={hasMeCoords ? 'gps' : 'nogps'}
   center={center}
@@ -1666,17 +1812,17 @@ useEffect(() => {
     />
 
   {/* 🎯 Radio visible (MAX_RADIUS_KM) */}
-  {hasMeCoords && (
-    <Circle
-      center={[me.lat, me.lon]}
-      radius={MAX_RADIUS_M}
-      pathOptions={{
-        color: '#10b981',
-        weight: 2,
-        fillOpacity: 0.08,
-      }}
-    />
-  )}
+ {hasMeCoords && (
+  <Circle
+    center={[meLatNum, meLonNum]}
+    radius={MAX_RADIUS_M}
+    pathOptions={{
+      color: '#10b981',
+      weight: 2,
+      fillOpacity: 0.08,
+    }}
+  />
+)}
    {Array.isArray(route) &&
   route.length === 2 &&
   Array.isArray(route[0]) &&
@@ -2096,7 +2242,6 @@ setClusterOpen(true);
   <h2 className="text-center text-[17px] font-bold text-emerald-600 mb-2 tracking-tight">
     ManosYA
   </h2>
-
  {/* ===== Botones principales (PREMIUM) ===== */}
 <div className="px-3 mb-3">
   <div
@@ -2139,9 +2284,9 @@ setClusterOpen(true);
             const wLat = Number(w?.lat);
             const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
 
-            const dist = hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
-              ? haversineKm(Number(me.lat), Number(me.lon), wLat, wLng)
-              : null;
+           const dist = hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
+  ? haversineKm(meLatNum, meLonNum, wLat, wLng)
+  : null;
 
             return {
               ...w,
@@ -2514,9 +2659,9 @@ setClusterOpen(true);
             setJobStatus(null);
             setTimeout(() => {
               resetJobState();
-              if (mapRef.current && me?.lat && me?.lon) {
-                mapRef.current.flyTo([me.lat, me.lon], 13, { duration: 1.2 });
-              }
+              if (mapRef.current && hasMeCoords) {
+  mapRef.current.flyTo([meLatNum, meLonNum], 13, { duration: 1.2 });
+}
             }, 400);
           }}
           className="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition"
