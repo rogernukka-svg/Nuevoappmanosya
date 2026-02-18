@@ -282,21 +282,24 @@ export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
-// ✅ Refs GPS (evitan duplicar watch + centrar una sola vez)
-const gpsWatchIdRef = useRef(null);
-const gpsCenteredRef = useRef(false);
-useEffect(() => {
-  setMounted(true);
-}, []);
-// ✅ Refs para animación de marcadores y audios
-const markersRef = useRef({});
-const soundRef = useRef(null);
-const sendSoundRef = useRef(null);
 
-// ✅ Si usás "isTyping" en el chat, definilo (o si ya lo tenés en otra parte, dejalo)
-const [isTyping, setIsTyping] = useState(false);
   // 🔥 NECESARIO para createPortal (evita error SSR)
   const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // ✅ Refs GPS (evitan duplicar watch + centrar una sola vez)
+  const gpsWatchIdRef = useRef(null);
+  const gpsCenteredRef = useRef(false);
+
+  // ✅ Refs para animación de marcadores y audios
+  const markersRef = useRef({});
+  const soundRef = useRef(null);
+  const sendSoundRef = useRef(null);
+
+  // ✅ Si usás "isTyping" en el chat
+  const [isTyping, setIsTyping] = useState(false);
 
 useEffect(() => {
   let alive = true;
@@ -406,7 +409,8 @@ useEffect(() => {
 }, []);
 async function requestGPS() {
   if (typeof window === 'undefined') return;
-  if (!navigator.geolocation) {
+
+  if (!navigator?.geolocation) {
     setGpsStatus('error');
     setGpsError('Este dispositivo no soporta GPS (geolocation).');
     toast.error('Tu dispositivo no soporta GPS.');
@@ -415,79 +419,115 @@ async function requestGPS() {
 
   setGpsStatus('requesting');
   setGpsError(null);
-// ✅ Evitar duplicar watchers
-if (gpsWatchIdRef.current != null && navigator.geolocation) {
-  navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-  gpsWatchIdRef.current = null;
-}
-  // 1) Primero: pedir una posición inmediata (esto suele disparar el prompt bien en PWA)
+
+  // ✅ Evitar duplicar watchers
+  if (gpsWatchIdRef.current != null) {
+    try {
+      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+    } catch {}
+    gpsWatchIdRef.current = null;
+  }
+
+  const onSuccess = (pos) => {
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+
+    setMe((prev) => ({ ...prev, lat, lon }));
+    setCenter([lat, lon]);
+
+    // centrar el mapa una sola vez
+    if (!gpsCenteredRef.current && mapRef.current) {
+      gpsCenteredRef.current = true;
+      mapRef.current.flyTo([lat, lon], 13, { duration: 1.2 });
+      setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+    }
+
+    setGpsStatus('granted');
+    setGpsError(null);
+  };
+
+  const buildMsg = (err) => {
+    if (err?.code === 1)
+      return 'Permiso de ubicación denegado (activar en Permisos / Ubicación precisa).';
+    if (err?.code === 2)
+      return 'Ubicación no disponible (GPS apagado, sin señal o modo ahorro).';
+    return 'Timeout obteniendo ubicación (salí afuera y probá otra vez).';
+  };
+
+  // ✅ 1) Intento rápido (acepta ubicación reciente si existe)
+  const fastOptions = {
+    enableHighAccuracy: false,
+    maximumAge: 60000, // ✅ usa cache de hasta 60s (evita timeout en Android)
+    timeout: 20000,    // ✅ más realista
+  };
+
+  // ✅ 2) Intento preciso (si el rápido falla)
+  const preciseOptions = {
+    enableHighAccuracy: true,
+    maximumAge: 0,
+    timeout: 30000, // ✅ GPS real puede tardar más
+  };
+
+  const startWatcher = (high = false) => {
+    const watcher = navigator.geolocation.watchPosition(
+      (pos) => {
+        onSuccess(pos);
+        // ✅ solo el primer fix muestra toast
+        if (gpsStatus !== 'granted') toast.success('📍 GPS activado');
+      },
+      (err) => {
+        const msg = buildMsg(err);
+        setGpsStatus(err.code === 1 ? 'denied' : 'error');
+        setGpsError(msg);
+        console.warn('GPS watchPosition error:', err);
+      },
+      {
+        enableHighAccuracy: high,
+        maximumAge: high ? 0 : 10000,
+        timeout: 30000,
+      }
+    );
+
+    gpsWatchIdRef.current = watcher;
+  };
+
+  // ✅ Intento 1: rápido
   navigator.geolocation.getCurrentPosition(
     (pos) => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
-
-      setMe((prev) => ({ ...prev, lat, lon }));
-      setCenter([lat, lon]);
-
-      // centrar el mapa una sola vez
-      if (!gpsCenteredRef.current && mapRef.current) {
-        gpsCenteredRef.current = true;
-        mapRef.current.flyTo([lat, lon], 13, { duration: 1.2 });
-        setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-      }
-
-      setGpsStatus('granted');
+      onSuccess(pos);
       toast.success('📍 GPS activado');
+      // watcher suave para estabilidad
+      startWatcher(false);
     },
     (err) => {
-      // 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
-      const msg =
-        err.code === 1
-          ? 'Permiso de ubicación denegado (activar en Permisos de la app).'
-          : err.code === 2
-          ? 'Ubicación no disponible (GPS apagado o sin señal).'
-          : 'Timeout obteniendo ubicación (probá otra vez).';
-
-      setGpsStatus(err.code === 1 ? 'denied' : 'error');
-      setGpsError(msg);
-      console.warn('GPS getCurrentPosition error:', err);
-      toast.error(`📍 ${msg}`);
-    },
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
-  );
-
-  // 2) Segundo: iniciar watcher para mantener actualizado
-  const watcher = navigator.geolocation.watchPosition(
-    (pos) => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
-
-      setMe((prev) => ({ ...prev, lat, lon }));
-      setCenter([lat, lon]);
-
-      if (!gpsCenteredRef.current && mapRef.current) {
-        gpsCenteredRef.current = true;
-        mapRef.current.flyTo([lat, lon], 13, { duration: 1.2 });
-        setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+      // si es DENIED no insistimos
+      if (err?.code === 1) {
+        const msg = buildMsg(err);
+        setGpsStatus('denied');
+        setGpsError(msg);
+        toast.error(`📍 ${msg}`);
+        return;
       }
 
-      setGpsStatus('granted');
+      // ✅ Intento 2: preciso
+      navigator.geolocation.getCurrentPosition(
+        (pos2) => {
+          onSuccess(pos2);
+          toast.success('📍 GPS activado');
+          startWatcher(true);
+        },
+        (err2) => {
+          const msg = buildMsg(err2);
+          setGpsStatus(err2.code === 1 ? 'denied' : 'error');
+          setGpsError(msg);
+          console.warn('GPS precise getCurrentPosition error:', err2);
+          toast.error(`📍 ${msg}`);
+        },
+        preciseOptions
+      );
     },
-    (err) => {
-      const msg =
-        err.code === 1
-          ? 'Permiso de ubicación denegado.'
-          : err.code === 2
-          ? 'Ubicación no disponible.'
-          : 'Timeout GPS.';
-
-      setGpsStatus(err.code === 1 ? 'denied' : 'error');
-      setGpsError(msg);
-      console.warn('GPS watchPosition error:', err);
-    },
-    { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+    fastOptions
   );
-  gpsWatchIdRef.current = watcher;
 }
 
 
@@ -1794,17 +1834,23 @@ const raw = children
     const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
 
     return (
-     <Marker
+    <Marker
   key={`worker-${w.user_id}`}
   position={[wLat, wLng]}
   icon={avatarIcon(w.avatar_url, w) || undefined}
   eventHandlers={{ click: () => handleMarkerClick(w) }}
-  // ✅ garantizar que quede en marker.options.__worker
-  options={{ __worker: w, __worker_id: w.user_id }}
   ref={(m) => {
     if (!m) return;
-    const el = m.getElement?.() || m;
-    markersRef.current[w.user_id] = el;
+
+    // ✅ 1) Guardar el Leaflet marker real
+    const leafletMarker = m; // en react-leaflet, el ref suele ser el marker instance
+
+    // ✅ 2) Inyectar tus campos en options (para que el cluster los lea)
+    leafletMarker.options.__worker = w;
+    leafletMarker.options.__worker_id = w.user_id;
+
+    // ✅ 3) Guardar referencia para animación
+    markersRef.current[w.user_id] = leafletMarker;
   }}
 />
     );
