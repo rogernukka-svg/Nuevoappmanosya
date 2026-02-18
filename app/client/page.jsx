@@ -286,32 +286,78 @@ export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
+// ✅ Refs GPS (evitan duplicar watch + centrar una sola vez)
+const gpsWatchIdRef = useRef(null);
+const gpsCenteredRef = useRef(false);
+useEffect(() => {
+  setMounted(true);
+}, []);
+// ✅ Refs para animación de marcadores y audios
+const markersRef = useRef({});
+const soundRef = useRef(null);
+const sendSoundRef = useRef(null);
 
+// ✅ Si usás "isTyping" en el chat, definilo (o si ya lo tenés en otra parte, dejalo)
+const [isTyping, setIsTyping] = useState(false);
   // 🔥 NECESARIO para createPortal (evita error SSR)
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-  const soundRef = useRef(null);
-const sendSoundRef = useRef(null);
-const gpsWatchIdRef = useRef(null);
-  const markersRef = useRef({}); // guarda refs de marcadores por user_id
- /* === Fix altura real para móviles (Android/iPhone) === */
- const centeredOnceRef = useRef(false);
- const gpsCenteredRef = useRef(false);
- const [isTyping, setIsTyping] = useState(false);
+useEffect(() => {
+  let alive = true;
 
-  useEffect(() => {
-  if (typeof window === 'undefined') return;
+  async function bootGeo() {
+    if (typeof window === 'undefined') return;
+    if (!navigator?.geolocation) {
+      if (!alive) return;
+      setGpsStatus('error');
+      setGpsError('Este dispositivo no soporta GPS (geolocation).');
+      return;
+    }
 
-  const setVH = () => {
-    document.documentElement.style.setProperty('--real-vh', `${window.innerHeight}px`);
+    // ✅ En PWA/Android: no fuerces el prompt al montar.
+    //    Solo activá solo si ya está concedido.
+    try {
+      if (navigator.permissions?.query) {
+        const perm = await navigator.permissions.query({ name: 'geolocation' });
+        if (!alive) return;
+
+        if (perm.state === 'granted') {
+          requestGPS(); // ✅ OK: ya está permitido, entonces sí activamos
+        } else if (perm.state === 'denied') {
+          setGpsStatus('denied');
+          setGpsError('Permiso de ubicación denegado (activar en Permisos / Ubicación precisa).');
+        } else {
+          // 'prompt' → esperamos el botón (gesto del usuario)
+          setGpsStatus('init');
+          setGpsError(null);
+        }
+
+        perm.onchange = () => {
+          if (!alive) return;
+          if (perm.state === 'granted') requestGPS();
+          if (perm.state === 'denied') {
+            setGpsStatus('denied');
+            setGpsError('Permiso de ubicación denegado.');
+          }
+        };
+      } else {
+        // Si no hay Permissions API, igual NO forzar en mount.
+        setGpsStatus('init');
+      }
+    } catch {
+      setGpsStatus('init');
+    }
+  }
+
+  bootGeo();
+
+  return () => {
+    alive = false;
+    if (gpsWatchIdRef.current != null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+      gpsWatchIdRef.current = null;
+    }
   };
-
-  setVH();
-  window.addEventListener('resize', setVH);
-  return () => window.removeEventListener('resize', setVH);
 }, []);
 
   const DEFAULT_CENTER = [-23.4437, -58.4400]; // Centro real del país
@@ -373,7 +419,11 @@ async function requestGPS() {
 
   setGpsStatus('requesting');
   setGpsError(null);
-
+// ✅ Evitar duplicar watchers
+if (gpsWatchIdRef.current != null && navigator.geolocation) {
+  navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+  gpsWatchIdRef.current = null;
+}
   // 1) Primero: pedir una posición inmediata (esto suele disparar el prompt bien en PWA)
   navigator.geolocation.getCurrentPosition(
     (pos) => {
@@ -444,18 +494,7 @@ async function requestGPS() {
   gpsWatchIdRef.current = watcher;
 }
 
-// ✅ En web puede funcionar solo; en PWA a veces necesitás gesto.
-// Intentamos auto-activar, pero también damos botón manual (abajo).
-useEffect(() => {
-  requestGPS();
 
-  return () => {
-    if (gpsWatchIdRef.current != null && navigator.geolocation) {
-      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-      gpsWatchIdRef.current = null;
-    }
-  };
-}, []);
 // ✅ Reintento de centrado: cuando el mapa ya existe y el GPS ya llegó
 useEffect(() => {
   if (gpsCenteredRef.current) return;
