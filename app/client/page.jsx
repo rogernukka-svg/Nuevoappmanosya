@@ -278,6 +278,24 @@ function animateMarkerMove(markerRef, fromLat, fromLng, toLat, toLng, duration =
     console.warn('animateMarkerMove error:', e);
   }
 }
+const LAST_GPS_KEY = 'manosya_last_gps';
+
+function saveLastGps(lat, lon) {
+  try { localStorage.setItem(LAST_GPS_KEY, JSON.stringify({ lat, lon, t: Date.now() })); } catch {}
+}
+
+function loadLastGps(maxAgeMs = 1000 * 60 * 60 * 24) { // 24h
+  try {
+    const v = JSON.parse(localStorage.getItem(LAST_GPS_KEY) || 'null');
+    if (!v) return null;
+    if (Date.now() - v.t > maxAgeMs) return null;
+    if (!Number.isFinite(Number(v.lat)) || !Number.isFinite(Number(v.lon))) return null;
+    return { lat: Number(v.lat), lon: Number(v.lon) };
+  } catch { return null; }
+}
+
+
+
 export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
@@ -1839,19 +1857,9 @@ const raw = children
   position={[wLat, wLng]}
   icon={avatarIcon(w.avatar_url, w) || undefined}
   eventHandlers={{ click: () => handleMarkerClick(w) }}
-  ref={(m) => {
-    if (!m) return;
-
-    // ✅ 1) Guardar el Leaflet marker real
-    const leafletMarker = m; // en react-leaflet, el ref suele ser el marker instance
-
-    // ✅ 2) Inyectar tus campos en options (para que el cluster los lea)
-    leafletMarker.options.__worker = w;
-    leafletMarker.options.__worker_id = w.user_id;
-
-    // ✅ 3) Guardar referencia para animación
-    markersRef.current[w.user_id] = leafletMarker;
-  }}
+  // ✅ Esto lo lee el cluster SIEMPRE
+  __worker={w}
+  __worker_id={w.user_id}
 />
     );
   })}
