@@ -35,10 +35,8 @@ const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr:
 const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
 const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then(m => m.default), { ssr: false });
 // 📍 Radio máximo visible y de filtrado (coherente en TODO el archivo)
-const MAX_RADIUS_KM = 12;
+const MAX_RADIUS_KM = 999;
 const MAX_RADIUS_M = MAX_RADIUS_KM * 1000;
-
-
 function mapAccentColor(worker) {
   const diffMin = (Date.now() - new Date(worker?.updated_at || Date.now()).getTime()) / 60000;
   return diffMin <= 30 ? '#10b981' : '#9ca3af';
@@ -216,10 +214,14 @@ function minutesSince(dateString) {
 
 // ✅ ONLINE si se conectó / actualizó entre 1 y 30 minutos
 function isOnlineRecent(worker) {
-  const mins = minutesSince(worker?.updated_at);
-  if (mins == null) return false;
+  const stamp =
+    worker?.last_seen ||            // ✅ si lo guardás explícito
+    worker?.location_updated_at ||  // ✅ si tu view lo trae
+    worker?.loc_updated_at ||       // ✅ por si le pusiste otro nombre
+    worker?.updated_at;             // fallback
 
-  // ✅ ONLINE también si actualizó "hace 0 min"
+  const mins = minutesSince(stamp);
+  if (mins == null) return false;
   return mins >= 0 && mins <= 30;
 }
 
@@ -257,10 +259,8 @@ function formatKm(km) {
   if (km < 1) return `${Math.round(km * 1000)} m`;
   return `${km.toFixed(1)} km`;
 }
-function animateMarkerMove(markerRef, fromLat, fromLng, toLat, toLng, duration = 900) {
+function animateMarkerMove(marker, fromLat, fromLng, toLat, toLng, duration = 900) {
   try {
-    // ✅ soporta: Leaflet marker directo, o componente con getElement()
-    const marker = markerRef?.getElement?.() || markerRef?.leafletElement || markerRef;
     if (!marker || typeof marker.setLatLng !== 'function') return;
 
     const start = performance.now();
@@ -300,7 +300,7 @@ export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
-
+  const markerIdToUserIdRef = useRef(new Map());
   // 🔥 NECESARIO para createPortal (evita error SSR)
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -311,15 +311,70 @@ export default function MapPage() {
   const gpsWatchIdRef = useRef(null);
   const gpsCenteredRef = useRef(false);
 
-  // ✅ Refs para animación de marcadores y audios
+  // ✅ Refs para animación de marcadores
   const markersRef = useRef({});
-  const soundRef = useRef(null);
-  const sendSoundRef = useRef(null);
 
   // ✅ Si usás "isTyping" en el chat
   const [isTyping, setIsTyping] = useState(false);
 
 
+// ✅ Refs
+const markerMetaRef = useRef(new Map());
+const workersByIdRef = useRef(new Map());
+// ✅ Workers state (mover aquí arriba)
+const [workers, setWorkers] = useState([]);
+
+useEffect(() => {
+  workersByIdRef.current = new Map(
+    (workers || []).map(w => [String(w.user_id), w])
+  );
+}, [workers]);
+
+  const DEFAULT_CENTER = [-23.4437, -58.4400]; // Centro real del país
+  const [center, setCenter] = useState(DEFAULT_CENTER);
+  const [me, setMe] = useState({ id: null, lat: null, lon: null });
+  
+
+  const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [clusterOpen, setClusterOpen] = useState(false);
+  const [clusterList, setClusterList] = useState([]);
+ // ✅ Coordenadas seguras (selected puede traer lng o lon)
+const selLat = Number(selected?.lat);
+const selLng = Number(selected?.lng ?? selected?.lon ?? selected?.long);
+const hasSelCoords = Number.isFinite(selLat) && Number.isFinite(selLng);
+const hasMeCoords  = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
+  const [showPrice, setShowPrice] = useState(false);
+  const [route, setRoute] = useState(null);
+  const [selectedService, setSelectedService] = useState(null);
+const distanceToSelectedKm =
+  hasMeCoords && hasSelCoords
+    ? haversineKm(Number(me.lat), Number(me.lon), selLat, selLng)
+    : null;
+  // 🟢 Panel estilo Uber (3 niveles)
+const [panelLevel, setPanelLevel] = useState("hidden"); 
+// niveles: "mini" | "mid" | "full"
+const [servicesOpen, setServicesOpen] = useState(false);
+const togglePanel = (level) => {
+  setPanelLevel(level);
+};
+
+
+ // ✨ Nuevo: estado del job + chat
+const [jobId, setJobId] = useState(null);
+const [jobStatus, setJobStatus] = useState(null); // open | accepted | completed | cancelled | assigned ...
+const [isChatOpen, setIsChatOpen] = useState(false);
+const [chatId, setChatId] = useState(null);
+const [messages, setMessages] = useState([]);
+const [sending, setSending] = useState(false);
+const inputRef = useRef(null);
+const bottomRef = useRef(null);
+const chatChannelRef = useRef(null);
+const [gpsStatus, setGpsStatus] = useState('init'); // init | requesting | granted | denied | error
+const [gpsError, setGpsError] = useState(null);
+// ✅ Ref para evitar problemas de "estado viejo" dentro de callbacks
+const gpsStatusRef = useRef('init');
+useEffect(() => { gpsStatusRef.current = gpsStatus; }, [gpsStatus]);
 useEffect(() => {
   let alive = true;
 
@@ -381,51 +436,6 @@ useEffect(() => {
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
-
-  const DEFAULT_CENTER = [-23.4437, -58.4400]; // Centro real del país
-  const [center, setCenter] = useState(DEFAULT_CENTER);
-  const [me, setMe] = useState({ id: null, lat: null, lon: null });
-  const [workers, setWorkers] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [clusterOpen, setClusterOpen] = useState(false);
-  const [clusterList, setClusterList] = useState([]);
- // ✅ Coordenadas seguras (selected puede traer lng o lon)
-const selLat = Number(selected?.lat);
-const selLng = Number(selected?.lng ?? selected?.lon ?? selected?.long);
-const hasSelCoords = Number.isFinite(selLat) && Number.isFinite(selLng);
-const hasMeCoords  = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
-  const [showPrice, setShowPrice] = useState(false);
-  const [route, setRoute] = useState(null);
-  const [selectedService, setSelectedService] = useState(null);
-const distanceToSelectedKm =
-  hasMeCoords && hasSelCoords
-    ? haversineKm(Number(me.lat), Number(me.lon), selLat, selLng)
-    : null;
-  // 🟢 Panel estilo Uber (3 niveles)
-const [panelLevel, setPanelLevel] = useState("hidden"); 
-// niveles: "mini" | "mid" | "full"
-const [servicesOpen, setServicesOpen] = useState(false);
-const togglePanel = (level) => {
-  setPanelLevel(level);
-};
-
-
- // ✨ Nuevo: estado del job + chat
-const [jobId, setJobId] = useState(null);
-const [jobStatus, setJobStatus] = useState(null); // open | accepted | completed | cancelled | assigned ...
-const [isChatOpen, setIsChatOpen] = useState(false);
-const [chatId, setChatId] = useState(null);
-const [messages, setMessages] = useState([]);
-const [sending, setSending] = useState(false);
-const inputRef = useRef(null);
-const bottomRef = useRef(null);
-const chatChannelRef = useRef(null);
-const [gpsStatus, setGpsStatus] = useState('init'); // init | requesting | granted | denied | error
-const [gpsError, setGpsError] = useState(null);
-// ✅ Ref para evitar problemas de "estado viejo" dentro de callbacks
-const gpsStatusRef = useRef('init');
-useEffect(() => { gpsStatusRef.current = gpsStatus; }, [gpsStatus]);
 // eslint-disable-next-line no-unused-vars
 const [tick, setTick] = useState(0);
 
@@ -438,15 +448,16 @@ async function requestGPS() {
 
   if (!navigator?.geolocation) {
     setGpsStatus('error');
-    setGpsError('Este dispositivo no soporta GPS (geolocation).');
+    setGpsError('Este dispositivo no soporta ubicación (geolocation).');
     toast.error('Tu dispositivo no soporta GPS.');
     return;
   }
 
+  // ✅ Estado UX: buscando (no bloquea)
   setGpsStatus('requesting');
   setGpsError(null);
 
-  // ✅ limpiar watcher anterior
+  // ✅ No mates el watcher cada vez; solo si había uno previo real
   try {
     if (gpsWatchIdRef.current != null) {
       navigator.geolocation.clearWatch(gpsWatchIdRef.current);
@@ -454,104 +465,120 @@ async function requestGPS() {
     }
   } catch {}
 
-  const buildMsg = (err) => {
-    if (err?.code === 1) return 'Permiso denegado (activá Ubicación precisa).';
-    if (err?.code === 2) return 'Ubicación no disponible (GPS apagado / sin señal / ahorro).';
-    return 'Timeout obteniendo ubicación (salí afuera y probá de nuevo).';
-  };
-
   const onFix = (pos, playToast = false) => {
     const lat = Number(pos?.coords?.latitude);
     const lon = Number(pos?.coords?.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
-    saveLastGps(lat, lon); // ✅ guarda fallback
+    saveLastGps(lat, lon);
 
     setMe((prev) => ({ ...prev, lat, lon }));
     setCenter([lat, lon]);
 
-    // ✅ centrar 1 sola vez
+    // ✅ centrar solo 1 vez
     if (!gpsCenteredRef.current && mapRef.current) {
       gpsCenteredRef.current = true;
-      mapRef.current.flyTo([lat, lon], 13, { duration: 1.2 });
+      mapRef.current.flyTo([lat, lon], 13, { duration: 1.0 });
       setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
     }
 
     setGpsStatus('granted');
     setGpsError(null);
 
-    if (playToast) toast.success('📍 GPS activado');
+    if (playToast) toast.success('📍 Ubicación activada');
   };
 
-  // ✅ 0) si tengo último GPS guardado: uso para centrar rápido (sin depender del fix)
+  // ✅ 0) fallback instantáneo: último GPS guardado (no espera)
   const cached = loadLastGps();
   if (cached && !gpsCenteredRef.current && mapRef.current) {
     setMe((prev) => ({ ...prev, lat: cached.lat, lon: cached.lon }));
     setCenter([cached.lat, cached.lon]);
     gpsCenteredRef.current = true;
-    mapRef.current.flyTo([cached.lat, cached.lon], 12, { duration: 0.8 });
+    mapRef.current.flyTo([cached.lat, cached.lon], 12, { duration: 0.7 });
     setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
   }
 
-  // ✅ watcher (suave o preciso)
-  const startWatcher = (high = false) => {
+  // ✅ Mensajes UX correctos
+  const msgDenied =
+    'Permiso denegado. Activá Ubicación precisa para ver “Más cerca”.';
+  const msgUnavailable =
+    'Ubicación no disponible (GPS apagado / sin señal / ahorro de batería).';
+  const msgTimeoutSoft =
+    'Buscando ubicación… (podés usar la app igual).';
+
+  // ✅ 1) WATCH “RÁPIDO” (network) — es el que salva móvil indoor
+  const startFastWatch = () => {
     const id = navigator.geolocation.watchPosition(
-      (pos) => {
-        onFix(pos, gpsStatusRef.current !== 'granted');
-      },
+      (pos) => onFix(pos, gpsStatusRef.current !== 'granted'),
       (err) => {
-        const msg = buildMsg(err);
-        setGpsStatus(err?.code === 1 ? 'denied' : 'error');
-        setGpsError(msg);
-        console.warn('GPS watchPosition error:', err);
+        // 🚫 denegado = sí es fatal
+        if (err?.code === 1) {
+          setGpsStatus('denied');
+          setGpsError(msgDenied);
+          toast.error(`📍 ${msgDenied}`);
+          return;
+        }
+
+        // ⏳ timeout / unavailable = NO fatal (seguimos intentando)
+        if (err?.code === 3) {
+          setGpsStatus('requesting');
+          setGpsError(msgTimeoutSoft);
+          return;
+        }
+
+        setGpsStatus('requesting');
+        setGpsError(msgUnavailable);
       },
       {
-        enableHighAccuracy: high,
-        maximumAge: high ? 0 : 15000,
-        timeout: 30000,
+        enableHighAccuracy: false,
+        maximumAge: 120000, // 2 min de cache ayuda muchísimo
+        timeout: 15000,     // rápido
       }
     );
     gpsWatchIdRef.current = id;
   };
 
-  // ✅ 1) intento rápido (usa cache reciente)
-  const fastOptions = { enableHighAccuracy: false, maximumAge: 60000, timeout: 20000 };
-  // ✅ 2) intento preciso
-  const preciseOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };
+  // ✅ 2) WATCH “PRECISO” (GPS) — en paralelo, pero con timeout largo
+  const startPreciseWatch = () => {
+    navigator.geolocation.watchPosition(
+      (pos) => onFix(pos, gpsStatusRef.current !== 'granted'),
+      (err) => {
+        if (err?.code === 1) return; // denied ya manejado arriba
+        // timeout acá también NO fatal
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 90000, // 🔥 clave en Android (indoor tarda)
+      }
+    );
+  };
 
+  // ✅ 3) Intento rápido inmediato (una sola vez)
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       onFix(pos, true);
-      startWatcher(false); // watcher suave
+      startFastWatch();
+      startPreciseWatch();
     },
     (err) => {
       if (err?.code === 1) {
-        const msg = buildMsg(err);
         setGpsStatus('denied');
-        setGpsError(msg);
-        toast.error(`📍 ${msg}`);
+        setGpsError(msgDenied);
+        toast.error(`📍 ${msgDenied}`);
         return;
       }
 
-      navigator.geolocation.getCurrentPosition(
-        (pos2) => {
-          onFix(pos2, true);
-          startWatcher(true); // watcher preciso
-        },
-        (err2) => {
-          const msg = buildMsg(err2);
-          setGpsStatus(err2?.code === 1 ? 'denied' : 'error');
-          setGpsError(msg);
-          toast.error(`📍 ${msg}`);
-          console.warn('GPS precise getCurrentPosition error:', err2);
-        },
-        preciseOptions
-      );
+      // ⚠️ timeout/unavailable => NO “error”, dejamos buscando y arrancamos watch sí o sí
+      setGpsStatus('requesting');
+      setGpsError(err?.code === 3 ? msgTimeoutSoft : msgUnavailable);
+
+      startFastWatch();
+      startPreciseWatch();
     },
-    fastOptions
+    { enableHighAccuracy: false, maximumAge: 120000, timeout: 8000 }
   );
 }
-
 
 // ✅ Reintento de centrado: cuando el mapa ya existe y el GPS ya llegó
 useEffect(() => {
@@ -620,7 +647,7 @@ useEffect(() => {
   if (jobStatus === 'completed' || jobStatus === 'cancelled') return;
 
   if (!Number(me?.lat) || !Number(me?.lon)) return;
-  if (!selLat || !selLng) return;
+  if (!hasMeCoords || !hasSelCoords) return;
 
   setRoute([[me.lat, me.lon], [selLat, selLng]]);
 }, [jobId, jobStatus, me?.lat, me?.lon, selLat, selLng]);
@@ -728,11 +755,7 @@ useEffect(() => {
 
     if (alive) setMe((prev) => ({ ...prev, id: uid }));
 
-    // 🔊 audios (una sola vez)
-    if (typeof Audio !== 'undefined') {
-      soundRef.current = new Audio('/notify.mp3');
-      sendSoundRef.current = new Audio('/send.mp3'); // si no existe, podés comentar esta línea
-    }
+
   })();
 
   return () => {
@@ -747,21 +770,16 @@ async function fetchWorkers(serviceFilter = null) {
   setBusy(true);
   try {
     let query = supabase
-  .from('map_workers_view')
-  .select('*')
-  .not('lat', 'is', null)
-  // ✅ NO obligues lng acá (muchos vienen como lon)
-  .eq('is_active', true); // ✅ Solo muestra trabajadores activos
+      .from('map_workers_view')
+      .select('*')
+      .not('lat', 'is', null);
 
-    // ✅ Filtro seguro y compatible con REST
     if (serviceFilter) {
-      // Normaliza acentos (ej. "plomería" → "plomeria")
       const normalized = serviceFilter
         .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '') // elimina tildes
+        .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase();
 
-      // 💡 Reemplazamos .or(...) por ilike simple para evitar error 404
       query = query
         .not('skills', 'is', null)
         .ilike('skills', `%${normalized}%`);
@@ -770,21 +788,26 @@ async function fetchWorkers(serviceFilter = null) {
     const { data, error } = await query;
     if (error) throw error;
 
-    // 🧠 Log para verificar qué datos llegan (incluye rating y reviews)
-    console.log('🧠 Trabajadores desde Supabase:', data);
+    // ✅ NORMALIZAR: dejá lat/lng SIEMPRE numéricos y en la misma llave
+    const cleaned = (data || [])
+      .map((w) => {
+        const lat = Number(w?.lat);
+        const lng = Number(w?.lng ?? w?.lon ?? w?.long);
+        return { ...w, lat, lng };
+      })
+      .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng));
 
- // ✅ Mostrar TODOS sin filtrar por radio
-setWorkers(data || []);
+    console.log('🧠 Trabajadores total:', (data || []).length);
+    console.log('✅ Trabajadores coords válidas:', cleaned.length);
 
-    
+    setWorkers(cleaned);
   } catch (err) {
     console.error('Error cargando trabajadores:', err.message);
     toast.error('Error cargando trabajadores');
   } finally {
     setBusy(false);
   }
-} 
-
+}
 // ⚡ Cargar trabajadores DESPUÉS del mapa (mejora la velocidad)
 useEffect(() => {
   setTimeout(() => {
@@ -796,6 +819,7 @@ useEffect(() => {
 
 
 // 🛰️ Realtime instantáneo de cambios de estado (busy / available / paused)
+
 useEffect(() => {
   const channel = supabase
     .channel('worker-status-sync')
@@ -805,34 +829,27 @@ useEffect(() => {
       payload => {
         const updated = payload.new;
 
-const uLat = Number(updated?.lat);
-const uLng = Number(updated?.lng ?? updated?.lon ?? updated?.long);
-if (!Number.isFinite(uLat) || !Number.isFinite(uLng)) return;
-
         setWorkers(prev =>
-          prev.map(w =>
-            w.user_id === updated.user_id
-              ? { 
-                  ...w, 
-                  status: updated.status, 
-                  busy_until: updated.busy_until, 
-                  is_active: updated.is_active 
-                }
-              : w
-          )
-        );
+  prev.map(w =>
+    String(w.user_id) === String(updated.user_id)
+      ? {
+          ...w,
+          status: updated.status,
+          busy_until: updated.busy_until,
+          is_active: updated.is_active,
+          updated_at: updated.updated_at,
+        }
+      : w
+  )
+);
       }
     )
     .subscribe();
-
-  console.log('⚡ Canal realtime worker-status-sync activo');
 
   return () => {
     supabase.removeChannel(channel);
   };
 }, []);
-
-
   
 /* === 🛰️ Escuchar actualizaciones en tiempo real de los trabajadores (ubicación + datos generales) === */
 useEffect(() => {
@@ -864,30 +881,30 @@ useEffect(() => {
     animateMarkerMove(marker, pLat, pLng, uLat, uLng);
   }
 
-  return prev.map((w) =>
-    w.user_id === updated.user_id
-      ? {
-          ...w,
-          lat: uLat,
-          lng: uLng,
-          updated_at: updated.updated_at,
-          _justUpdated: true,
-        }
-      : w
-  );
+ return prev.map((w) =>
+  w.user_id === updated.user_id
+    ? {
+        ...w,
+        lat: uLat,
+        lng: uLng,
+        last_seen: updated.updated_at || new Date().toISOString(), // ✅
+        _justUpdated: true,
+      }
+    : w
+);
 }
-          return [
-            ...prev,
-            {
-              user_id: updated.user_id,
-              lat: uLat,
-              lng: uLng,
-              updated_at: updated.updated_at,
-              full_name: updated.full_name || 'Nuevo trabajador',
-              avatar_url: updated.avatar_url || '/avatar-fallback.png',
-              _justUpdated: true,
-            },
-          ];
+       return [
+  ...prev,
+  {
+    user_id: updated.user_id,
+    lat: uLat,
+    lng: uLng, // ✅ normalizado
+    last_seen: updated.updated_at || new Date().toISOString(),
+    full_name: updated.full_name || 'Nuevo trabajador',
+    avatar_url: updated.avatar_url || '/avatar-fallback.png',
+    _justUpdated: true,
+  },
+];
         });
 
         setTimeout(() => {
@@ -965,134 +982,80 @@ useEffect(() => {
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [jobId]);
-// 🌍 Sincronización global en vivo (workers, jobs, mensajes, perfiles)
+// 🌍 Sincronización global en vivo (workers, jobs, perfiles)
 useEffect(() => {
   const stop = startRealtimeCore((type, data) => {
     switch (type) {
       case 'worker': {
-        setWorkers((prev) => {
-          const exists = prev.some((w) => w.user_id === data.user_id);
+  setWorkers((prev) => {
+    const exists = prev.some((w) => String(w.user_id) === String(data.user_id));
 
-          // 🧹 Si el trabajador se pausó o está inactivo → quitarlo del mapa
-          if (
-            data.is_active === false ||
-            data.status === 'paused' ||
-            data.status === 'inactive'
-          ) {
-            return prev.filter((w) => w.user_id !== data.user_id);
+    // ✅ NO borrar por status
+    if (exists) {
+      return prev.map((w) =>
+        String(w.user_id) === String(data.user_id)
+          ? { ...w, ...data, _justUpdated: true }
+          : w
+      );
+    }
+
+    // ✅ si no existe, lo agregamos igual (si tiene coords, mejor)
+    return [...prev, { ...data, _justUpdated: true }];
+  });
+
+  setTimeout(() => {
+    setWorkers((prev) =>
+      prev.map((w) =>
+        String(w.user_id) === String(data.user_id)
+          ? { ...w, _justUpdated: false }
+          : w
+      )
+    );
+  }, 2000);
+
+  break;
+}
+
+      case 'job': {
+        if (data.client_id === me.id) {
+          setJobStatus(data.status);
+
+          if (data.status === 'completed' || data.status === 'worker_completed') {
+            toast.success('🎉 El trabajador finalizó el trabajo');
+            setJobStatus('worker_completed');
+          } else if (['cancelled', 'rejected', 'worker_rejected'].includes(data.status)) {
+            toast.error('🚫 El trabajador rechazó o canceló el pedido');
+            resetJobState();
+          } else if (data.status === 'accepted') {
+            toast.success('🟢 El trabajador aceptó tu pedido');
+          } else if (data.status === 'assigned') {
+            toast.info('📦 Pedido asignado correctamente');
           }
-
-          // 🟢 Si ya existe → actualizar sus datos (ubicación, estado, etc.)
-          if (exists) {
-            return prev.map((w) =>
-              w.user_id === data.user_id
-                ? { ...w, ...data, _justUpdated: true }
-                : w
-            );
-          }
-
-          // ➕ Si no existe pero está activo → agregarlo
-          if (data.is_active === true || data.status === 'available') {
-            return [...prev, { ...data, _justUpdated: true }];
-          }
-
-          return prev;
-        });
-
-        // ✨ Elimina la marca visual "_justUpdated" después de 2 s
-        setTimeout(() => {
-          setWorkers((prev) =>
-            prev.map((w) =>
-              w.user_id === data.user_id ? { ...w, _justUpdated: false } : w
-            )
-          );
-        }, 2000);
+        }
         break;
       }
 
-    case 'job': {
-  // 📦 Actualiza pedidos del cliente en tiempo real (con control de estados)
-  if (data.client_id === me.id) {
-    setJobStatus(data.status);
+      case 'profile': {
+        setWorkers((prev) =>
+          prev.map((w) => (w.user_id === data.id ? { ...w, ...data } : w))
+        );
+        break;
+      }
 
-    // 🟢 Si el trabajador FINALIZA el pedido correctamente
-    if (data.status === 'completed' || data.status === 'worker_completed') {
-      console.log('✅ El trabajador finalizó el pedido. Mostrando modal de reseña...');
-      toast.success('🎉 El trabajador finalizó el trabajo');
-      setJobStatus('worker_completed'); // fuerza abrir el modal de calificación
+      default:
+        console.log('Evento realtime desconocido:', type, data);
     }
+  });
 
-    // 🚫 Si el pedido fue cancelado o rechazado
-    else if (['cancelled', 'rejected', 'worker_rejected'].includes(data.status)) {
-      console.log(`🚫 Pedido cancelado (${data.status})`);
-      toast.error('🚫 El trabajador rechazó o canceló el pedido');
-      resetJobState();
-    }
-
-    // 🟢 Si el trabajador acepta el pedido
-    else if (data.status === 'accepted') {
-      toast.success('🟢 El trabajador aceptó tu pedido');
-    }
-
-    // 🔵 Si el pedido se asigna correctamente
-    else if (data.status === 'assigned') {
-      toast.info('📦 Pedido asignado correctamente');
-    }
-  }
-  break;
-}
-
-case 'message': {
-  // 💬 Mensajería instantánea (chat)
-  if (data.chat_id === chatId) {
-    setMessages((prev) => {
-      // ✅ Evita duplicar mensajes por ID
-      if (prev.some((m) => m.id === data.id)) return prev;
-      return [...prev, data];
-    });
-
-    // 🧠 Si llega un mensaje y el chat está cerrado
-    if (!isChatOpen && data.sender_id !== me.id) {
-      toast.info(`💬 ${selected?.full_name || 'El trabajador'} te envió un mensaje`, {
-        duration: 4000,
-      });
-      soundRef.current?.play?.(); // 🔔 notify.mp3
-      setHasUnread(true); // 🔴 activa el punto rojo
-    } 
-    // 🔊 Si el chat está abierto y el mensaje viene del otro
-    else if (isChatOpen && data.sender_id !== me.id) {
-      soundRef.current?.play?.(); // 🔔 notify.mp3
-    }
-    // 💬 Si el mensaje lo enviaste vos → sonido de envío
-    else if (data.sender_id === me.id) {
-      sendSoundRef.current?.play?.(); // 💬 send.mp3
-    }
-  }
-  break;
-}
-
-case 'profile': {
-  // 👤 Actualización de perfil o avatar
-  setWorkers((prev) =>
-    prev.map((w) =>
-      w.user_id === data.id ? { ...w, ...data } : w
-    )
-  );
-  break;
-}
-
-default:
-  console.log('Evento realtime desconocido:', type, data);
-}
-});
-
-// 🧹 Limpieza segura al desmontar
-return () => {
-  stopRealtimeCore();
-};
-}, [me.id, chatId]);
+  return () => {
+    try { stop?.(); } catch {}
+    stopRealtimeCore?.();
+  };
+}, [me.id]); // ✅ NO metas chatId acá si no lo usás dentro
 // 🛰️ ESCUCHAR MENSAJES NUEVOS GLOBALES (aunque el chat no esté abierto)
 useEffect(() => {
+  if (!me?.id) return;
+
   const channelGlobal = supabase
     .channel('global-messages')
     .on(
@@ -1100,14 +1063,27 @@ useEffect(() => {
       { event: 'INSERT', schema: 'public', table: 'messages' },
       (payload) => {
         const msg = payload.new;
-
-        // Si el mensaje pertenece a un chat del cliente
-        if (msg.sender_id !== me.id && msg.chat_id) {
-          // 💡 Si el chat NO está abierto
+if (
+  msg.sender_id !== me.id &&     // no es mi propio mensaje
+  msg.chat_id &&                 // pertenece a un chat
+  chatId &&                      // hay un chat activo
+  String(msg.chat_id) === String(chatId)  // es el chat actual
+) {
+  if (!isChatOpen) {
+    setHasUnread(true);
+    toast.info('💬 Nuevo mensaje de un profesional');
+  }
+}
+        // ✅ Solo avisar si: no es mío, pertenece al chat activo y el chat está cerrado
+        if (
+          msg.sender_id !== me.id &&
+          msg.chat_id &&
+          chatId &&
+          String(msg.chat_id) === String(chatId)
+        ) {
           if (!isChatOpen) {
             setHasUnread(true);
             toast.info('💬 Nuevo mensaje de un profesional');
-            soundRef.current?.play?.();
           }
         }
       }
@@ -1117,7 +1093,7 @@ useEffect(() => {
   return () => {
     supabase.removeChannel(channelGlobal);
   };
-}, [me.id, isChatOpen]);
+}, [me?.id, chatId, isChatOpen]);
 
 
 /* === Interacciones mejoradas === */
@@ -1252,8 +1228,13 @@ if (insertError) throw insertError;
     setJobId(inserted.id);
     setJobStatus(inserted.status);
     toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
-
-    setWorkers([selected]);
+// ✅ NO recortar la lista de workers, solo mantener selección visual
+setWorkers((prev) =>
+  (prev || []).map((w) => ({
+    ...w,
+    _selected: String(w.user_id) === String(selected.user_id),
+  }))
+);
 
 // ✅ ruta SIEMPRE usando selLat/selLng (que ya contempla lon/lng)
 setRoute([[me.lat, me.lon], [selLat, selLng]]);
@@ -1367,7 +1348,7 @@ async function openChat(forceChatId = null) {
             if (prev.some((m) => m.id === payload.new.id)) return prev;
             return [...prev, payload.new];
           });
-          if (payload.new.sender_id !== me.id) soundRef.current?.play?.();
+          if (payload.new.sender_id !== me.id)
           setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
         }
       )
@@ -1779,6 +1760,7 @@ useEffect(() => {
 
    {/* ✅ Bloque final actualizado — oculta 'paused' y muestra estados dinámicos */}
 {/* ✅ BLOQUE CLUSTER + FILTRO FINAL (reemplazar completo) */}
+{/* ✅ BLOQUE CLUSTER + FILTRO FINAL (REEMPLAZAR COMPLETO) */}
 <MarkerClusterGroup
   chunkedLoading
   maxClusterRadius={42}
@@ -1788,15 +1770,28 @@ useEffect(() => {
   showCoverageOnHover={false}
   spiderfyDistanceMultiplier={1.6}
   eventHandlers={{
-   clusterclick: (e) => {
+clusterclick: (e) => {
   e?.originalEvent?.preventDefault?.();
   e?.originalEvent?.stopPropagation?.();
 
   const cluster = e.layer;
- const children = cluster.getAllChildMarkers?.() || [];
-const raw = children
-  .map((m) => m?.options?.__worker)
+  const children = cluster?.getAllChildMarkers?.() || [];
+// ✅ 1) Sacar user_id desde el marker (options.__userId) o fallback (leaflet_id -> ref map)
+let ids = children
+  .map((m) => {
+    const fromOpt = m?.options?.__userId;
+    const fromRef = markerIdToUserIdRef.current.get(m?._leaflet_id);
+    return String(fromOpt ?? fromRef ?? '');
+  })
   .filter(Boolean);
+
+  // ✅ 2) Dedupe
+  ids = Array.from(new Set(ids));
+
+  // ✅ 3) Buscar el worker real desde el Map (fuente de verdad)
+  let raw = ids
+    .map((id) => workersByIdRef.current.get(String(id)))
+    .filter(Boolean);
 
   const meLat = Number(me?.lat);
   const meLng = Number(me?.lon);
@@ -1807,37 +1802,22 @@ const raw = children
       const wLat = Number(w?.lat);
       const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
       const wOk = Number.isFinite(wLat) && Number.isFinite(wLng);
-
       const distKm = meOk && wOk ? haversineKm(meLat, meLng, wLat, wLng) : null;
-
-      return {
-        ...w,
-        _distKm: Number.isFinite(distKm) ? distKm : null,
-      };
+      return { ...w, _distKm: distKm };
     })
-    // ✅ más cerca arriba (si no hay dist, va al final)
-    .sort((a, b) => {
-      const ad = a?._distKm;
-      const bd = b?._distKm;
-      if (ad == null && bd == null) return 0;
-      if (ad == null) return 1;
-      if (bd == null) return -1;
-      return ad - bd;
-    });
+    .sort((a, b) => (a._distKm ?? 999) - (b._distKm ?? 999));
 
   setClusterList(enriched);
   setClusterOpen(true);
 },
   }}
 >
- {workers
+{workers
   ?.filter((w) => {
     const wLat = Number(w?.lat);
-    const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-    if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
+    const wLng = Number(w?.lng); // ✅ ya viene normalizado
 
-    if (w?.status === 'paused' || w?.status === 'inactive') return false;
-    if (w?.is_active === false) return false;
+    if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
 
     const meLat = Number(me?.lat);
     const meLng = Number(me?.lon);
@@ -1845,26 +1825,40 @@ const raw = children
 
     if (meOk) {
       const km = haversineKm(meLat, meLng, wLat, wLng);
-      if (!Number.isFinite(km)) return false;
-      if (km > MAX_RADIUS_KM) return false;
+      if (Number.isFinite(km) && km > MAX_RADIUS_KM) return false;
     }
 
     return true;
   })
   .map((w) => {
     const wLat = Number(w?.lat);
-    const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+    const wLng = Number(w?.lng); // ✅ ya viene normalizado
 
     return (
-    <Marker
-  key={`worker-${w.user_id}`}
-  position={[wLat, wLng]}
-  icon={avatarIcon(w.avatar_url, w) || undefined}
-  eventHandlers={{ click: () => handleMarkerClick(w) }}
-  // ✅ Esto lo lee el cluster SIEMPRE
-  __worker={w}
-  __worker_id={w.user_id}
-/>
+      <Marker
+        key={`worker-${w.user_id}`}
+        position={[wLat, wLng]}
+        icon={avatarIcon(w.avatar_url, w) || undefined}
+        eventHandlers={{
+          add: (e) => {
+            const m = e?.target;
+            if (!m) return;
+            const uid = String(w.user_id);
+
+            markersRef.current[uid] = m;
+            m.options.__userId = uid;
+            markerIdToUserIdRef.current.set(m._leaflet_id, uid);
+          },
+          remove: (e) => {
+            const m = e?.target;
+            if (!m) return;
+            const uid = String(m.options.__userId ?? '');
+            markerIdToUserIdRef.current.delete(m._leaflet_id);
+            if (uid) delete markersRef.current[uid];
+          },
+          click: () => handleMarkerClick(w),
+        }}
+      />
     );
   })}
 </MarkerClusterGroup>
@@ -2645,10 +2639,8 @@ const raw = children
       onAnimationStart={() => {
         // 📱 Vibración leve al abrir
         if (navigator.vibrate) navigator.vibrate(30);
-        // 🔊 Sonido “pop” al aparecer
-        const audio = new Audio('/sounds/pop.mp3');
-        audio.volume = 0.3;
-        audio.play().catch(() => {});
+       
+      
       }}
     >
       <motion.div
@@ -2699,9 +2691,7 @@ const raw = children
                 setRating(n);
                 // 💫 Vibración mini + click sound
                 if (navigator.vibrate) navigator.vibrate(15);
-                const click = new Audio('/sounds/click.mp3');
-                click.volume = 0.2;
-                click.play().catch(() => {});
+              
               }}
               className={`cursor-pointer transition-transform ${
                 n <= rating
