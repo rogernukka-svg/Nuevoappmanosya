@@ -259,27 +259,23 @@ function formatKm(km) {
 }
 function animateMarkerMove(markerRef, fromLat, fromLng, toLat, toLng, duration = 900) {
   try {
-    const marker = markerRef?.leafletElement || markerRef;
-    if (!marker?.setLatLng) return;
+    // ✅ soporta: Leaflet marker directo, o componente con getElement()
+    const marker = markerRef?.getElement?.() || markerRef?.leafletElement || markerRef;
+    if (!marker || typeof marker.setLatLng !== 'function') return;
 
     const start = performance.now();
 
     const step = (now) => {
-      const progress = Math.min(1, (now - start) / duration);
-
-      const lat = fromLat + (toLat - fromLat) * progress;
-      const lng = fromLng + (toLng - fromLng) * progress;
-
+      const t = Math.min(1, (now - start) / duration);
+      const lat = fromLat + (toLat - fromLat) * t;
+      const lng = fromLng + (toLng - fromLng) * t;
       marker.setLatLng([lat, lng]);
-
-      if (progress < 1) {
-        requestAnimationFrame(step);
-      }
+      if (t < 1) requestAnimationFrame(step);
     };
 
     requestAnimationFrame(step);
   } catch (e) {
-    console.warn("animateMarkerMove error:", e);
+    console.warn('animateMarkerMove error:', e);
   }
 }
 export default function MapPage() {
@@ -1621,20 +1617,25 @@ useEffect(() => {
     {statusBanner.text}
   </div>
 )}
-{(gpsStatus === 'denied' || gpsStatus === 'error') && (
+{(gpsStatus === 'init' || gpsStatus === 'requesting' || gpsStatus === 'denied' || gpsStatus === 'error') && (
   <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[20000]">
     <div className="bg-white/95 border border-gray-200 shadow-lg rounded-2xl px-4 py-3 text-sm">
-      <div className="font-semibold text-gray-800">📍 No se pudo activar tu ubicación</div>
+      <div className="font-semibold text-gray-800">
+        📍 {gpsStatus === 'requesting' ? 'Buscando tu ubicación…' : 'Activá tu ubicación'}
+      </div>
+
       {gpsError && <div className="text-gray-500 mt-1">{gpsError}</div>}
+
       <div className="flex gap-2 mt-3">
         <button
-          onClick={requestGPS}
+          onClick={requestGPS}   // tu función actual
           className="px-3 py-2 rounded-xl bg-emerald-500 text-white font-semibold active:scale-95"
         >
           Activar GPS
         </button>
+
         <button
-          onClick={() => toast('Abrí: Ajustes > Apps > ManosYA > Permisos > Ubicación')}
+          onClick={() => toast('Abrí: Ajustes > Apps > ManosYA > Permisos > Ubicación (Precisa)')}
           className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 font-semibold active:scale-95"
         >
           Cómo habilitar
@@ -1725,17 +1726,46 @@ useEffect(() => {
   showCoverageOnHover={false}
   spiderfyDistanceMultiplier={1.6}
   eventHandlers={{
-    clusterclick: (e) => {
-      e?.originalEvent?.preventDefault?.();
-      e?.originalEvent?.stopPropagation?.();
+   clusterclick: (e) => {
+  e?.originalEvent?.preventDefault?.();
+  e?.originalEvent?.stopPropagation?.();
 
-      const cluster = e.layer;
-      const children = cluster.getAllChildMarkers?.() || [];
-      const list = children.map((m) => m?.options?.__worker).filter(Boolean);
+  const cluster = e.layer;
+ const children = cluster.getAllChildMarkers?.() || [];
+const raw = children
+  .map((m) => m?.options?.__worker)
+  .filter(Boolean);
 
-      setClusterList(list);
-      setClusterOpen(true);
-    },
+  const meLat = Number(me?.lat);
+  const meLng = Number(me?.lon);
+  const meOk = Number.isFinite(meLat) && Number.isFinite(meLng);
+
+  const enriched = raw
+    .map((w) => {
+      const wLat = Number(w?.lat);
+      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+      const wOk = Number.isFinite(wLat) && Number.isFinite(wLng);
+
+      const distKm = meOk && wOk ? haversineKm(meLat, meLng, wLat, wLng) : null;
+
+      return {
+        ...w,
+        _distKm: Number.isFinite(distKm) ? distKm : null,
+      };
+    })
+    // ✅ más cerca arriba (si no hay dist, va al final)
+    .sort((a, b) => {
+      const ad = a?._distKm;
+      const bd = b?._distKm;
+      if (ad == null && bd == null) return 0;
+      if (ad == null) return 1;
+      if (bd == null) return -1;
+      return ad - bd;
+    });
+
+  setClusterList(enriched);
+  setClusterOpen(true);
+},
   }}
 >
  {workers
@@ -1764,18 +1794,19 @@ useEffect(() => {
     const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
 
     return (
-      <Marker
-        key={`worker-${w.user_id}`}
-        position={[wLat, wLng]}
-        icon={avatarIcon(w.avatar_url, w) || undefined}
-        eventHandlers={{ click: () => handleMarkerClick(w) }}
-        __worker={w}              // 🔥 ahora queda disponible para cluster
-        __worker_id={w.user_id}   // útil para debug
-        ref={(m) => {
-          if (!m) return;
-          markersRef.current[w.user_id] = m; // solo animación
-        }}
-      />
+     <Marker
+  key={`worker-${w.user_id}`}
+  position={[wLat, wLng]}
+  icon={avatarIcon(w.avatar_url, w) || undefined}
+  eventHandlers={{ click: () => handleMarkerClick(w) }}
+  // ✅ garantizar que quede en marker.options.__worker
+  options={{ __worker: w, __worker_id: w.user_id }}
+  ref={(m) => {
+    if (!m) return;
+    const el = m.getElement?.() || m;
+    markersRef.current[w.user_id] = el;
+  }}
+/>
     );
   })}
 </MarkerClusterGroup>
@@ -1815,61 +1846,111 @@ useEffect(() => {
             </button>
           </div>
 
-          <div className="max-h-[55vh] overflow-y-auto space-y-2">
-            {clusterList.map((w) => {
-              const rating = Number(w?.avg_rating || 0);
-              const reviews = Number(w?.total_reviews || 0);
+         <div className="max-h-[55vh] overflow-y-auto space-y-2">
+  {clusterList.map((w) => {
+    const rating = Number(w?.avg_rating || 0);
+    const reviews = Number(w?.total_reviews || 0);
 
-              return (
-                <button
-                  key={w.user_id}
-                  onClick={() => {
-                    setClusterOpen(false);
-                    handleMarkerClick(w);
-                  }}
-                  className="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-emerald-50 active:scale-[0.99] transition"
-                >
-                  <img
-                    src={w.avatar_url || "/avatar-fallback.png"}
-                    onError={(e) => (e.currentTarget.src = "/avatar-fallback.png")}
-                    className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400"
-                    alt="avatar"
-                  />
+    const goProfile = () => {
+      setClusterOpen(false);
+      handleMarkerClick(w); // ✅ abre panel del profesional (selected)
+    };
 
-                  <div className="flex-1 text-left">
-                    <div className="font-bold text-gray-800 leading-5">
-                      {w.full_name || "Profesional"}
-                    </div>
+    return (
+      <div
+        key={w.user_id}
+        className="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-emerald-50 transition"
+      >
+        {/* ✅ Click en el cuerpo = seleccionar */}
+        <button
+          onClick={goProfile}
+          className="flex-1 flex items-center gap-3 text-left active:scale-[0.99] transition"
+        >
+          <img
+            src={w.avatar_url || "/avatar-fallback.png"}
+            onError={(e) => (e.currentTarget.src = "/avatar-fallback.png")}
+            className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400"
+            alt="avatar"
+          />
 
-                    {/* ✅ ESTADO */}
-                    <div className="text-xs text-gray-500">
-                      {isOnlineRecent(w) ? "🟢 EN LÍNEA" : "⚪ Inactivo"}
-                    </div>
+          <div className="flex-1">
+            <div className="font-bold text-gray-800 leading-5">
+              {w.full_name || "Profesional"}
+            </div>
 
-                    {/* ✅ ESTRELLAS + REVIEWS */}
-                    <div className="flex items-center gap-1 mt-1">
-                      {[0, 1, 2, 3, 4].map((i) => (
-                        <Star
-                          key={i}
-                          size={14}
-                          className={
-                            i < Math.round(rating)
-                              ? "text-yellow-400 fill-yellow-400"
-                              : "text-gray-300"
-                          }
-                        />
-                      ))}
-                      <span className="text-xs text-gray-500 ml-1">
-                        {rating ? rating.toFixed(1) : "0.0"} ({reviews})
-                      </span>
-                    </div>
-                  </div>
+            {/* ✅ ESTADO */}
+            <div className="text-xs text-gray-500">
+              {isOnlineRecent(w) ? "🟢 EN LÍNEA" : "⚪ Inactivo"}
+            </div>
 
-                  <div className="text-emerald-700 font-semibold text-sm">Ver</div>
-                </button>
-              );
-            })}
+          {/* 📍 DISTANCIA (KM) — fallback _distKm -> _dist */}
+<div className="mt-1">
+  {(() => {
+    const d =
+      Number.isFinite(Number(w?._distKm)) ? Number(w._distKm)
+      : Number.isFinite(Number(w?._dist)) ? Number(w._dist)
+      : null;
+
+    return d != null ? (
+      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200">
+        <span className="text-[12px] font-extrabold text-emerald-700">
+          📍 {formatKm(d)}
+        </span>
+        <span className="text-[11px] font-semibold text-gray-500">(más cerca)</span>
+      </div>
+    ) : (
+      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-50 border border-gray-200">
+        <span className="text-[12px] font-bold text-gray-500">📍 —</span>
+        <span className="text-[11px] font-semibold text-gray-400">
+          activá GPS para ver km
+        </span>
+      </div>
+    );
+  })()}
+</div>
+
+            {/* ✅ ESTRELLAS + REVIEWS */}
+            <div className="flex items-center gap-1 mt-1">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <Star
+                  key={i}
+                  size={14}
+                  className={
+                    i < Math.round(rating)
+                      ? "text-yellow-400 fill-yellow-400"
+                      : "text-gray-300"
+                  }
+                />
+              ))}
+              <span className="text-xs text-gray-500 ml-1">
+                {rating ? rating.toFixed(1) : "0.0"} ({reviews})
+              </span>
+            </div>
           </div>
+        </button>
+
+        {/* ✅ CTA: Ver más (botón real) */}
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation(); // ✅ evita doble click / bubbling
+            goProfile();
+          }}
+          className="
+            px-3 py-2 rounded-xl
+            bg-emerald-600 text-white
+            font-extrabold text-[12px]
+            shadow-[0_10px_22px_rgba(16,185,129,0.30)]
+            active:scale-[0.98] transition
+            whitespace-nowrap
+          "
+        >
+          Ver más
+        </button>
+      </div>
+    );
+  })}
+</div>
         </motion.div>
       </motion.div>
     )}
@@ -1948,15 +2029,16 @@ useEffect(() => {
               ? haversineKm(Number(me.lat), Number(me.lon), wLat, wLng)
               : null;
 
-            return {
-              ...w,
-              _dist: dist,
-              _online: isOnlineRecent(w),
-              _rating: Number(w?.avg_rating || 0),
-            };
+          return {
+  ...w,
+  _distKm: Number.isFinite(dist) ? dist : null, // ✅ el modal usa esto
+  _dist: Number.isFinite(dist) ? dist : null,   // (opcional) compat
+  _online: isOnlineRecent(w),
+  _rating: Number(w?.avg_rating || 0),
+};
           })
           .sort((a, b) => {
-            if (a._dist != null && b._dist != null) return a._dist - b._dist;
+           if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
             if (a._online !== b._online) return a._online ? -1 : 1;
             if (a._rating !== b._rating) return b._rating - a._rating;
             return 0;
@@ -2252,16 +2334,39 @@ useEffect(() => {
                   : 'Sin experiencia registrada'}
               </p>
 
-              {/* ⏰ Última actividad */}
-              <p className="text-xs text-gray-500 mt-1">
-                {(() => {
-                  const mins = minutesSince(selected?.updated_at);
-                  if (mins == null) return 'Sin actividad reciente';
-                  if (mins < 60) return `Activo hace ${mins} min`;
-                  if (mins < 1440) return `Activo hace ${Math.floor(mins / 60)} h`;
-                  return `Activo hace ${Math.floor(mins / 1440)} d`;
-                })()}
-              </p>
+           {/* ⏰ Última actividad */}
+<p className="text-xs text-gray-500 mt-1">
+  {(() => {
+    const mins = minutesSince(selected?.updated_at);
+    if (mins == null) return 'Sin actividad reciente';
+    if (mins < 60) return `Activo hace ${mins} min`;
+    if (mins < 1440) return `Activo hace ${Math.floor(mins / 60)} h`;
+    return `Activo hace ${Math.floor(mins / 1440)} d`;
+  })()}
+</p>
+
+
+
+{/* 📍 Distancia al profesional */}
+<div className="mt-2 flex justify-center">
+  {Number.isFinite(km) ? (
+    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200">
+      <span className="text-[12px] font-extrabold text-emerald-700">
+        📍 {formatKm(km)}
+      </span>
+      <span className="text-[11px] font-semibold text-gray-500">
+        desde tu ubicación
+      </span>
+    </div>
+  ) : (
+    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-50 border border-gray-200">
+      <span className="text-[12px] font-bold text-gray-500">📍 —</span>
+      <span className="text-[11px] font-semibold text-gray-400">
+        activá GPS para ver km
+      </span>
+    </div>
+  )}
+</div>
 
               {/* 🧰 Especialidades */}
               <div className="mt-4">
