@@ -27,7 +27,14 @@ import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
 
 
 import { toast } from 'sonner';
+// ✅ Cluster (react-leaflet-cluster)
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
+const MarkerClusterGroup = dynamic(
+  () => import('react-leaflet-cluster').then((m) => m.default),
+  { ssr: false }
+);
 const Circle = dynamic(() => import('react-leaflet').then(m => m.Circle), { ssr: false });
 const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
@@ -588,13 +595,8 @@ async function requestGPS() {
 
     setMe((prev) => ({ ...prev, lat, lon }));
     setCenter([lat, lon]);
-
-    // ✅ centrar solo 1 vez
-    if (!gpsCenteredRef.current && mapRef.current) {
-      gpsCenteredRef.current = true;
-      mapRef.current.flyTo([lat, lon], 13, { duration: 1.0 });
-      setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-    }
+// ✅ NO auto-zoom por GPS: solo guardamos coords del cliente
+// (el mapa se mantiene en Paraguay)
 
     setGpsStatus('granted');
     setGpsError(null);
@@ -930,7 +932,27 @@ useEffect(() => {
 }, []);
 
 
+// ✅ Vista inicial fija (NO mover por workers)
+const HOME_VIEW = {
+  center: [-25.55, -55.75], // Central + Alto Paraná entra bien
+  zoom: 7,
+};
 
+const didSetHomeViewRef = useRef(false);
+
+useEffect(() => {
+  if (!mapRef.current) return;
+  if (didSetHomeViewRef.current) return;
+
+  didSetHomeViewRef.current = true;
+
+  try {
+    mapRef.current.setView(HOME_VIEW.center, HOME_VIEW.zoom, { animate: false });
+    setTimeout(() => mapRef.current?.invalidateSize?.(), 200);
+  } catch (e) {
+    console.warn('set home view error:', e);
+  }
+}, []);
 
 // 🛰️ Realtime instantáneo de cambios de estado (busy / available / paused)
 
@@ -1810,32 +1832,37 @@ useEffect(() => {
     touchAction: 'pan-x pan-y', // ✅ permite drag del mapa en móvil
   }}
 >
-  <MapContainer
-  key={Number(me?.lat) && Number(me?.lon) ? 'gps' : 'nogps'}
-    center={center} // puede quedar así (pero ya no lo actualizamos por GPS)
-    zoom={Number(me?.lat) && Number(me?.lon) ? 11 : 7}
-    minZoom={5}
-    maxZoom={19}
-    zoomControl={false}
-    scrollWheelZoom={false}
-    style={{
-      height: '100%',
-      width: '100%',
-      touchAction: 'pan-x pan-y', // ✅
-      overscrollBehavior: 'none',
-      WebkitOverflowScrolling: 'auto',
-      paddingBottom: '160px',
-    }}
-    whenCreated={(map) => {
-      mapRef.current = map;
+<MapContainer
+  center={HOME_VIEW.center}
+  zoom={HOME_VIEW.zoom}
+  minZoom={5}
+  maxZoom={19}
+  zoomControl={false}
+  scrollWheelZoom={false}
+  style={{
+    height: '100%',
+    width: '100%',
+    touchAction: 'pan-x pan-y',
+    overscrollBehavior: 'none',
+    WebkitOverflowScrolling: 'auto',
+    paddingBottom: '160px',
+  }}
+  whenCreated={(map) => {
+    mapRef.current = map;
 
-      const el = map.getContainer();
-      el.style.touchAction = 'pan-x pan-y'; // ✅
-      el.style.overscrollBehavior = 'none';
-      setTimeout(() => map.invalidateSize(), 200); // ✅ ayuda iOS/Android
-    }}
-    
-  >
+    // ✅ track zoom para anti-overlap
+    setMapZoom(map.getZoom());
+    map.on('zoomend', () => setMapZoom(map.getZoom()));
+
+    // ✅ asegurar vista inicial fija (Paraguay)
+    map.setView(HOME_VIEW.center, HOME_VIEW.zoom, { animate: false });
+
+    const el = map.getContainer();
+    el.style.touchAction = 'pan-x pan-y';
+    el.style.overscrollBehavior = 'none';
+    setTimeout(() => map.invalidateSize(), 200);
+  }}
+>
     {/* 🗺️ CARTO Light (mapa blanco minimalista) */}
     <TileLayer
       url="https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
@@ -1845,95 +1872,89 @@ useEffect(() => {
       updateWhenZooming={false}
       keepBuffer={2}
     />
-whenCreated={(map) => {
-  mapRef.current = map;
-
-  // ✅ track zoom para anti-overlap
-  setMapZoom(map.getZoom());
-  map.on('zoomend', () => setMapZoom(map.getZoom()));
-
-  const el = map.getContainer();
-  el.style.touchAction = 'pan-x pan-y';
-  el.style.overscrollBehavior = 'none';
-  setTimeout(() => map.invalidateSize(), 200);
-}}
-  {/* 🎯 Radio visible (MAX_RADIUS_KM) */}
-  {Number(me?.lat) && Number(me?.lon) && (
-    <Circle
-      center={[me.lat, me.lon]}
-      radius={MAX_RADIUS_M}
-      pathOptions={{
-        color: '#10b981',
-        weight: 2,
-        fillOpacity: 0.08,
-      }}
-    />
-  )}
-   {Array.isArray(route) &&
-  route.length === 2 &&
-  Array.isArray(route[0]) &&
-  Array.isArray(route[1]) &&
-  route[0].length === 2 &&
-  route[1].length === 2 &&
-  Number.isFinite(Number(route[0][0])) &&
-  Number.isFinite(Number(route[0][1])) &&
-  Number.isFinite(Number(route[1][0])) &&
-  Number.isFinite(Number(route[1][1])) && (
-    <Polyline positions={route} color="#10b981" weight={5} />
-  )
-}
-
 
    {/* ✅ Bloque final actualizado — oculta 'paused' y muestra estados dinámicos */}
 {/* ✅ BLOQUE CLUSTER + FILTRO FINAL (reemplazar completo) */}
 {/* ✅ BLOQUE CLUSTER + FILTRO FINAL (REEMPLAZAR COMPLETO) */}
-{/* ✅ SIN CLUSTER: mostramos todos los markers + anti-overlap para que no se pisen */}
-{addAntiOverlapZoomAware(workers, mapZoom, 52, 28)
-  ?.filter((w) => {
-    const wLat = Number(w?._dlat ?? w?.lat);
-    const wLng = Number(w?._dlng ?? w?.lng);
-    if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
+{/* ✅ CLUSTER REAL: markers reales (sin anti-overlap) */}
+<MarkerClusterGroup
+  chunkedLoading
+  showCoverageOnHover={false}
+  maxClusterRadius={60}
+  iconCreateFunction={clusterIconCreateFunction}
+  // opcional: si NO querés zoom automático al tocar cluster
+  // zoomToBoundsOnClick={false}
+  eventHandlers={{
+    clusterclick: (e) => {
+      try {
+        const cluster = e.layer;
+        const childMarkers = cluster.getAllChildMarkers?.() || [];
+        const list = childMarkers
+          .map((m) => m?.options?.__worker)
+          .filter(Boolean);
 
-    const meLat = Number(me?.lat);
-    const meLng = Number(me?.lon);
-    const meOk = Number.isFinite(meLat) && Number.isFinite(meLng);
+        if (list.length) {
+          setClusterList(list);
+          setClusterOpen(true);
+        }
+      } catch (err) {
+        console.warn('cluster click error', err);
+      }
+    },
+  }}
+>
+  {(workers || [])
+    .filter((w) => {
+      const wLat = Number(w?.lat);
+      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+      if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
 
-    if (meOk) {
-      const km = haversineKm(meLat, meLng, wLat, wLng);
-      if (Number.isFinite(km) && km > MAX_RADIUS_KM) return false;
-    }
-    return true;
-  })
-  .map((w) => {
-    const wLat = Number(w?._dlat ?? w?.lat);
-    const wLng = Number(w?._dlng ?? w?.lng);
+      const meLat = Number(me?.lat);
+      const meLng = Number(me?.lon);
+      const meOk = Number.isFinite(meLat) && Number.isFinite(meLng);
 
-    return (
-      <Marker
-        key={`worker-${w.user_id}`}
-        position={[wLat, wLng]}
-        icon={avatarIcon(w.avatar_url, w) || undefined}
-        eventHandlers={{
-          add: (e) => {
-            const m = e?.target;
-            if (!m) return;
-            const uid = String(w.user_id);
-            markersRef.current[uid] = m;
-            m.options.__userId = uid;
-            markerIdToUserIdRef.current.set(m._leaflet_id, uid);
-          },
-          remove: (e) => {
-            const m = e?.target;
-            if (!m) return;
-            const uid = String(m.options.__userId ?? '');
-            markerIdToUserIdRef.current.delete(m._leaflet_id);
-            if (uid) delete markersRef.current[uid];
-          },
-          click: () => handleMarkerClick(w),
-        }}
-      />
-    );
-  })}
+      if (meOk) {
+        const km = haversineKm(meLat, meLng, wLat, wLng);
+        if (Number.isFinite(km) && km > MAX_RADIUS_KM) return false;
+      }
+      return true;
+    })
+    .map((w) => {
+      const wLat = Number(w?.lat);
+      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+
+      return (
+        <Marker
+          key={`worker-${w.user_id}`}
+          position={[wLat, wLng]}
+          icon={avatarIcon(w.avatar_url, w) || undefined}
+          eventHandlers={{
+            add: (e) => {
+              const m = e?.target;
+              if (!m) return;
+
+              const uid = String(w.user_id);
+              markersRef.current[uid] = m;
+              m.options.__userId = uid;
+
+              // ✅ CLAVE: el cluster necesita esto para armar la lista del modal
+              m.options.__worker = w;
+
+              markerIdToUserIdRef.current.set(m._leaflet_id, uid);
+            },
+            remove: (e) => {
+              const m = e?.target;
+              if (!m) return;
+              const uid = String(m.options.__userId ?? '');
+              markerIdToUserIdRef.current.delete(m._leaflet_id);
+              if (uid) delete markersRef.current[uid];
+            },
+            click: () => handleMarkerClick(w),
+          }}
+        />
+      );
+    })}
+</MarkerClusterGroup>
 
 </MapContainer>
 
