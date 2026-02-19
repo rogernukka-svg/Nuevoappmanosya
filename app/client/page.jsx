@@ -33,7 +33,6 @@ const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContai
 const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
 const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
 const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
-const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster').then(m => m.default), { ssr: false });
 // 📍 Radio máximo visible y de filtrado (coherente en TODO el archivo)
 const MAX_RADIUS_KM = 999;
 const MAX_RADIUS_M = MAX_RADIUS_KM * 1000;
@@ -68,36 +67,26 @@ function avatarIcon(url, worker) {
 
     const online = isOnlineRecent(worker);
 
-  const onlineBadge = online
-    ? `<div style="
-        position:absolute;
-        top:-12px;
-        left:50%;
-        transform:translateX(-50%);
-        background:linear-gradient(135deg,#10b981,#059669);
-        color:white;
-        font-weight:900;
-        font-size:10px;
-        padding:4px 10px;
+const onlineBadge = online
+  ? `<div style="
+      position:absolute;
+      right:-2px;
+      bottom:-2px;
+      width:14px;height:14px;
+      border-radius:999px;
+      background:#10b981;
+      border:2px solid rgba(255,255,255,.95);
+      box-shadow:0 6px 14px rgba(16,185,129,.35);
+      z-index:6;
+    ">
+      <div style="
+        position:absolute; inset:-6px;
         border-radius:999px;
-        border:2px solid rgba(255,255,255,.95);
-        box-shadow:0 10px 24px rgba(16,185,129,.35), 0 6px 14px rgba(0,0,0,.12);
-        letter-spacing:.5px;
-        text-transform:uppercase;
-        z-index:5;
-        white-space:nowrap;
-      ">
-        <span style="display:inline-flex;align-items:center;gap:6px;">
-          <span style="
-            width:8px;height:8px;border-radius:999px;
-            background:#34d399;
-            box-shadow:0 0 0 6px rgba(52,211,153,.18);
-            animation:onlineDot 1.2s ease-in-out infinite;
-          "></span>
-          EN LÍNEA
-        </span>
-      </div>`
-    : '';
+        background:rgba(16,185,129,.12);
+        animation:onlinePulse 1.4s ease-out infinite;
+      "></div>
+    </div>`
+  : '';
 
   const html = `
     <div style="width:${size}px;height:${size}px;border-radius:50%;
@@ -165,7 +154,35 @@ if (typeof window !== 'undefined') {
     document.head.appendChild(styleBounce);
   }
 }
-
+/* ✨ CTA Shine + Glow (Buscar Pros) */
+if (typeof window !== 'undefined') {
+  const styleCTA = document.createElement('style');
+  styleCTA.innerHTML = `
+    @keyframes ctaShine {
+      0%   { transform: translateX(-120%) rotate(12deg); opacity: 0; }
+      15%  { opacity: .65; }
+      60%  { opacity: .65; }
+      100% { transform: translateX(160%) rotate(12deg); opacity: 0; }
+    }
+    @keyframes ctaGlow {
+      0%,100% { filter: drop-shadow(0 10px 18px rgba(16,185,129,.30)); transform: translateY(0); }
+      50%     { filter: drop-shadow(0 18px 28px rgba(16,185,129,.55)); transform: translateY(-1px); }
+    }
+    .cta-glow { animation: ctaGlow 1.8s ease-in-out infinite; }
+    .cta-shine::after{
+      content:"";
+      position:absolute;
+      inset:-40%;
+      background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.55) 50%, transparent 65%);
+      animation: ctaShine 2.6s ease-in-out infinite;
+      pointer-events:none;
+    }
+  `;
+  if (!document.head.querySelector('style[data-manosya-cta]')) {
+    styleCTA.setAttribute('data-manosya-cta', '1');
+    document.head.appendChild(styleCTA);
+  }
+}
 /* CSS animación clúster */
 if (typeof window !== 'undefined') {
   const style = document.createElement('style');
@@ -184,21 +201,38 @@ if (typeof window !== 'undefined') {
 /* 💫 CSS global dinámico adicional para animaciones */
 if (typeof window !== 'undefined') {
   const style2 = document.createElement('style');
-    style2.innerHTML = `
-    /* 💚 animación para actualización (ping en marcadores) */
-    @keyframes pulseGreen {
-      0% { transform: scale(0.6); opacity: 0.7; }
-      50% { transform: scale(1.3); opacity: 0.3; }
-      100% { transform: scale(0.6); opacity: 0; }
-    }
+   style2.innerHTML = `
+  /* 💚 animación para actualización (ping en marcadores) */
+  @keyframes pulseGreen {
+    0% { transform: scale(0.6); opacity: 0.7; }
+    50% { transform: scale(1.3); opacity: 0.3; }
+    100% { transform: scale(0.6); opacity: 0; }
+  }
 
-    /* 🟢 punto online del badge */
-    @keyframes onlineDot {
-      0%   { transform: scale(1);   opacity: 1; }
-      50%  { transform: scale(1.25); opacity: .85; }
-      100% { transform: scale(1);   opacity: 1; }
-    }
-  `;
+  /* 🟢 punto online del badge */
+  @keyframes onlineDot {
+    0%   { transform: scale(1);   opacity: 1; }
+    50%  { transform: scale(1.25); opacity: .85; }
+    100% { transform: scale(1);   opacity: 1; }
+  }
+
+  /* ✅ NUEVA animación premium (ring) */
+  @keyframes onlinePulse {
+    0%   { transform: scale(0.6); opacity: .7; }
+    70%  { transform: scale(1.25); opacity: 0; }
+    100% { transform: scale(1.25); opacity: 0; }
+  }
+`;
+if (typeof window !== 'undefined') {
+  const style2 = document.createElement('style');
+
+  // 👇 pegás el style2.innerHTML reemplazado acá
+
+  if (!document.head.querySelector('style[data-manosya-pulse-green]')) {
+    style2.setAttribute('data-manosya-pulse-green', '1');
+    document.head.appendChild(style2);
+  }
+}
   if (!document.head.querySelector('style[data-manosya-pulse-green]')) {
     style2.setAttribute('data-manosya-pulse-green', '1');
     document.head.appendChild(style2);
@@ -294,13 +328,93 @@ function loadLastGps(maxAgeMs = 1000 * 60 * 60 * 24) { // 24h
   } catch { return null; }
 }
 
+function offsetLatLng(lat, lng, meters, angleRad) {
+  const dLat = (meters * Math.cos(angleRad)) / 111320;
+  const dLng =
+    (meters * Math.sin(angleRad)) /
+    (111320 * Math.cos((lat * Math.PI) / 180));
+  return [lat + dLat, lng + dLng];
+}
+function metersPerPixel(lat, zoom) {
+  // Leaflet / WebMercator aproximación estándar
+  return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoom);
+}
 
+// ✅ Anti-overlap “zoom-aware”: separa según tamaño del icono en píxeles
+function addAntiOverlapZoomAware(workers, zoom, iconPx = 52, padPx = 10) {
+  if (!workers?.length) return [];
+
+  // si no sabemos zoom, fallback a tu versión fija
+  if (!Number.isFinite(zoom)) return addAntiOverlap(workers, 120, 90);
+
+  // usamos lat promedio para m/px
+  const lat0 =
+    workers.reduce((acc, w) => acc + Number(w?.lat || 0), 0) / Math.max(1, workers.length);
+
+  const mpp = metersPerPixel(lat0 || 0, zoom);
+
+  // “cuánto hay que mover” para que 52px no se pise
+const gridMeters = Math.max(80, (iconPx + padPx) * mpp * 1.25);
+const stepMeters = Math.max(60, (iconPx + padPx) * mpp * 1.05);
+
+  return addAntiOverlap(workers, gridMeters, stepMeters);
+}
+// ✅ Anti-overlap por "grid" en metros (no por decimales)
+function addAntiOverlap(workers, gridMeters = 60, stepMeters = 40) {
+  if (!workers?.length) return [];
+
+  const toCell = (lat, lng) => {
+    const dLat = gridMeters / 111320;
+    const dLng = gridMeters / (111320 * Math.cos((lat * Math.PI) / 180));
+    const cy = Math.round(lat / dLat);
+    const cx = Math.round(lng / dLng);
+    return `${cy}|${cx}`;
+  };
+
+  const groups = new Map();
+  for (const w of workers) {
+    const lat = Number(w?.lat);
+    const lng = Number(w?.lng ?? w?.lon ?? w?.long);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+    const key = toCell(lat, lng);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(w);
+  }
+
+  const out = [];
+  for (const [, arr] of groups) {
+    arr.sort((a, b) => String(a.user_id).localeCompare(String(b.user_id)));
+    const n = arr.length;
+
+    for (let i = 0; i < n; i++) {
+      const w = arr[i];
+
+      if (n === 1) {
+        out.push({ ...w, _dlat: w.lat, _dlng: w.lng });
+        continue;
+      }
+
+      const perRing = 10;
+      const ring = Math.floor(i / perRing) + 1;
+      const pos = i % perRing;
+      const angle = (2 * Math.PI * pos) / perRing;
+      const meters = stepMeters * ring;
+
+      const [dlat, dlng] = offsetLatLng(Number(w.lat), Number(w.lng), meters, angle);
+      out.push({ ...w, _dlat: dlat, _dlng: dlng, _stack: n, _stackIndex: i });
+    }
+  }
+
+  return out;
+}
 
 export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
   const markerIdToUserIdRef = useRef(new Map());
+  const [mapZoom, setMapZoom] = useState(11);
   // 🔥 NECESARIO para createPortal (evita error SSR)
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -1720,6 +1834,7 @@ useEffect(() => {
       el.style.overscrollBehavior = 'none';
       setTimeout(() => map.invalidateSize(), 200); // ✅ ayuda iOS/Android
     }}
+    
   >
     {/* 🗺️ CARTO Light (mapa blanco minimalista) */}
     <TileLayer
@@ -1730,7 +1845,18 @@ useEffect(() => {
       updateWhenZooming={false}
       keepBuffer={2}
     />
+whenCreated={(map) => {
+  mapRef.current = map;
 
+  // ✅ track zoom para anti-overlap
+  setMapZoom(map.getZoom());
+  map.on('zoomend', () => setMapZoom(map.getZoom()));
+
+  const el = map.getContainer();
+  el.style.touchAction = 'pan-x pan-y';
+  el.style.overscrollBehavior = 'none';
+  setTimeout(() => map.invalidateSize(), 200);
+}}
   {/* 🎯 Radio visible (MAX_RADIUS_KM) */}
   {Number(me?.lat) && Number(me?.lon) && (
     <Circle
@@ -1761,62 +1887,11 @@ useEffect(() => {
    {/* ✅ Bloque final actualizado — oculta 'paused' y muestra estados dinámicos */}
 {/* ✅ BLOQUE CLUSTER + FILTRO FINAL (reemplazar completo) */}
 {/* ✅ BLOQUE CLUSTER + FILTRO FINAL (REEMPLAZAR COMPLETO) */}
-<MarkerClusterGroup
-  chunkedLoading
-  maxClusterRadius={42}
-  iconCreateFunction={clusterIconCreateFunction}
-  zoomToBoundsOnClick={false}
-  spiderfyOnMaxZoom={false}
-  showCoverageOnHover={false}
-  spiderfyDistanceMultiplier={1.6}
-  eventHandlers={{
-clusterclick: (e) => {
-  e?.originalEvent?.preventDefault?.();
-  e?.originalEvent?.stopPropagation?.();
-
-  const cluster = e.layer;
-  const children = cluster?.getAllChildMarkers?.() || [];
-// ✅ 1) Sacar user_id desde el marker (options.__userId) o fallback (leaflet_id -> ref map)
-let ids = children
-  .map((m) => {
-    const fromOpt = m?.options?.__userId;
-    const fromRef = markerIdToUserIdRef.current.get(m?._leaflet_id);
-    return String(fromOpt ?? fromRef ?? '');
-  })
-  .filter(Boolean);
-
-  // ✅ 2) Dedupe
-  ids = Array.from(new Set(ids));
-
-  // ✅ 3) Buscar el worker real desde el Map (fuente de verdad)
-  let raw = ids
-    .map((id) => workersByIdRef.current.get(String(id)))
-    .filter(Boolean);
-
-  const meLat = Number(me?.lat);
-  const meLng = Number(me?.lon);
-  const meOk = Number.isFinite(meLat) && Number.isFinite(meLng);
-
-  const enriched = raw
-    .map((w) => {
-      const wLat = Number(w?.lat);
-      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-      const wOk = Number.isFinite(wLat) && Number.isFinite(wLng);
-      const distKm = meOk && wOk ? haversineKm(meLat, meLng, wLat, wLng) : null;
-      return { ...w, _distKm: distKm };
-    })
-    .sort((a, b) => (a._distKm ?? 999) - (b._distKm ?? 999));
-
-  setClusterList(enriched);
-  setClusterOpen(true);
-},
-  }}
->
-{workers
+{/* ✅ SIN CLUSTER: mostramos todos los markers + anti-overlap para que no se pisen */}
+{addAntiOverlapZoomAware(workers, mapZoom, 52, 28)
   ?.filter((w) => {
-    const wLat = Number(w?.lat);
-    const wLng = Number(w?.lng); // ✅ ya viene normalizado
-
+    const wLat = Number(w?._dlat ?? w?.lat);
+    const wLng = Number(w?._dlng ?? w?.lng);
     if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
 
     const meLat = Number(me?.lat);
@@ -1827,12 +1902,11 @@ let ids = children
       const km = haversineKm(meLat, meLng, wLat, wLng);
       if (Number.isFinite(km) && km > MAX_RADIUS_KM) return false;
     }
-
     return true;
   })
   .map((w) => {
-    const wLat = Number(w?.lat);
-    const wLng = Number(w?.lng); // ✅ ya viene normalizado
+    const wLat = Number(w?._dlat ?? w?.lat);
+    const wLng = Number(w?._dlng ?? w?.lng);
 
     return (
       <Marker
@@ -1844,7 +1918,6 @@ let ids = children
             const m = e?.target;
             if (!m) return;
             const uid = String(w.user_id);
-
             markersRef.current[uid] = m;
             m.options.__userId = uid;
             markerIdToUserIdRef.current.set(m._leaflet_id, uid);
@@ -1861,7 +1934,6 @@ let ids = children
       />
     );
   })}
-</MarkerClusterGroup>
 
 </MapContainer>
 
@@ -2038,82 +2110,94 @@ let ids = children
  {/* ===== Botones principales (PREMIUM) ===== */}
 <div className="px-3 mb-3">
   <div
-    className="
-      grid grid-cols-4 gap-2
+  className="
+    grid grid-cols-3 gap-2
       rounded-2xl p-2
       bg-white/70 backdrop-blur-xl
       border border-gray-200/70
       shadow-[0_12px_40px_rgba(0,0,0,0.08)]
     "
   >
-    {/* Buscar Pros (CTA principal) */}
-    <button
-      onClick={() => fetchWorkers(selectedService)}
-      className="
-        col-span-1
-        rounded-2xl px-2 py-3
-        text-white font-extrabold text-[12px]
-        bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700
-        shadow-[0_10px_22px_rgba(16,185,129,0.35)]
-        active:scale-[0.98] transition
-        flex flex-col items-center justify-center gap-1
-      "
-    >
-      <span className="text-[18px] leading-none">🚀</span>
-      <span className="leading-none">Buscar</span>
-      <span className="text-[10px] font-semibold opacity-90 -mt-0.5">Pros</span>
-    </button>
 
-    {/* Más cerca */}
-    <button
-      onClick={() => {
-        if (!workers?.length) {
-          toast.warning('Primero cargá los trabajadores');
-          return;
-        }
+  {/* Más cerca (CTA principal cool) */}
+<motion.button
+  whileTap={{ scale: 0.96 }}
+  whileHover={{ scale: 1.02 }}
+  onClick={() => {
+    if (!workers?.length) {
+      toast.warning('Primero cargá los trabajadores');
+      return;
+    }
 
-        const ranked = [...workers]
-          .map(w => {
-            const wLat = Number(w?.lat);
-            const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+    const ranked = [...workers]
+      .map((w) => {
+        const wLat = Number(w?.lat);
+        const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
 
-            const dist = hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
-              ? haversineKm(Number(me.lat), Number(me.lon), wLat, wLng)
-              : null;
+        const dist =
+          hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
+            ? haversineKm(Number(me.lat), Number(me.lon), wLat, wLng)
+            : null;
 
-          return {
-  ...w,
-  _distKm: Number.isFinite(dist) ? dist : null, // ✅ el modal usa esto
-  _dist: Number.isFinite(dist) ? dist : null,   // (opcional) compat
-  _online: isOnlineRecent(w),
-  _rating: Number(w?.avg_rating || 0),
-};
-          })
-          .sort((a, b) => {
-           if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
-            if (a._online !== b._online) return a._online ? -1 : 1;
-            if (a._rating !== b._rating) return b._rating - a._rating;
-            return 0;
-          });
+        return {
+          ...w,
+          _distKm: Number.isFinite(dist) ? dist : null,
+          _dist: Number.isFinite(dist) ? dist : null,
+          _online: isOnlineRecent(w),
+          _rating: Number(w?.avg_rating || 0),
+        };
+      })
+      .sort((a, b) => {
+        if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
+        if (a._online !== b._online) return a._online ? -1 : 1;
+        if (a._rating !== b._rating) return b._rating - a._rating;
+        return 0;
+      });
 
-        setClusterList(ranked.slice(0, 30));
-        setClusterOpen(true);
-      }}
-      className="
-        col-span-1
-        rounded-2xl px-2 py-3
-        bg-white
-        border border-gray-200/80
-        shadow-[0_10px_26px_rgba(0,0,0,0.07)]
-        active:scale-[0.98] transition
-        flex flex-col items-center justify-center gap-1
-      "
-    >
-      <span className="text-[18px] leading-none">🏆</span>
-      <span className="text-[12px] font-extrabold text-gray-800 leading-none">Más</span>
-      <span className="text-[10px] font-semibold text-gray-500 -mt-0.5">cerca</span>
-    </button>
+    setClusterList(ranked.slice(0, 30));
+    setClusterOpen(true);
+  }}
+  className="
+    relative col-span-1 overflow-hidden
+    rounded-2xl px-2 py-3
+    text-white
+    border border-white/20
+    shadow-[0_18px_40px_rgba(16,185,129,0.35)]
+    active:scale-[0.98] transition
+    flex flex-col items-center justify-center gap-1
+  "
+  style={{
+    background:
+      "radial-gradient(120% 120% at 20% 10%, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 55%), linear-gradient(135deg, #10b981 0%, #059669 45%, #047857 100%)",
+  }}
+>
+  {/* Aurora blobs */}
+  <span className="absolute -top-6 -right-6 w-16 h-16 rounded-full bg-white/20 blur-xl" />
+  <span className="absolute -bottom-8 -left-8 w-20 h-20 rounded-full bg-cyan-300/20 blur-xl" />
 
+  {/* Shine */}
+  <span className="absolute inset-0 opacity-60">
+    <span className="absolute -left-10 top-0 h-full w-10 rotate-12 bg-white/25 blur-md animate-[ctaShine_2.6s_ease-in-out_infinite]" />
+  </span>
+
+  {/* Top dot */}
+  <span className="absolute left-2 top-2 w-2.5 h-2.5 rounded-full bg-white">
+    <span className="absolute inset-0 rounded-full bg-white animate-ping opacity-70" />
+  </span>
+
+  {/* Pin + badge */}
+  <div className="relative mt-0.5">
+    <span className="text-[20px] leading-none drop-shadow">📍</span>
+    <span className="absolute -right-2 -top-1 text-[10px] font-black bg-white/20 px-2 py-0.5 rounded-full border border-white/15">
+    </span>
+  </div>
+
+  <div className="leading-none text-center">
+    <div className="text-[12px] font-extrabold">Más</div>
+    <div className="text-[10px] font-semibold opacity-95 -mt-0.5">cerca</div>
+    <div className="text-[9px] font-bold opacity-90 mt-1">Encontrá ya</div>
+  </div>
+</motion.button>
     {/* Mis pedidos */}
     <button
       onClick={() => router.push('/client/jobs')}
