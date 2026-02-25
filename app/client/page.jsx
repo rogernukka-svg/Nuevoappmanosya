@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
@@ -47,6 +47,108 @@ function mapAccentColor(worker) {
   const diffMin = (Date.now() - new Date(worker?.updated_at || Date.now()).getTime()) / 60000;
   return diffMin <= 30 ? '#10b981' : '#9ca3af';
 }
+// 🎯 2 capas de cluster (evita 10 taps)
+const CLUSTER_STAGE_ZOOM = 11; // 1er salto (macro -> ciudad/barrio)
+const CLUSTER_LIST_ZOOM  = 13; // desde aquí, ya mostramos lista (barrio)
+// ✅ Icono del clúster (iconCreateFunction)
+function clusterIconCreateFunction(cluster) {
+  if (typeof window === 'undefined') return null;
+
+  const L = require('leaflet');
+  const count = cluster.getChildCount?.() ?? 0;
+
+  const size =
+    count < 10 ? 44 :
+    count < 50 ? 52 :
+    count < 100 ? 60 : 68;
+
+  const html = `
+    <div
+      class="cluster-pulse"
+      style="
+        width:${size}px;height:${size}px;
+        border-radius:999px;
+        display:flex;align-items:center;justify-content:center;
+        background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.45), rgba(16,185,129,.92) 60%, rgba(4,120,87,1) 100%);
+        border: 3px solid rgba(255,255,255,.92);
+        box-shadow: 0 18px 45px rgba(16,185,129,.35);
+        font-weight: 900;
+        color: #fff;
+        letter-spacing: -0.5px;
+      "
+    >
+      <span style="font-size:${Math.max(12, Math.floor(size / 3.2))}px;">
+        ${count}
+      </span>
+    </div>
+  `;
+
+  return L.divIcon({
+    html,
+    className: '',
+    iconSize: [size, size],
+  });
+}
+
+// ✅ CSS GLOBAL ROBUSTO (1 sola vez, 1 solo <style>, Fast Refresh safe)
+function ensureManosyaGlobalStyles() {
+  if (typeof window === 'undefined') return;
+
+  const ID = 'manosya-global-styles-v1';
+  if (document.getElementById(ID)) return;
+
+  const s = document.createElement('style');
+  s.id = ID;
+  s.innerHTML = `
+    @keyframes bounceMarker {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    @keyframes ctaShine {
+      0%   { transform: translateX(-120%) rotate(12deg); opacity: 0; }
+      15%  { opacity: .65; }
+      60%  { opacity: .65; }
+      100% { transform: translateX(160%) rotate(12deg); opacity: 0; }
+    }
+
+    @keyframes ctaGlow {
+      0%,100% { filter: drop-shadow(0 10px 18px rgba(16,185,129,.30)); transform: translateY(0); }
+      50%     { filter: drop-shadow(0 18px 28px rgba(16,185,129,.55)); transform: translateY(-1px); }
+    }
+
+    .cta-glow { animation: ctaGlow 1.8s ease-in-out infinite; }
+    .cta-shine::after{
+      content:"";
+      position:absolute;
+      inset:-40%;
+      background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.55) 50%, transparent 65%);
+      animation: ctaShine 2.6s ease-in-out infinite;
+      pointer-events:none;
+    }
+
+    .cluster-pulse { animation: pulse 2s infinite; }
+    @keyframes pulse {
+      0%   { transform: scale(1); box-shadow: 0 0 0 rgba(16,185,129,0.35); }
+      50%  { transform: scale(1.08); box-shadow: 0 0 25px rgba(16,185,129,0.55); }
+      100% { transform: scale(1); box-shadow: 0 0 0 rgba(16,185,129,0.35); }
+    }
+
+    @keyframes pulseGreen {
+      0%   { transform: scale(0.6); opacity: 0.7; }
+      50%  { transform: scale(1.3); opacity: 0.3; }
+      100% { transform: scale(0.6); opacity: 0; }
+    }
+
+    @keyframes onlinePulse {
+      0%   { transform: scale(0.6); opacity: .7; }
+      70%  { transform: scale(1.25); opacity: 0; }
+      100% { transform: scale(1.25); opacity: 0; }
+    }
+  `;
+  document.head.appendChild(s);
+}
+
 
 function avatarIcon(url, worker) {
   if (typeof window === 'undefined') return null;
@@ -131,120 +233,6 @@ const onlineBadge = online
   return L.divIcon({ html, iconSize: [size, size], className: '' });
 }
 
-/* === Icono de clúster === */
-function clusterIconCreateFunction(cluster) {
-  if (typeof window === 'undefined') return null;
-  const L = require('leaflet');
-  const count = cluster.getChildCount();
-  const html = `
-    <div class="cluster-pulse" style="
-      width:64px;height:64px;border-radius:50%;
-      background:#10b981;display:flex;align-items:center;justify-content:center;
-      box-shadow:0 0 12px rgba(16,185,129,0.6);
-      color:#fff;font-weight:700;font-size:14px;position:relative;">
-      <div style="position:absolute;inset:3px;border-radius:50%;background:#059669;z-index:1;"></div>
-      <span style="position:relative;z-index:2;">${count}</span>
-    </div>`;
-  return L.divIcon({ html, iconSize: [64, 64], className: 'cluster-animated' });
-}
-/* 🎯 Animación rebote marcador seleccionado */
-if (typeof window !== 'undefined') {
-  const styleBounce = document.createElement('style');
-  styleBounce.innerHTML = `
-    @keyframes bounceMarker {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-8px); }
-    }
-  `;
-  if (!document.head.querySelector('[data-bounce-marker]')) {
-    styleBounce.setAttribute('data-bounce-marker', '1');
-    document.head.appendChild(styleBounce);
-  }
-}
-/* ✨ CTA Shine + Glow (Buscar Pros) */
-if (typeof window !== 'undefined') {
-  const styleCTA = document.createElement('style');
-  styleCTA.innerHTML = `
-    @keyframes ctaShine {
-      0%   { transform: translateX(-120%) rotate(12deg); opacity: 0; }
-      15%  { opacity: .65; }
-      60%  { opacity: .65; }
-      100% { transform: translateX(160%) rotate(12deg); opacity: 0; }
-    }
-    @keyframes ctaGlow {
-      0%,100% { filter: drop-shadow(0 10px 18px rgba(16,185,129,.30)); transform: translateY(0); }
-      50%     { filter: drop-shadow(0 18px 28px rgba(16,185,129,.55)); transform: translateY(-1px); }
-    }
-    .cta-glow { animation: ctaGlow 1.8s ease-in-out infinite; }
-    .cta-shine::after{
-      content:"";
-      position:absolute;
-      inset:-40%;
-      background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.55) 50%, transparent 65%);
-      animation: ctaShine 2.6s ease-in-out infinite;
-      pointer-events:none;
-    }
-  `;
-  if (!document.head.querySelector('style[data-manosya-cta]')) {
-    styleCTA.setAttribute('data-manosya-cta', '1');
-    document.head.appendChild(styleCTA);
-  }
-}
-/* CSS animación clúster */
-if (typeof window !== 'undefined') {
-  const style = document.createElement('style');
-  style.innerHTML = `
-    .cluster-pulse { animation: pulse 2s infinite; }
-    @keyframes pulse {
-      0% { transform: scale(1); box-shadow: 0 0 0 rgba(16,185,129,0.35); }
-      50% { transform: scale(1.08); box-shadow: 0 0 25px rgba(16,185,129,0.55); }
-      100% { transform: scale(1); box-shadow: 0 0 0 rgba(16,185,129,0.35); }
-    }`;
-  if (!document.head.querySelector('style[data-manosya-pulse]')) {
-    style.setAttribute('data-manosya-pulse', '1');
-    document.head.appendChild(style);
-  }
-}
-/* 💫 CSS global dinámico adicional para animaciones */
-if (typeof window !== 'undefined') {
-  const style2 = document.createElement('style');
-   style2.innerHTML = `
-  /* 💚 animación para actualización (ping en marcadores) */
-  @keyframes pulseGreen {
-    0% { transform: scale(0.6); opacity: 0.7; }
-    50% { transform: scale(1.3); opacity: 0.3; }
-    100% { transform: scale(0.6); opacity: 0; }
-  }
-
-  /* 🟢 punto online del badge */
-  @keyframes onlineDot {
-    0%   { transform: scale(1);   opacity: 1; }
-    50%  { transform: scale(1.25); opacity: .85; }
-    100% { transform: scale(1);   opacity: 1; }
-  }
-
-  /* ✅ NUEVA animación premium (ring) */
-  @keyframes onlinePulse {
-    0%   { transform: scale(0.6); opacity: .7; }
-    70%  { transform: scale(1.25); opacity: 0; }
-    100% { transform: scale(1.25); opacity: 0; }
-  }
-`;
-if (typeof window !== 'undefined') {
-  const style2 = document.createElement('style');
-
-  // 👇 pegás el style2.innerHTML reemplazado acá
-
-  if (!document.head.querySelector('style[data-manosya-pulse-green]')) {
-    style2.setAttribute('data-manosya-pulse-green', '1');
-    document.head.appendChild(style2);
-  }
-}
-  if (!document.head.querySelector('style[data-manosya-pulse-green]')) {
-    style2.setAttribute('data-manosya-pulse-green', '1');
-    document.head.appendChild(style2);
-  }
-}
 
 
 function minutesSince(dateString) {
@@ -423,13 +411,34 @@ export default function MapPage() {
   const markerIdToUserIdRef = useRef(new Map());
   const [mapZoom, setMapZoom] = useState(11);
   // 🔥 NECESARIO para createPortal (evita error SSR)
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+ const [mounted, setMounted] = useState(false);
 
+useEffect(() => {
+  setMounted(true);
+
+  // ✅ FIX MOBILE HEIGHT REAL (Android / PWA / Chrome)
+  if (typeof window === 'undefined') return;
+
+  // ✅ INYECTAR CSS GLOBAL 1 sola vez (sin useEffect anidado)
+  ensureManosyaGlobalStyles();
+
+  const setRealVH = () => {
+    const realHeight = window.innerHeight;
+    document.documentElement.style.setProperty('--real-vh', `${realHeight}px`);
+  };
+
+  setRealVH();
+  window.addEventListener('resize', setRealVH);
+  window.addEventListener('orientationchange', setRealVH);
+
+  return () => {
+    window.removeEventListener('resize', setRealVH);
+    window.removeEventListener('orientationchange', setRealVH);
+  };
+}, []);
   // ✅ Refs GPS (evitan duplicar watch + centrar una sola vez)
-  const gpsWatchIdRef = useRef(null);
+  const gpsWatchFastRef = useRef(null);
+  const gpsWatchPreciseRef = useRef(null);
   const gpsCenteredRef = useRef(false);
 
   // ✅ Refs para animación de marcadores
@@ -460,6 +469,82 @@ useEffect(() => {
   const [selected, setSelected] = useState(null);
   const [clusterOpen, setClusterOpen] = useState(false);
   const [clusterList, setClusterList] = useState([]);
+  // ✅ Modo del modal de lista (para refrescar orden en vivo)
+const [clusterMode, setClusterMode] = useState(null); // 'nearest' | 'cluster'
+
+// ✅ Punto de referencia para “Más cerca” (GPS o centro del mapa)
+function getRefPoint() {
+  // 1) GPS real si existe
+  if (hasMeCoords) return { lat: Number(me.lat), lng: Number(me.lon), mode: 'gps' };
+
+  // 2) Centro actual del mapa si existe (sirve en móvil aunque GPS falle)
+  try {
+    const c = mapRef.current?.getCenter?.();
+    const lat = Number(c?.lat);
+    const lng = Number(c?.lng);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng, mode: 'map' };
+  } catch {}
+
+  // 3) Fallback: HOME_VIEW
+  return { lat: Number(HOME_VIEW.center[0]), lng: Number(HOME_VIEW.center[1]), mode: 'home' };
+}
+
+// ✅ Construye lista “más cerca” (con GPS o con centro del mapa)
+function buildNearestList(srcWorkers, limit = 30) {
+  const ref = getRefPoint();
+  const refOk = Number.isFinite(ref.lat) && Number.isFinite(ref.lng);
+
+  const list = (srcWorkers || [])
+    .map((w) => {
+      const wLat = Number(w?.lat);
+      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+      const dist =
+        refOk && Number.isFinite(wLat) && Number.isFinite(wLng)
+          ? haversineKm(ref.lat, ref.lng, wLat, wLng)
+          : null;
+
+      return {
+        ...w,
+        _distKm: Number.isFinite(dist) ? dist : null,
+        _dist: Number.isFinite(dist) ? dist : null,
+        _online: isOnlineRecent(w),
+        _rating: Number(w?.avg_rating || 0),
+      };
+    })
+    .filter((w) => Number.isFinite(Number(w?.lat)) && Number.isFinite(Number(w?.lng ?? w?.lon ?? w?.long)));
+
+  // ✅ Orden: primero por distancia (si existe), luego online, luego rating
+  list.sort((a, b) => {
+    if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
+    if (a._distKm != null) return -1;
+    if (b._distKm != null) return 1;
+
+    if (a._online !== b._online) return a._online ? -1 : 1;
+    if (a._rating !== b._rating) return b._rating - a._rating;
+    return String(a.user_id).localeCompare(String(b.user_id));
+  });
+
+  return list.slice(0, limit);
+}
+
+// ✅ Abrir modal “Más cerca”
+function openNearestModal() {
+  if (!workers?.length) {
+    toast.warning('Primero cargá los trabajadores');
+    return;
+  }
+
+  const ref = getRefPoint();
+  const ranked = buildNearestList(workers, 30);
+
+  setClusterMode('nearest');
+  setClusterList(ranked);
+  setClusterOpen(true);
+
+  // ✅ Mensaje claro según si hay GPS o no
+  if (ref.mode === 'gps') toast.success('📍 Ordenado por tu ubicación', { duration: 1200 });
+  else toast('📍 Sin GPS: ordenado por la zona del mapa', { duration: 1400 });
+}
  // ✅ Coordenadas seguras (selected puede traer lng o lon)
 const selLat = Number(selected?.lat);
 const selLng = Number(selected?.lng ?? selected?.lon ?? selected?.long);
@@ -545,15 +630,16 @@ useEffect(() => {
   }
 
   bootGeo();
-
   return () => {
     alive = false;
     try {
-      if (gpsWatchIdRef.current != null && navigator?.geolocation) {
-        navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+      if (navigator?.geolocation) {
+        if (gpsWatchFastRef.current != null) navigator.geolocation.clearWatch(gpsWatchFastRef.current);
+        if (gpsWatchPreciseRef.current != null) navigator.geolocation.clearWatch(gpsWatchPreciseRef.current);
       }
     } catch {}
-    gpsWatchIdRef.current = null;
+    gpsWatchFastRef.current = null;
+    gpsWatchPreciseRef.current = null;
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
@@ -574,17 +660,23 @@ async function requestGPS() {
     return;
   }
 
-  // ✅ Estado UX: buscando (no bloquea)
   setGpsStatus('requesting');
   setGpsError(null);
 
-  // ✅ No mates el watcher cada vez; solo si había uno previo real
+  // ✅ Limpia watchers previos (FAST + PRECISE)
   try {
-    if (gpsWatchIdRef.current != null) {
-      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-      gpsWatchIdRef.current = null;
-    }
+    if (gpsWatchFastRef.current != null) navigator.geolocation.clearWatch(gpsWatchFastRef.current);
+    if (gpsWatchPreciseRef.current != null) navigator.geolocation.clearWatch(gpsWatchPreciseRef.current);
   } catch {}
+  gpsWatchFastRef.current = null;
+  gpsWatchPreciseRef.current = null;
+
+  const msgDenied =
+    'Permiso denegado. Activá Ubicación precisa para ver “Más cerca”.';
+  const msgUnavailable =
+    'Ubicación no disponible (GPS apagado / sin señal / ahorro de batería).';
+  const msgTimeoutSoft =
+    'Buscando ubicación… (podés usar la app igual).';
 
   const onFix = (pos, playToast = false) => {
     const lat = Number(pos?.coords?.latitude);
@@ -595,9 +687,8 @@ async function requestGPS() {
 
     setMe((prev) => ({ ...prev, lat, lon }));
     setCenter([lat, lon]);
-// ✅ NO auto-zoom por GPS: solo guardamos coords del cliente
-// (el mapa se mantiene en Paraguay)
 
+    // ✅ NO auto-zoom por GPS (mantenés tu decisión)
     setGpsStatus('granted');
     setGpsError(null);
 
@@ -614,63 +705,50 @@ async function requestGPS() {
     setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
   }
 
-  // ✅ Mensajes UX correctos
-  const msgDenied =
-    'Permiso denegado. Activá Ubicación precisa para ver “Más cerca”.';
-  const msgUnavailable =
-    'Ubicación no disponible (GPS apagado / sin señal / ahorro de batería).';
-  const msgTimeoutSoft =
-    'Buscando ubicación… (podés usar la app igual).';
-
-  // ✅ 1) WATCH “RÁPIDO” (network) — es el que salva móvil indoor
   const startFastWatch = () => {
     const id = navigator.geolocation.watchPosition(
       (pos) => onFix(pos, gpsStatusRef.current !== 'granted'),
       (err) => {
-        // 🚫 denegado = sí es fatal
         if (err?.code === 1) {
           setGpsStatus('denied');
           setGpsError(msgDenied);
           toast.error(`📍 ${msgDenied}`);
           return;
         }
-
-        // ⏳ timeout / unavailable = NO fatal (seguimos intentando)
         if (err?.code === 3) {
           setGpsStatus('requesting');
           setGpsError(msgTimeoutSoft);
           return;
         }
-
         setGpsStatus('requesting');
         setGpsError(msgUnavailable);
       },
       {
         enableHighAccuracy: false,
-        maximumAge: 120000, // 2 min de cache ayuda muchísimo
-        timeout: 15000,     // rápido
+        maximumAge: 180000, // ✅ 3 min cache ayuda en Android
+        timeout: 20000,
       }
     );
-    gpsWatchIdRef.current = id;
+    gpsWatchFastRef.current = id;
   };
 
-  // ✅ 2) WATCH “PRECISO” (GPS) — en paralelo, pero con timeout largo
   const startPreciseWatch = () => {
-    navigator.geolocation.watchPosition(
+    const id = navigator.geolocation.watchPosition(
       (pos) => onFix(pos, gpsStatusRef.current !== 'granted'),
       (err) => {
-        if (err?.code === 1) return; // denied ya manejado arriba
-        // timeout acá también NO fatal
+        if (err?.code === 1) return; // denied ya manejado
+        // timeout/unavailable no fatal
       },
       {
         enableHighAccuracy: true,
         maximumAge: 0,
-        timeout: 90000, // 🔥 clave en Android (indoor tarda)
+        timeout: 120000, // ✅ Android indoor puede tardar mucho
       }
     );
+    gpsWatchPreciseRef.current = id;
   };
 
-  // ✅ 3) Intento rápido inmediato (una sola vez)
+  // ✅ 1) getCurrentPosition “fuerte” (una vez) para desbloquear GPS
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       onFix(pos, true);
@@ -685,14 +763,18 @@ async function requestGPS() {
         return;
       }
 
-      // ⚠️ timeout/unavailable => NO “error”, dejamos buscando y arrancamos watch sí o sí
       setGpsStatus('requesting');
       setGpsError(err?.code === 3 ? msgTimeoutSoft : msgUnavailable);
 
+      // ✅ igual arrancamos watchers
       startFastWatch();
       startPreciseWatch();
     },
-    { enableHighAccuracy: false, maximumAge: 120000, timeout: 8000 }
+    {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 45000,
+    }
   );
 }
 
@@ -1198,29 +1280,16 @@ useEffect(() => {
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages' },
       (payload) => {
-        const msg = payload.new;
-if (
-  msg.sender_id !== me.id &&     // no es mi propio mensaje
-  msg.chat_id &&                 // pertenece a un chat
-  chatId &&                      // hay un chat activo
-  String(msg.chat_id) === String(chatId)  // es el chat actual
-) {
-  if (!isChatOpen) {
-    setHasUnread(true);
-    toast.info('💬 Nuevo mensaje de un profesional');
-  }
-}
-        // ✅ Solo avisar si: no es mío, pertenece al chat activo y el chat está cerrado
-        if (
-          msg.sender_id !== me.id &&
-          msg.chat_id &&
-          chatId &&
-          String(msg.chat_id) === String(chatId)
-        ) {
-          if (!isChatOpen) {
-            setHasUnread(true);
-            toast.info('💬 Nuevo mensaje de un profesional');
-          }
+        const msg = payload?.new;
+        if (!msg) return;
+
+        const isMine = String(msg.sender_id) === String(me.id);
+        const isSameChat = msg.chat_id && chatId && String(msg.chat_id) === String(chatId);
+
+        // ✅ Solo avisar si: no es mío, es del chat activo, y el chat está cerrado
+        if (!isMine && isSameChat && !isChatOpen) {
+          setHasUnread(true);
+          toast.info('💬 Nuevo mensaje de un profesional');
         }
       }
     )
@@ -1229,8 +1298,7 @@ if (
   return () => {
     supabase.removeChannel(channelGlobal);
   };
-}, [me?.id, chatId, isChatOpen]);
-
+}, [me?.id, chatId, isChatOpen, supabase]);
 
 /* === Interacciones mejoradas === */
 function handleMarkerClick(worker) {
@@ -1475,19 +1543,25 @@ async function openChat(forceChatId = null) {
         },
       })
       .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${String(cid)}` },
-        (payload) => {
-          console.log('💬 Nuevo mensaje recibido:', payload.new);
-          setMessages((prev) => {
-            // ✅ Evita duplicar mensajes por ID
-            if (prev.some((m) => m.id === payload.new.id)) return prev;
-            return [...prev, payload.new];
-          });
-          if (payload.new.sender_id !== me.id)
-          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-        }
-      )
+  'postgres_changes',
+  { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${String(cid)}` },
+  (payload) => {
+    const newMsg = payload?.new;
+    if (!newMsg) return;
+
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === newMsg.id)) return prev;
+      return [...prev, newMsg];
+    });
+
+    // ✅ si el chat está abierto, ya no tiene sentido “unread”
+    setHasUnread(false);
+
+    if (String(newMsg.sender_id) !== String(me?.id)) {
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+    }
+  }
+)
       .subscribe((status) => console.log('📡 Canal de chat conectado:', status));
 
     chatChannelRef.current = channel;
@@ -1839,14 +1913,13 @@ useEffect(() => {
   maxZoom={19}
   zoomControl={false}
   scrollWheelZoom={false}
-  style={{
-    height: '100%',
-    width: '100%',
-    touchAction: 'pan-x pan-y',
-    overscrollBehavior: 'none',
-    WebkitOverflowScrolling: 'auto',
-    paddingBottom: '160px',
-  }}
+style={{
+  height: '100%',
+  width: '100%',
+  touchAction: 'pan-x pan-y',
+  overscrollBehavior: 'none',
+  WebkitOverflowScrolling: 'auto',
+}}
   whenCreated={(map) => {
     mapRef.current = map;
 
@@ -1877,31 +1950,142 @@ useEffect(() => {
 {/* ✅ BLOQUE CLUSTER + FILTRO FINAL (reemplazar completo) */}
 {/* ✅ BLOQUE CLUSTER + FILTRO FINAL (REEMPLAZAR COMPLETO) */}
 {/* ✅ CLUSTER REAL: markers reales (sin anti-overlap) */}
-<MarkerClusterGroup
+{/* ✅ CLUSTER REAL (ordenado + UX claro + modal por zona) */}
+ <MarkerClusterGroup
   chunkedLoading
   showCoverageOnHover={false}
-  maxClusterRadius={60}
-  iconCreateFunction={clusterIconCreateFunction}
-  // opcional: si NO querés zoom automático al tocar cluster
-  // zoomToBoundsOnClick={false}
-  eventHandlers={{
-    clusterclick: (e) => {
-      try {
-        const cluster = e.layer;
-        const childMarkers = cluster.getAllChildMarkers?.() || [];
-        const list = childMarkers
-          .map((m) => m?.options?.__worker)
-          .filter(Boolean);
 
-        if (list.length) {
-          setClusterList(list);
-          setClusterOpen(true);
-        }
-      } catch (err) {
-        console.warn('cluster click error', err);
-      }
-    },
+  // ✅ Radio dinámico (lejos agrupa más, cerca agrupa menos)
+  maxClusterRadius={(zoom) => {
+    if (zoom <= 7) return 120;
+    if (zoom <= 10) return 95;
+    if (zoom <= 12) return 70;
+    return 55;
   }}
+
+  removeOutsideVisibleBounds={true}
+
+  // ✅ Controlamos el click nosotros (2 capas)
+  zoomToBoundsOnClick={false}
+  spiderfyOnMaxZoom={false}
+  disableClusteringAtZoom={16}
+
+  iconCreateFunction={clusterIconCreateFunction}
+ eventHandlers={{
+  clusterclick: (e) => {
+    try {
+      const cluster = e.layer;
+      const map = mapRef.current;
+      if (!map || !cluster) return;
+
+      // ✅ 1 TAP = ABRIR LISTA SIEMPRE (sin doble tap)
+      const childMarkers = cluster.getAllChildMarkers?.() || [];
+
+      const ref = typeof getRefPoint === "function"
+        ? getRefPoint()
+        : {
+            lat: Number(me?.lat),
+            lng: Number(me?.lon),
+            mode:
+              Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon))
+                ? "gps"
+                : "home",
+          };
+
+      const refOk = Number.isFinite(Number(ref?.lat)) && Number.isFinite(Number(ref?.lng));
+      const refLat = Number(ref?.lat);
+      const refLng = Number(ref?.lng);
+
+      const uniq = new Map();
+
+      for (const m of childMarkers) {
+        const w0 = m?.options?.__worker;
+        const uid = String(w0?.user_id ?? m?.options?.__userId ?? "");
+        if (!uid) continue;
+
+        const fresh = workersByIdRef.current?.get(uid);
+        const w = fresh || w0;
+        if (!w) continue;
+
+        const wLat = Number(w?.lat);
+        const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+        if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) continue;
+
+        if (String(w?.status || "").toLowerCase() === "paused") continue;
+        if (w?.is_active === false) continue;
+
+        if (refOk) {
+          const km = haversineKm(refLat, refLng, wLat, wLng);
+          if (Number.isFinite(km) && km > MAX_RADIUS_KM) continue;
+        }
+
+        uniq.set(uid, w);
+      }
+
+      let list = Array.from(uniq.values());
+      if (!list.length) {
+        toast("No hay profesionales disponibles en esta zona", { duration: 1200 });
+        return;
+      }
+
+      list = list
+        .map((w) => {
+          const wLat = Number(w?.lat);
+          const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+
+          const dist =
+            refOk && Number.isFinite(wLat) && Number.isFinite(wLng)
+              ? haversineKm(refLat, refLng, wLat, wLng)
+              : null;
+
+          return {
+            ...w,
+            _distKm: Number.isFinite(dist) ? dist : null,
+            _online: isOnlineRecent(w),
+            _rating: Number(w?.avg_rating || 0),
+            _reviews: Number(w?.total_reviews || 0),
+          };
+        })
+        .sort((a, b) => {
+          if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
+          if (a._distKm != null) return -1;
+          if (b._distKm != null) return 1;
+
+          if (a._online !== b._online) return a._online ? -1 : 1;
+          if (a._rating !== b._rating) return b._rating - a._rating;
+          if (a._reviews !== b._reviews) return b._reviews - a._reviews;
+
+          return String(a.user_id).localeCompare(String(b.user_id));
+        });
+
+      setClusterMode("cluster");
+      setClusterList(list.slice(0, 40));
+      setClusterOpen(true);
+
+      toast.success(`👥 ${Math.min(40, list.length)} profesionales en esta zona`, {
+        duration: 1100,
+      });
+
+      // ✅ Zoom “de regalo” (no exige segundo tap)
+      const z = map.getZoom?.() ?? 0;
+      if (z < CLUSTER_LIST_ZOOM) {
+        const bounds = cluster.getBounds?.();
+        if (bounds) {
+          map.fitBounds(bounds, {
+            padding: [70, 70],
+            maxZoom: CLUSTER_LIST_ZOOM,
+            animate: true,
+            duration: 0.7,
+          });
+        } else {
+          map.setZoom(CLUSTER_LIST_ZOOM);
+        }
+      }
+    } catch (err) {
+      console.warn("cluster click error", err);
+    }
+  },
+}}
 >
   {(workers || [])
     .filter((w) => {
@@ -1909,14 +2093,26 @@ useEffect(() => {
       const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
       if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
 
-      const meLat = Number(me?.lat);
-      const meLng = Number(me?.lon);
-      const meOk = Number.isFinite(meLat) && Number.isFinite(meLng);
+      if (String(w?.status || "").toLowerCase() === "paused") return false;
+      if (w?.is_active === false) return false;
 
-      if (meOk) {
-        const km = haversineKm(meLat, meLng, wLat, wLng);
+      const ref = typeof getRefPoint === "function"
+        ? getRefPoint()
+        : {
+            lat: Number(me?.lat),
+            lng: Number(me?.lon),
+            mode:
+              Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon))
+                ? "gps"
+                : "home",
+          };
+
+      const refOk = Number.isFinite(Number(ref?.lat)) && Number.isFinite(Number(ref?.lng));
+      if (refOk) {
+        const km = haversineKm(Number(ref.lat), Number(ref.lng), wLat, wLng);
         if (Number.isFinite(km) && km > MAX_RADIUS_KM) return false;
       }
+
       return true;
     })
     .map((w) => {
@@ -1925,31 +2121,25 @@ useEffect(() => {
 
       return (
         <Marker
-          key={`worker-${w.user_id}`}
+          key={String(w.user_id)}
           position={[wLat, wLng]}
           icon={avatarIcon(w.avatar_url, w) || undefined}
+          ref={(markerInstance) => {
+            if (!markerInstance) return;
+
+            const leafletMarker = markerInstance.leafletElement || markerInstance;
+            const uid = String(w.user_id);
+
+            markersRef.current[uid] = leafletMarker;
+            leafletMarker.options.__userId = uid;
+            leafletMarker.options.__worker = workersByIdRef.current?.get(uid) || w;
+          }}
           eventHandlers={{
-            add: (e) => {
-              const m = e?.target;
-              if (!m) return;
-
+            click: () => {
               const uid = String(w.user_id);
-              markersRef.current[uid] = m;
-              m.options.__userId = uid;
-
-              // ✅ CLAVE: el cluster necesita esto para armar la lista del modal
-              m.options.__worker = w;
-
-              markerIdToUserIdRef.current.set(m._leaflet_id, uid);
+              const fresh = workersByIdRef.current?.get(uid);
+              handleMarkerClick(fresh || w);
             },
-            remove: (e) => {
-              const m = e?.target;
-              if (!m) return;
-              const uid = String(m.options.__userId ?? '');
-              markerIdToUserIdRef.current.delete(m._leaflet_id);
-              if (uid) delete markersRef.current[uid];
-            },
-            click: () => handleMarkerClick(w),
           }}
         />
       );
@@ -1980,9 +2170,12 @@ useEffect(() => {
           style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}
         >
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-extrabold text-gray-800">
-              Profesionales en esta zona ({clusterList.length})
-            </h3>
+          <h3 className="text-lg font-extrabold text-gray-800">
+  Profesionales cerca tuyo ({clusterList.length})
+</h3>
+<p className="text-xs text-gray-500 -mt-1">
+  Tocá “Ver perfil” para elegir rápido. Si activás GPS, te mostramos quién está más cerca.
+</p>
             <button
               onClick={() => setClusterOpen(false)}
               className="text-gray-500 hover:text-red-500"
@@ -2140,43 +2333,13 @@ useEffect(() => {
     "
   >
 
-  {/* Más cerca (CTA principal cool) */}
+{/* Más cerca (CTA principal cool) */}
 <motion.button
   whileTap={{ scale: 0.96 }}
   whileHover={{ scale: 1.02 }}
   onClick={() => {
-    if (!workers?.length) {
-      toast.warning('Primero cargá los trabajadores');
-      return;
-    }
-
-    const ranked = [...workers]
-      .map((w) => {
-        const wLat = Number(w?.lat);
-        const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-
-        const dist =
-          hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
-            ? haversineKm(Number(me.lat), Number(me.lon), wLat, wLng)
-            : null;
-
-        return {
-          ...w,
-          _distKm: Number.isFinite(dist) ? dist : null,
-          _dist: Number.isFinite(dist) ? dist : null,
-          _online: isOnlineRecent(w),
-          _rating: Number(w?.avg_rating || 0),
-        };
-      })
-      .sort((a, b) => {
-        if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
-        if (a._online !== b._online) return a._online ? -1 : 1;
-        if (a._rating !== b._rating) return b._rating - a._rating;
-        return 0;
-      });
-
-    setClusterList(ranked.slice(0, 30));
-    setClusterOpen(true);
+    // ✅ usa la función ya creada: GPS -> orden por GPS / sin GPS -> orden por centro del mapa
+    openNearestModal();
   }}
   className="
     relative col-span-1 overflow-hidden
