@@ -11,7 +11,8 @@ const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
 /* === 🧠 SEO + PWA Metadata === */
 export const metadata = {
   title: "ManosYA | Tu ayuda al instante",
-  description: "Conectamos clientes y profesionales en minutos. Rápido, seguro y confiable.",
+  description:
+    "Conectamos clientes y profesionales en minutos. Rápido, seguro y confiable.",
   manifest: "/manifest.json",
   icons: {
     icon: "/favicon.ico",
@@ -37,7 +38,10 @@ export default function RootLayout({ children }) {
         <meta name="theme-color" content="#14B8A6" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
         <meta name="apple-mobile-web-app-title" content="ManosYA" />
         <meta name="application-name" content="ManosYA" />
 
@@ -46,29 +50,20 @@ export default function RootLayout({ children }) {
         <link rel="apple-touch-icon" href="/icons/icon-512x512.png" />
         <link rel="manifest" href="/manifest.json" />
 
-        {/* Evita FOUC */}
-        <style>{`html:not(.hydrated){visibility:hidden}`}</style>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              window.addEventListener('DOMContentLoaded', () => {
-                document.documentElement.classList.add('hydrated');
-              });
-            `,
-          }}
-        />
+        {/* ✅ FIX: evita pantalla gris (no bloqueamos render) */}
+        <style>{`body{visibility:visible}`}</style>
       </head>
 
       {/* ⛔ FIX: evita que los celulares agranden la letra */}
-     <body
-  style={{ WebkitTextSizeAdjust: "none", textSizeAdjust: "none" }}
-  className="
-    min-h-[100dvh]
-    bg-[#F9FAFB] text-gray-900 antialiased
-    overflow-x-hidden
-    selection:bg-emerald-200 selection:text-emerald-800
-  "
->
+      <body
+        style={{ WebkitTextSizeAdjust: "none", textSizeAdjust: "none" }}
+        className="
+          min-h-[100dvh]
+          bg-[#F9FAFB] text-gray-900 antialiased
+          overflow-x-hidden
+          selection:bg-emerald-200 selection:text-emerald-800
+        "
+      >
         {/* 🌟 Sistema global de notificaciones */}
         <Toaster position="top-center" richColors />
 
@@ -78,16 +73,19 @@ export default function RootLayout({ children }) {
         {/* ⚙️ Layout dinámico para roles y navegación */}
         <ClientOnlyLayout>{children}</ClientOnlyLayout>
 
-        {/* ⚡ Registro automático del Service Worker */}
+        {/* ⚡ Registro del Service Worker SOLO en producción */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              if ('serviceWorker' in navigator) {
+              if (
+                'serviceWorker' in navigator &&
+                location.hostname !== 'localhost'
+              ) {
                 window.addEventListener('load', () => {
                   navigator.serviceWorker
                     .register('/service-worker.js')
                     .then(() => console.log('🟢 Service Worker ManosYA activo'))
-                    .catch(err => console.error('❌ Error registrando SW:', err));
+                    .catch(() => {});
                 });
               }
             `,
@@ -98,10 +96,14 @@ export default function RootLayout({ children }) {
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              document.addEventListener("click", () => {
-                const audio = document.querySelector("audio");
-                if (audio && audio.paused) audio.play().catch(()=>{});
-              }, { once: true });
+              document.addEventListener(
+                "click",
+                () => {
+                  const audio = document.querySelector("audio");
+                  if (audio && audio.paused) audio.play().catch(() => {});
+                },
+                { once: true }
+              );
             `,
           }}
         />

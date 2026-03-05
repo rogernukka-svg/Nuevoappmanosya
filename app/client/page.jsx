@@ -813,15 +813,38 @@ async function requestGPS() {
     gpsWatchPreciseRef.current = id;
   };
 
-  // ✅ 1) getCurrentPosition “fuerte” (una vez) para desbloquear GPS
+   // ✅ 1) Primero: fix rápido (coarse) -> casi nunca timeoutea en Android
   navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      onFix(pos, true);
+    (pos1) => {
+      onFix(pos1, true);
+
+      // ✅ arrancamos watchers igual (para ir refinando)
       startFastWatch();
       startPreciseWatch();
+
+      // ✅ 2) Segundo: intento preciso (solo para mejorar)
+      navigator.geolocation.getCurrentPosition(
+        (pos2) => {
+          onFix(pos2, false);
+        },
+        (err2) => {
+          // si falla la precisa no es fatal
+          if (err2?.code === 1) {
+            // si justo se denegó acá, marcamos denied
+            setGpsStatus('denied');
+            setGpsError(msgDenied);
+          }
+          // timeout/unavailable: ignorar, ya tenemos coarse + watchers
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 45000,
+          maximumAge: 0,
+        }
+      );
     },
-    (err) => {
-      if (err?.code === 1) {
+    (err1) => {
+      if (err1?.code === 1) {
         setGpsStatus('denied');
         setGpsError(msgDenied);
         toast.error(`📍 ${msgDenied}`);
@@ -829,16 +852,16 @@ async function requestGPS() {
       }
 
       setGpsStatus('requesting');
-      setGpsError(err?.code === 3 ? msgTimeoutSoft : msgUnavailable);
+      setGpsError(err1?.code === 3 ? msgTimeoutSoft : msgUnavailable);
 
-      // ✅ igual arrancamos watchers
+      // ✅ aunque falle el coarse, igual intentamos watchers
       startFastWatch();
       startPreciseWatch();
     },
     {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 45000,
+      enableHighAccuracy: false,
+      timeout: 12000,
+      maximumAge: 60000,
     }
   );
 }
