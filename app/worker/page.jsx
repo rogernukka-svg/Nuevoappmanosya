@@ -521,15 +521,20 @@ async function loadJobs() {
   try {
     setLoading(true);
 
-    // ✅ Traer:
-    // - trabajos abiertos (open) para aceptar
-    // - trabajos asignados a este worker (worker_id = user.id)
     const { data: jobsData, error: jobsErr } = await supabase
       .from('jobs')
       .select(`
-        id, title, description, status, client_id, worker_id,
-        client_lat, client_lng, created_at,
-        service_type, price
+        id,
+        title,
+        description,
+        status,
+        client_id,
+        worker_id,
+        client_lat,
+        client_lng,
+        created_at,
+        service_type,
+        price
       `)
       .or(`status.eq.open,worker_id.eq.${workerId}`)
       .order('created_at', { ascending: false });
@@ -538,8 +543,7 @@ async function loadJobs() {
 
     const list = jobsData || [];
 
-    // 2) Profiles de esos client_id
-    const clientIds = [...new Set(list.map(j => j.client_id).filter(Boolean))];
+    const clientIds = [...new Set(list.map((j) => j.client_id).filter(Boolean))];
 
     let profilesMap = {};
     if (clientIds.length > 0) {
@@ -556,26 +560,61 @@ async function loadJobs() {
       }, {});
     }
 
-    // 3) Inyectar client
-    const enriched = list.map(j => ({
+    const enriched = list.map((j) => ({
       ...j,
       client: profilesMap[j.client_id] || null,
     }));
 
     setJobs(enriched);
 
-    // 4) Si hay accepted de ESTE worker => status busy
-    const activeJob = enriched.find((j) => j.status === 'accepted' && j.worker_id === workerId);
+    // ✅ SOLO cuenta como activo si está accepted o assigned Y pertenece a este worker
+    const activeJob = enriched.find(
+      (j) =>
+        j.worker_id === workerId &&
+        ['accepted', 'assigned'].includes(j.status)
+    );
+
     if (activeJob) {
       const busyUntil = new Date(Date.now() + 60 * 60000);
 
       setStatus('busy');
+
       await supabase
         .from('worker_profiles')
         .update({
           status: 'busy',
           is_active: true,
           busy_until: busyUntil.toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', workerId);
+    } else {
+      // ✅ Si NO hay trabajo activo:
+      // - si estaba busy -> volver a available
+      // - si estaba paused -> respetar paused
+      // - si ya estaba available -> mantener available
+
+      const { data: wp, error: wpErr } = await supabase
+        .from('worker_profiles')
+        .select('status')
+        .eq('user_id', workerId)
+        .maybeSingle();
+
+      if (wpErr) throw wpErr;
+
+      const currentStatus = wp?.status || 'available';
+      const finalStatus = currentStatus === 'busy' ? 'available' : currentStatus;
+      const finalIsActive = finalStatus === 'available';
+
+      setStatus(finalStatus);
+
+      await supabase
+        .from('worker_profiles')
+        .update({
+          status: finalStatus,
+          is_active: finalIsActive,
+          busy_until: null,
+          updated_at: new Date().toISOString(),
         })
         .eq('user_id', workerId);
     }
@@ -615,42 +654,108 @@ useEffect(() => {
   const stop = startRealtimeCore((type, data) => {
     try {
       switch (type) {
-        case 'job': {
-          if (data.__source === 'insert' && data.status === 'open') {
-            if (status === 'available') {
-              setJobs((prev) => {
-                const exists = prev.some((j) => j.id === data.id);
-                return exists ? prev : [data, ...prev];
-              });
-              toast('🆕 Nuevo pedido disponible cerca tuyo');
-            }
-            return;
-          }
+               case 'job': {
+         if (data.__source === 'insert' && data.status === 'open') {
+  if (status === 'available') {
+    (async () => {
+      let client = null;
+
+      if (data.client_id) {
+        const { data: profile, error: profileErr } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .eq('id', data.client_id)
+          .maybeSingle();
+
+        if (profileErr) {
+          console.error('❌ Error cargando perfil del cliente en realtime:', profileErr.message);
+        } else {
+          client = profile || null;
+        }
+      }
+
+      const enrichedJob = {
+        ...data,
+        client,
+      };
+
+      setJobs((prev) => {
+        const exists = prev.some((j) => j.id === enrichedJob.id);
+        return exists ? prev : [enrichedJob, ...prev];
+      });
+
+      toast('🆕 Nuevo pedido disponible cerca tuyo');
+    })();
+  }
+  return;
+}
 
           if (data.worker_id === user.id) {
-  setJobs((prev) =>
-    prev.some((j) => j.id === data.id)
-      ? prev.map((j) => (j.id === data.id ? { ...j, ...data } : j))
-      : [data, ...prev]
-  );
+            setJobs((prev) =>
+              prev.some((j) => j.id === data.id)
+                ? prev.map((j) => (j.id === data.id ? { ...j, ...data } : j))
+                : [data, ...prev]
+            );
 
-  // 🧩 Si el trabajo mostrado en chat cambia de estado → actualizar selectedJob
-  if (selectedJob?.id === data.id) {
-    setSelectedJob((prev) => (prev ? { ...prev, status: data.status } : prev));
-  }
+            // 🧩 Si el trabajo mostrado en chat cambia de estado → actualizar selectedJob
+            if (selectedJob?.id === data.id) {
+              setSelectedJob((prev) => (prev ? { ...prev, status: data.status } : prev));
+            }
 
-  if (data.status === 'cancelled') {
-    toast.warning('🚫 El cliente canceló el trabajo.');
-    setStatus('available');
-  } else if (data.status === 'completed') {
-    toast.success('🎉 Trabajo finalizado por el cliente.');
-    setStatus('available');
-    // 🚫 Cerrar chat si estaba abierto
-    setIsChatOpen(false);
-  } else if (data.status === 'accepted') {
-    setStatus('busy');
-  }
-}
+            if (data.status === 'cancelled') {
+              toast.warning('🚫 El cliente canceló el trabajo.');
+
+              (async () => {
+                const { data: wp } = await supabase
+                  .from('worker_profiles')
+                  .select('status')
+                  .eq('user_id', user.id)
+                  .maybeSingle();
+
+                const nextStatus = wp?.status === 'paused' ? 'paused' : 'available';
+
+                await supabase
+                  .from('worker_profiles')
+                  .update({
+                    status: nextStatus,
+                    is_active: nextStatus === 'available',
+                    busy_until: null,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('user_id', user.id);
+
+                setStatus(nextStatus);
+              })();
+            } else if (data.status === 'completed') {
+              toast.success('🎉 Trabajo finalizado por el cliente.');
+
+              (async () => {
+                const { data: wp } = await supabase
+                  .from('worker_profiles')
+                  .select('status')
+                  .eq('user_id', user.id)
+                  .maybeSingle();
+
+                const nextStatus = wp?.status === 'paused' ? 'paused' : 'available';
+
+                await supabase
+                  .from('worker_profiles')
+                  .update({
+                    status: nextStatus,
+                    is_active: nextStatus === 'available',
+                    busy_until: null,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('user_id', user.id);
+
+                setStatus(nextStatus);
+              })();
+
+              setIsChatOpen(false);
+            } else if (data.status === 'accepted') {
+              setStatus('busy');
+            }
+          }
 
           if (data.__source === 'delete') {
             setJobs((prev) => prev.filter((j) => j.id !== data.id));
@@ -779,24 +884,53 @@ async function toggleStatus() {
 
 
   /* === Aceptar trabajo === */
-  async function acceptJob(job) {
-    try {
-      if (job.status !== 'open') return toast.warning('Este trabajo ya fue tomado');
-      const { error } = await supabase
-        .from('jobs')
-        .update({ status: 'accepted' })
-        .eq('id', job.id);
-      if (error) throw error;
-
-      toast.success('✅ Trabajo aceptado correctamente');
-      setJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, status: 'accepted' } : j))
-      );
-    } catch (err) {
-      toast.error('No se pudo aceptar el trabajo');
-      console.error(err);
+ async function acceptJob(job) {
+  try {
+    if (job.status !== 'open') {
+      return toast.warning('Este trabajo ya fue tomado');
     }
+
+    const { error: jobError } = await supabase
+      .from('jobs')
+      .update({
+        status: 'accepted',
+        worker_id: user.id,
+        accepted_at: new Date().toISOString(),
+      })
+      .eq('id', job.id);
+
+    if (jobError) throw jobError;
+
+    const busyUntil = new Date(Date.now() + 60 * 60000);
+
+    const { error: workerError } = await supabase
+      .from('worker_profiles')
+      .update({
+        status: 'busy',
+        is_active: true,
+        busy_until: busyUntil.toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', user.id);
+
+    if (workerError) throw workerError;
+
+    setStatus('busy');
+
+    toast.success('✅ Trabajo aceptado correctamente');
+
+    setJobs((prev) =>
+      prev.map((j) =>
+        j.id === job.id
+          ? { ...j, status: 'accepted', worker_id: user.id }
+          : j
+      )
+    );
+  } catch (err) {
+    toast.error('No se pudo aceptar el trabajo');
+    console.error(err);
   }
+}
 
   /* === Rechazar trabajo === */
   async function rejectJob(job) {
@@ -815,23 +949,62 @@ async function toggleStatus() {
   }
 
   /* === Finalizar trabajo === */
-  async function completeJob(job) {
-    try {
-      const { error } = await supabase
-        .from('jobs')
-        .update({ status: 'completed' })
-        .eq('id', job.id);
-      if (error) throw error;
-      toast.success('🎉 Trabajo finalizado correctamente');
-      setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: 'completed' } : j)));
-      setSelectedJob(null);
-      setIsChatOpen(false);
-    } catch (err) {
-      toast.error('Error al finalizar el trabajo');
-      console.error(err);
-    }
-  }
+async function completeJob(job) {
+  try {
+    const { error: jobError } = await supabase
+      .from('jobs')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', job.id);
 
+    if (jobError) throw jobError;
+
+    // ✅ Respetar si el worker estaba en pausa
+    const { data: wp, error: wpErr } = await supabase
+      .from('worker_profiles')
+      .select('status')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (wpErr) throw wpErr;
+
+    const nextStatus = wp?.status === 'paused' ? 'paused' : 'available';
+    const nextIsActive = nextStatus === 'available';
+
+    const { error: workerError } = await supabase
+      .from('worker_profiles')
+      .update({
+        status: nextStatus,
+        is_active: nextIsActive,
+        busy_until: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', user.id);
+
+    if (workerError) throw workerError;
+
+    setStatus(nextStatus);
+
+    toast.success('🎉 Trabajo finalizado correctamente');
+
+    setJobs((prev) =>
+      prev.map((j) =>
+        j.id === job.id ? { ...j, status: 'completed' } : j
+      )
+    );
+
+    setSelectedJob(null);
+    setIsChatOpen(false);
+
+    // ✅ Recargar por seguridad
+    await loadJobs();
+  } catch (err) {
+    toast.error('Error al finalizar el trabajo');
+    console.error(err);
+  }
+}
  /* === Chat sincronizado === */
 async function openChat(job) {
   try {

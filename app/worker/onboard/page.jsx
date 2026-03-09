@@ -14,6 +14,10 @@ const ALL_SKILLS = [
   { slug: 'electricidad', name: '⚡ Electricidad' },
   { slug: 'auxilio-vehicular', name: '🚗 Auxilio vehicular' },
   { slug: 'fletes', name: '🚚 Fletes y mudanzas' },
+  { slug: 'contador', name: '🧾 Contador' },
+  { slug: 'abogado', name: '⚖️ Abogado' },
+  { slug: 'peluquero', name: '💇 Peluquero' },
+  { slug: 'gestiones-documentos', name: '📄 Gestiones de documentos' },
 ];
 
 const RADII = [3, 5, 10, 15, 20];

@@ -885,19 +885,21 @@ const [hasUnread, setHasUnread] = useState(false);
 const [statusBanner, setStatusBanner] = useState(null);
   
  
-  const services = [
-    { id: 'plomería', label: 'Plomería', icon: <Droplets size={18} /> },
-    { id: 'electricidad', label: 'Electricidad', icon: <Wrench size={18} /> },
-    { id: 'limpieza', label: 'Limpieza', icon: <Sparkles size={18} /> },
-    { id: 'construcción', label: 'Construcción', icon: <Hammer size={18} /> },
-    { id: 'jardinería', label: 'Jardinería', icon: <Leaf size={18} /> },
-    { id: 'mascotas', label: 'Mascotas', icon: <PawPrint size={18} /> },
-    { id: 'emergencia', label: 'Emergencia', icon: <Flame size={18} /> },
-    { id: 'car detailing', label: 'Car Detailing', icon: <Sparkles size={18} /> },
-    
+const services = [
+  { id: 'plomería', label: 'Plomería', icon: <Droplets size={18} /> },
+  { id: 'electricidad', label: 'Electricidad', icon: <Wrench size={18} /> },
+  { id: 'limpieza', label: 'Limpieza', icon: <Sparkles size={18} /> },
+  { id: 'construcción', label: 'Construcción', icon: <Hammer size={18} /> },
+  { id: 'jardinería', label: 'Jardinería', icon: <Leaf size={18} /> },
+  { id: 'mascotas', label: 'Mascotas', icon: <PawPrint size={18} /> },
+  { id: 'emergencia', label: 'Emergencia', icon: <Flame size={18} /> },
+  { id: 'car detailing', label: 'Car Detailing', icon: <Sparkles size={18} /> },
 
-
-  ];
+  // ✅ nuevos servicios profesionales
+  { id: 'peluquero', label: 'Peluquero/a', icon: <Sparkles size={18} /> },
+  { id: 'abogado', label: 'Abogado/a', icon: <CheckCircle2 size={18} /> },
+  { id: 'contador', label: 'Contador/a', icon: <Clock3 size={18} /> },
+];
 /* 🧠 Restaurar estado completo (pedido + chat) desde localStorage */
 useEffect(() => {
   if (typeof window === 'undefined') return;
@@ -2628,91 +2630,109 @@ const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
 </div>
 
 {/* ===========================
-  SERVICIOS (PREMIUM) + badge (NEURO COPY)
+  SERVICIOS — MÁS VISIBLE Y MÁS ENTENDIBLE
 =========================== */}
 <div className="px-3 pb-3">
   <div
     className="
-      flex items-center gap-2
-      rounded-2xl p-2
-      bg-white/70 backdrop-blur-xl
-      border border-gray-200/70
-      shadow-[0_12px_40px_rgba(0,0,0,0.08)]
+      flex items-stretch gap-2
+      rounded-[26px] p-2
+      bg-white/90 backdrop-blur-xl
+      border border-gray-200
+      shadow-[0_14px_38px_rgba(0,0,0,0.10)]
     "
   >
-    {/* CTA principal: abrir filtros */}
+    {/* CTA principal: abrir servicios */}
     <button
       onClick={() => setServicesOpen(true)}
+      aria-label="Elegir servicio"
       className="
         relative flex-1 overflow-hidden
-        rounded-2xl px-4 py-3
+        rounded-[22px] px-4 py-3.5
         text-left
-        bg-gradient-to-br from-cyan-50 to-emerald-50
-        border border-emerald-200/60
+        bg-gradient-to-br from-emerald-100 via-cyan-50 to-emerald-50
+        border border-emerald-300/80
         active:scale-[0.99] transition
-        shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]
+        shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_28px_rgba(16,185,129,0.16)]
       "
     >
-      {/* glow sutil */}
-      <span className="pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full bg-emerald-200/30 blur-2xl" />
+      {/* glow fuerte */}
+      <span className="pointer-events-none absolute -top-10 -right-10 w-32 h-32 rounded-full bg-emerald-300/30 blur-2xl" />
+      <span className="pointer-events-none absolute -bottom-10 -left-10 w-28 h-28 rounded-full bg-cyan-300/25 blur-2xl" />
 
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-[12px] font-extrabold text-gray-800 tracking-tight">
-            ⚡ Elegí tu servicio
-          </div>
+      {/* brillo sutil */}
+      <span className="pointer-events-none absolute inset-0 opacity-70">
+        <span className="absolute -left-10 top-0 h-full w-10 rotate-12 bg-white/30 blur-md animate-[ctaShine_2.6s_ease-in-out_infinite]" />
+      </span>
 
-          <div className="text-[11px] font-semibold text-gray-500 mt-0.5">
-            Menos vueltas. Resultados más cerca.
+      <div className="relative flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white border border-emerald-300 text-[14px] shadow-sm">
+              ⚡
+            </span>
+
+            <div className="min-w-0">
+              <div className="text-[14px] font-extrabold text-gray-800 tracking-tight leading-none">
+                Elegí qué necesitás
+              </div>
+
+              <div className="text-[11px] font-semibold text-gray-600 mt-1">
+                Tocá acá para ver los servicios.
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* micro-cta */}
+        {/* CTA más notorio */}
         <div
           className="
-            inline-flex items-center gap-1
-            text-[11px] font-extrabold
-            text-emerald-800
-            bg-white/85
-            border border-emerald-200
+            shrink-0 inline-flex items-center gap-1.5
+            text-[11px] font-black
+            text-white
+            bg-gradient-to-r from-emerald-500 to-teal-500
             rounded-full
-            px-3 py-1
-            shadow-sm
+            px-4 py-2
+            shadow-[0_10px_22px_rgba(16,185,129,0.28)]
+            border border-white/30
           "
         >
-          Ajustar
+          Abrir
           <span className="text-[12px]">→</span>
         </div>
       </div>
     </button>
 
-    {/* Badge: estado del filtro (control + claridad) */}
-    <div
+    {/* Estado visible del filtro */}
+    <button
+      onClick={() => setServicesOpen(true)}
+      aria-label="Ver o cambiar filtro actual"
       className="
-        min-w-[108px]
-        rounded-2xl px-3 py-3
-        bg-white
-        border border-gray-200/80
-        shadow-[0_10px_26px_rgba(0,0,0,0.07)]
+        min-w-[118px]
+        rounded-[22px] px-3 py-3.5
+        bg-gradient-to-b from-white to-gray-50
+        border border-gray-200
+        shadow-[0_10px_24px_rgba(0,0,0,0.08)]
         flex items-center justify-center
+        active:scale-[0.98] transition
       "
     >
       <div className="text-center leading-tight">
-        <div className="text-[10px] font-bold text-gray-500">
-          🎯 En pantalla
+        <div className="text-[10px] font-extrabold text-gray-500">
+          📌 Mostrando
         </div>
 
-        <div className="text-[12px] font-extrabold text-emerald-700">
+        <div className="text-[15px] font-black text-emerald-700 mt-1">
           {selectedService
             ? (services.find(s => s.id === selectedService)?.label || selectedService)
-            : 'Todo'}
+            : 'Todos'}
         </div>
 
-        <div className="text-[9px] font-semibold text-gray-400 mt-0.5">
-          toque para filtrar
+        <div className="text-[9px] font-semibold text-gray-400 mt-1">
+          tocar para cambiar
         </div>
       </div>
-    </div>
+    </button>
   </div>
 </div>
 

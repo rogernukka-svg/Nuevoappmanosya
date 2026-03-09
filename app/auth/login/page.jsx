@@ -24,6 +24,7 @@ export default function LoginManosYA() {
   useEffect(() => {
     const checkSession = async () => {
       const { data } = await supabase.auth.getSession();
+
       if (data?.session?.user) {
         toast.success('Bienvenido');
         router.push('/role-selector');
@@ -31,6 +32,7 @@ export default function LoginManosYA() {
         setCheckingSession(false);
       }
     };
+
     checkSession();
   }, [router]);
 
@@ -38,16 +40,21 @@ export default function LoginManosYA() {
   async function handleLogin(e) {
     e.preventDefault();
     if (busy) return;
+
     setBusy(true);
+
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
+
       if (error) throw error;
+
       toast.success('Inicio de sesión exitoso');
       router.push('/role-selector');
-    } catch {
+    } catch (err) {
+      console.error('Error login:', err);
       toast.error('Correo o contraseña incorrectos.');
     } finally {
       setBusy(false);
@@ -58,28 +65,50 @@ export default function LoginManosYA() {
   async function handleSignup(e) {
     e.preventDefault();
     if (busy) return;
+
+    if (!fullName.trim()) {
+      toast.error('Ingresá tu nombre completo.');
+      return;
+    }
+
     setBusy(true);
+
     try {
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanName = fullName.trim();
+
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: cleanEmail,
         password,
       });
+
       if (error) throw error;
 
-      const userId = data.user?.id;
-      if (userId && fullName.trim()) {
-        await supabase.from('profiles').insert([
+      const userId = data?.user?.id;
+
+      if (!userId) {
+        throw new Error('No se pudo obtener el ID del usuario.');
+      }
+
+      // ✅ Guardar o actualizar perfil
+      const { error: profileError } = await supabase.from('profiles').upsert(
+        [
           {
             id: userId,
-            full_name: fullName.trim(),
+            full_name: cleanName,
+            email: cleanEmail,
             created_at: new Date().toISOString(),
           },
-        ]);
-      }
+        ],
+        { onConflict: 'id' }
+      );
+
+      if (profileError) throw profileError;
 
       toast.success('Cuenta creada correctamente');
       router.push('/role-selector');
-    } catch {
+    } catch (err) {
+      console.error('Error signup:', err);
       toast.error('No se pudo crear la cuenta.');
     } finally {
       setBusy(false);
@@ -139,7 +168,7 @@ export default function LoginManosYA() {
         {/* CARD */}
         <div className="w-full mx-auto max-w-[520px]">
           <div className="rounded-3xl sm:rounded-[28px] border border-gray-100 bg-white shadow-[0_18px_60px_rgba(15,23,42,0.10)] overflow-hidden">
-            {/* Header card (SIN LOGO: quitado “ManosYA” de adentro) */}
+            {/* Header card */}
             <div className="px-5 sm:px-8 pt-7 sm:pt-8 pb-5 sm:pb-6 border-b border-gray-100">
               <div className="flex items-center justify-end">
                 <div className="text-xs text-gray-400">v1.0 Beta</div>
@@ -156,7 +185,7 @@ export default function LoginManosYA() {
                 </p>
               </div>
 
-              {/* Switch modo (grande en mobile) */}
+              {/* Switch modo */}
               <div className="mt-4 sm:mt-5">
                 <div className="inline-flex w-full rounded-2xl border border-gray-200 bg-gray-50 p-1">
                   <button
