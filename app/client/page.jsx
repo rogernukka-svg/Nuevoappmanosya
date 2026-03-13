@@ -40,6 +40,24 @@ const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContai
 const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
 const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
 const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
+const MapEffectBinder = dynamic(
+  async () => {
+    const React = await import('react');
+    const { useMap } = await import('react-leaflet');
+
+    return function MapEffectBinderInner({ onReady }) {
+      const map = useMap();
+
+      React.useEffect(() => {
+        if (!map) return;
+        onReady?.(map);
+      }, [map, onReady]);
+
+      return null;
+    };
+  },
+  { ssr: false }
+);
 // 📍 Radio máximo visible y de filtrado (coherente en TODO el archivo)
 const MAX_RADIUS_KM = 999;
 const MAX_RADIUS_M = MAX_RADIUS_KM * 1000;
@@ -422,13 +440,37 @@ function addAntiOverlap(workers, gridMeters = 60, stepMeters = 40) {
 
   return out;
 }
+async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`;
 
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data.routes?.length) return null;
+
+    const coords = data.routes[0].geometry.coordinates;
+
+    const route = coords.map(c => [c[1], c[0]]);
+
+    return {
+      route,
+      distanceKm: data.routes[0].distance / 1000,
+      durationMin: Math.round(data.routes[0].duration / 60)
+    };
+
+  } catch (e) {
+    console.warn("route error", e);
+    return null;
+  }
+}
 export default function MapPage() {
   const supabase = getSupabase();
   const router = useRouter();
   const mapRef = useRef(null);
   const markerIdToUserIdRef = useRef(new Map());
   const [mapZoom, setMapZoom] = useState(11);
+  const [etaMinutes, setEtaMinutes] = useState(null);
   // 🔥 NECESARIO para createPortal (evita error SSR)
  const [mounted, setMounted] = useState(false);
 
@@ -500,8 +542,11 @@ useEffect(() => {
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
   
 
-  const [busy, setBusy] = useState(false);
- const [selected, setSelected] = useState(null);
+const [selected, setSelected] = useState(null);
+const [profileSheetMode, setProfileSheetMode] = useState('full'); // 'full' | 'mini'
+const [isTrackingWorker, setIsTrackingWorker] = useState(false);
+const [busy, setBusy] = useState(false);
+
 
 // ✅ MODAL GRANDE (Más cerca) — si no está, revienta "clusterOpen is not defined"
 const [clusterOpen, setClusterOpen] = useState(false);
@@ -883,7 +928,30 @@ const [comment, setComment] = useState('')
 // 🧩 Nuevo: indicador de mensajes sin leer
 const [hasUnread, setHasUnread] = useState(false);
 const [statusBanner, setStatusBanner] = useState(null);
-  
+ const bindMapInstance = useMemo(() => {
+  return (map) => {
+    if (!map) return;
+
+    mapRef.current = map;
+
+    setMapZoom(map.getZoom());
+
+    map.off('zoomend');
+    map.on('zoomend', () => setMapZoom(map.getZoom()));
+
+    map.setView(HOME_VIEW.center, HOME_VIEW.zoom, { animate: false });
+
+    const el = map.getContainer?.();
+    if (el) {
+      el.style.touchAction = 'pan-x pan-y';
+      el.style.overscrollBehavior = 'none';
+    }
+
+    setTimeout(() => map.invalidateSize(), 200);
+
+    console.log('✅ mapRef enlazado correctamente', map);
+  };
+}, []); 
  
 const services = [
   { id: 'plomería', label: 'Plomería', icon: <Droplets size={18} /> },
@@ -931,13 +999,38 @@ useEffect(() => {
 }, []);
 // ✅ Ruta SOLO si hay pedido activo (y no está finalizado/cancelado)
 useEffect(() => {
-  if (!jobId) return;
-  if (jobStatus === 'completed' || jobStatus === 'cancelled') return;
 
-  if (!Number(me?.lat) || !Number(me?.lon)) return;
-  if (!hasMeCoords || !hasSelCoords) return;
+  async function loadRoute() {
 
-  setRoute([[me.lat, me.lon], [selLat, selLng]]);
+    if (!jobId) return;
+
+    if (jobStatus === "completed" || jobStatus === "cancelled") return;
+
+    if (!Number(me?.lat) || !Number(me?.lon)) return;
+
+    if (!hasMeCoords || !hasSelCoords) return;
+
+    const wLat = Number(selLat);
+    const wLng = Number(selLng);
+
+    const result = await fetchRoadRoute(
+      Number(me.lat),
+      Number(me.lon),
+      wLat,
+      wLng
+    );
+
+    if (!result) return;
+
+    setRoute(result.route);
+    setEtaMinutes(result.durationMin);
+
+    mapRef.current?.fitBounds(result.route, { padding: [80, 80] });
+
+  }
+
+  loadRoute();
+
 }, [jobId, jobStatus, me?.lat, me?.lon, selLat, selLng]);
 /* 💬 Banner elegante de estado */
 useEffect(() => {
@@ -1019,6 +1112,7 @@ const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
 
 if (Number.isFinite(wLat) && Number.isFinite(wLng)) {
   setSelected(worker);
+setProfileSheetMode('full');
   setRoute([[Number(me.lat), Number(me.lon)], [wLat, wLng]]);
   toast.success(`Pedido restaurado (${job.status})`);
 }
@@ -1264,6 +1358,7 @@ useEffect(() => {
           // 👇 Si el pedido se cancela, limpiar todo automáticamente
           if (payload.new.status === 'cancelled') {
             resetJobState();
+            
           }
         }
       }
@@ -1273,23 +1368,130 @@ useEffect(() => {
   return () => supabase.removeChannel(channel);
 }, [me.id]);
 
+/* === TRACKING DEL TRABAJADOR DEL PEDIDO (LIVE GPS) === */
+useEffect(() => {
+  if (!jobId) return;
+  if (!selected?.user_id) return;
 
-  /* === Realtime del job actual para estado (accepted/completed) === */
-  useEffect(() => {
-    if (!jobId) return;
-    const ch = supabase
-      .channel(`job-${jobId}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'jobs', filter: `id=eq.${jobId}` },
-        (payload) => {
-          const st = payload.new?.status;
-          if (st) setJobStatus(st);
+  const workerId = String(selected.user_id);
+
+  const channel = supabase
+    .channel(`worker-live-${workerId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'worker_locations',
+        filter: `user_id=eq.${workerId}`,
+      },
+      async (payload) => {
+        const loc = payload.new;
+
+        const lat = Number(loc?.lat);
+        const lng = Number(loc?.lng ?? loc?.lon ?? loc?.long);
+
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+        setSelected((prev) =>
+          prev && String(prev.user_id) === workerId
+            ? { ...prev, lat, lng, last_seen: loc?.updated_at || new Date().toISOString() }
+            : prev
+        );
+
+        setWorkers((prev) =>
+          prev.map((w) =>
+            String(w.user_id) === workerId
+              ? {
+                  ...w,
+                  lat,
+                  lng,
+                  last_seen: loc?.updated_at || new Date().toISOString(),
+                  _justUpdated: true,
+                }
+              : w
+          )
+        );
+
+        const marker = markersRef.current?.[workerId];
+        if (marker) {
+          const current = marker.getLatLng?.();
+          if (current) {
+            animateMarkerMove(marker, current.lat, current.lng, lat, lng);
+          } else {
+            marker.setLatLng([lat, lng]);
+          }
         }
-      )
-      .subscribe();
-    return () => supabase.removeChannel(ch);
-  }, [jobId]);
+
+        const cLat = Number(me?.lat);
+        const cLng = Number(me?.lon);
+
+  if (Number.isFinite(cLat) && Number.isFinite(cLng)) {
+  if (isTrackingWorker) {
+    const result = await fetchRoadRoute(cLat, cLng, lat, lng);
+
+    if (result?.route?.length) {
+      setRoute(result.route);
+      setEtaMinutes(result.durationMin ?? null);
+
+      mapRef.current?.flyToBounds(result.route, {
+        paddingTopLeft: [40, 100],
+        paddingBottomRight: [40, 240],
+        maxZoom: 15, // 🔥 antes 18
+        duration: 0.8,
+      });
+
+      setTimeout(() => {
+        mapRef.current?.invalidateSize?.();
+      }, 250);
+    } else {
+      const fallbackRoute = [
+        [cLat, cLng],
+        [lat, lng],
+      ];
+
+      setRoute(fallbackRoute);
+
+      const distKm = haversineKm(cLat, cLng, lat, lng);
+      const fallbackMin = Math.max(1, Math.round((distKm / 35) * 60));
+      setEtaMinutes(fallbackMin);
+
+      mapRef.current?.flyToBounds(fallbackRoute, {
+        paddingTopLeft: [40, 100],
+        paddingBottomRight: [40, 240],
+        maxZoom: 15, // 🔥 antes 17
+        duration: 0.8,
+      });
+
+      setTimeout(() => {
+        mapRef.current?.invalidateSize?.();
+      }, 250);
+    }
+  } else {
+    setRoute([
+      [cLat, cLng],
+      [lat, lng],
+    ]);
+  }
+}
+        setTimeout(() => {
+          setWorkers((prev) =>
+            prev.map((w) =>
+              String(w.user_id) === workerId
+                ? { ...w, _justUpdated: false }
+                : w
+            )
+          );
+        }, 1800);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [jobId, selected?.user_id, me?.lat, me?.lon, isTrackingWorker]);
+
 // 🌍 Sincronización global en vivo (workers, jobs, perfiles)
 useEffect(() => {
   const stop = startRealtimeCore((type, data) => {
@@ -1323,25 +1525,67 @@ useEffect(() => {
 
   break;
 }
+case 'job': {
+  if (data.client_id === me.id) {
+    setJobStatus(data.status);
 
-      case 'job': {
-        if (data.client_id === me.id) {
-          setJobStatus(data.status);
+    if (data.status === 'completed' || data.status === 'worker_completed') {
+      toast.success('🎉 El trabajador finalizó el trabajo');
+      setJobStatus('worker_completed');
+    } 
+    else if (['cancelled', 'rejected', 'worker_rejected'].includes(data.status)) {
+      toast.error('🚫 El trabajador rechazó o canceló el pedido');
+      resetJobState();
+    } 
+    else if (data.status === 'accepted' || data.status === 'assigned') {
+      setIsTrackingWorker(true);
 
-          if (data.status === 'completed' || data.status === 'worker_completed') {
-            toast.success('🎉 El trabajador finalizó el trabajo');
-            setJobStatus('worker_completed');
-          } else if (['cancelled', 'rejected', 'worker_rejected'].includes(data.status)) {
-            toast.error('🚫 El trabajador rechazó o canceló el pedido');
-            resetJobState();
-          } else if (data.status === 'accepted') {
-            toast.success('🟢 El trabajador aceptó tu pedido');
-          } else if (data.status === 'assigned') {
-            toast.info('📦 Pedido asignado correctamente');
-          }
+      toast.success('🟢 El trabajador aceptó tu pedido');
+
+      // ✅ cerrar overlays
+      setShowPrice(false);
+      setClusterOpen(false);
+      setClusterMiniOpen(false);
+      setServicesOpen(false);
+
+      // ✅ mantener panel disponible
+      setPanelLevel('mini');
+
+      const workerFresh =
+        workersByIdRef.current?.get(String(data.worker_id)) || selected;
+
+      if (workerFresh) {
+        setSelected(workerFresh);
+
+        const wLat = Number(workerFresh?.lat);
+        const wLng = Number(workerFresh?.lng ?? workerFresh?.lon ?? workerFresh?.long);
+        const cLat = Number(me?.lat);
+        const cLng = Number(me?.lon);
+
+        if (
+          Number.isFinite(cLat) &&
+          Number.isFinite(cLng) &&
+          Number.isFinite(wLat) &&
+          Number.isFinite(wLng)
+        ) {
+          setRoute([
+            [cLat, cLng],
+            [wLat, wLng],
+          ]);
+
+          // ✅ zoom directo hacia el trabajador para verlo viniendo
+          mapRef.current?.flyTo([wLat, wLng], 15, { duration: 1.2 });
+
+          // ✅ pequeño ajuste de cámara después
+          setTimeout(() => {
+            mapRef.current?.invalidateSize?.();
+          }, 250);
         }
-        break;
       }
+    }
+  }
+  break;
+}
 
       case 'profile': {
         setWorkers((prev) =>
@@ -1392,39 +1636,31 @@ useEffect(() => {
 
 /* === Interacciones mejoradas === */
 function handleMarkerClick(worker) {
-  // ✅ Si ya hay un pedido activo, evitamos cambiar de trabajador
   if (jobId && jobStatus !== 'completed' && jobStatus !== 'cancelled') {
     toast.warning('⚠️ Ya tenés un pedido activo. Finalizalo o cancelalo antes de seleccionar otro.');
     return;
   }
 
-  // 🔹 Guardar trabajador seleccionado y activar animación de rebote
-  setWorkers(prev =>
-    prev.map(w => ({
+  setWorkers((prev) =>
+    prev.map((w) => ({
       ...w,
-      _selected: w.user_id === worker.user_id, // solo este rebota
+      _selected: w.user_id === worker.user_id,
     }))
   );
 
-  // 🎯 Guarda el trabajador seleccionado
-setSelected(worker);
+  setSelected(worker);
+  setProfileSheetMode('full');
+  setRoute(null);
 
-// 🚫 NO generar ruta aquí (solo cuando el cliente presiona "Solicitar")
-setRoute(null);
+  const wLat = Number(worker?.lat);
+  const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
 
-// ✨ Efecto visual al hacer clic en marcador
-const wLat = Number(worker?.lat);
-const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
+  if (mapRef.current && Number.isFinite(wLat) && Number.isFinite(wLng)) {
+    mapRef.current.flyTo([wLat, wLng], 15, { duration: 1.2 });
+  }
 
-if (mapRef.current && Number.isFinite(wLat) && Number.isFinite(wLng)) {
-  mapRef.current.flyTo([wLat, wLng], 15, { duration: 1.2 });
-}
-
-
-  // 💬 Cierra cualquier modal de precio si estuviera abierto
   setShowPrice(false);
 
-  // 🔊 Pequeña alerta visual
   toast.success(`👷 ${worker.full_name || 'Trabajador'} seleccionado`, {
     duration: 1500,
   });
@@ -1704,34 +1940,298 @@ async function sendMessage(textOverride = null) {
     toast.error('No se pudo enviar el mensaje');
   }
 }
+async function sendCurrentLocationMessage() {
+  try {
+    if (!chatId || !me?.id) {
+      toast.error('No se puede compartir la ubicación todavía');
+      return;
+    }
+
+    let lat = Number(me?.lat);
+    let lng = Number(me?.lon);
+
+    // ✅ si ya tenemos GPS en estado, usamos eso
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      const cached = loadLastGps();
+      if (cached) {
+        lat = Number(cached.lat);
+        lng = Number(cached.lon);
+      }
+    }
+
+    // ✅ si aún no hay coords, intentamos pedir una ubicación puntual
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      if (!navigator?.geolocation) {
+        toast.error('Tu dispositivo no soporta GPS');
+        return;
+      }
+
+      toast.loading('Obteniendo ubicación...', { id: 'share-location' });
+
+      const pos = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          resolve,
+          reject,
+          {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 10000,
+          }
+        );
+      });
+
+      lat = Number(pos?.coords?.latitude);
+      lng = Number(pos?.coords?.longitude);
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        toast.error('No se pudo obtener tu ubicación', { id: 'share-location' });
+        return;
+      }
+
+      saveLastGps(lat, lng);
+      setMe((prev) => ({ ...prev, lat, lon: lng }));
+      toast.dismiss('share-location');
+    }
+
+    const payload = {
+      chat_id: chatId,
+      sender_id: me.id,
+      text: '📍 Ubicación compartida',
+      message_type: 'location',
+      lat,
+      lng,
+      meta: {
+        label: 'Ubicación compartida',
+        shared_at: new Date().toISOString(),
+      },
+    };
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === data.id)) return prev;
+      return [...prev, data];
+    });
+
+    toast.success('Ubicación enviada');
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+  } catch (err) {
+    console.error('❌ Error compartiendo ubicación:', err);
+    toast.error('No se pudo compartir la ubicación');
+  }
+}
+
+function openLocationMessageOnMap(message) {
+  const lat = Number(message?.lat);
+  const lng = Number(message?.lng);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    toast.error('Este mensaje no tiene una ubicación válida');
+    return;
+  }
+
+  // ✅ cerrar chat para que el usuario vea el mapa
+  setIsChatOpen(false);
+
+  setTimeout(() => {
+    if (mapRef.current) {
+      mapRef.current.flyTo([lat, lng], 17, { duration: 1.2 });
+    }
+    toast.success('Ubicación abierta en el mapa');
+  }, 250);
+}
+function runSuperFocusOnWorker(workerLat, workerLng, routePoints = null) {
+  const map = mapRef.current;
+
+  if (
+    !map ||
+    typeof map.flyTo !== 'function' ||
+    typeof map.flyToBounds !== 'function'
+  ) {
+    toast.error('El mapa todavía no está listo');
+    console.warn('❌ mapRef.current inválido en verTrabajadorViniendo:', map);
+    return;
+  }
+
+  setTimeout(() => {
+    try {
+      map.invalidateSize();
+
+      // ✅ si hay ruta, mostrarla bien pero sin pasarse de zoom
+      if (Array.isArray(routePoints) && routePoints.length >= 2) {
+        map.flyToBounds(routePoints, {
+          paddingTopLeft: [40, 100],
+          paddingBottomRight: [40, 240],
+          maxZoom: 15, // 🔥 antes 18
+          duration: 1.1,
+        });
+
+        // ✅ segundo foco más suave
+        setTimeout(() => {
+          map.flyTo([workerLat, workerLng], 15, {
+            duration: 0.9,
+          });
+        }, 850);
+
+        setTimeout(() => {
+          map.invalidateSize();
+        }, 300);
+
+        setTimeout(() => {
+          map.invalidateSize();
+        }, 900);
+
+        return;
+      }
+
+      // ✅ fallback sin ruta: acercar pero no exagerar
+      map.flyTo([workerLat, workerLng], 15, {
+        duration: 1.0,
+      });
+
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 300);
+    } catch (err) {
+      console.warn('runSuperFocusOnWorker error:', err);
+    }
+  }, 120);
+}
+async function verTrabajadorViniendo() {
+  if (!selected) {
+    toast.error('No hay trabajador seleccionado');
+    return;
+  }
+
+  const wLat = Number(selected?.lat);
+  const wLng = Number(selected?.lng ?? selected?.lon ?? selected?.long);
+  const cLat = Number(me?.lat);
+  const cLng = Number(me?.lon);
+
+  if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) {
+    toast.error('No se pudo ubicar al trabajador en el mapa');
+    return;
+  }
+
+  setIsChatOpen(false);
+  setShowPrice(false);
+  setClusterOpen(false);
+  setClusterMiniOpen(false);
+  setServicesOpen(false);
+
+  setIsTrackingWorker(true);
+  setProfileSheetMode('mini');
+
+  const map = mapRef.current;
+  console.log('🧪 mapRef.current en verTrabajadorViniendo:', map);
+
+  if (!map) {
+    toast.error('El mapa todavía no está listo');
+    console.warn('❌ mapRef.current vacío en verTrabajadorViniendo');
+    return;
+  }
+
+  map.invalidateSize();
+
+  if (Number.isFinite(cLat) && Number.isFinite(cLng)) {
+    const result = await fetchRoadRoute(cLat, cLng, wLat, wLng);
+
+    if (result?.route?.length) {
+      setRoute(result.route);
+      setEtaMinutes(result.durationMin ?? null);
+
+      runSuperFocusOnWorker(wLat, wLng, result.route);
+
+      toast.success(
+        `🚗 ${selected?.full_name || 'El trabajador'} llega en aprox ${result.durationMin ?? '—'} min`
+      );
+    } else {
+      const fallbackRoute = [
+        [cLat, cLng],
+        [wLat, wLng],
+      ];
+
+      setRoute(fallbackRoute);
+
+      const fallbackKm = haversineKm(cLat, cLng, wLat, wLng);
+      const fallbackMin = Math.max(1, Math.round((fallbackKm / 35) * 60));
+      setEtaMinutes(fallbackMin);
+
+      runSuperFocusOnWorker(wLat, wLng, fallbackRoute);
+
+      toast.success(
+        `🚗 ${selected?.full_name || 'El trabajador'} llega en aprox ${fallbackMin} min`
+      );
+    }
+  } else {
+    setEtaMinutes(null);
+    runSuperFocusOnWorker(wLat, wLng, null);
+    toast.success('📍 Viendo al trabajador en tiempo real');
+  }
+
+  setTimeout(() => {
+    mapRef.current?.invalidateSize?.();
+  }, 250);
+
+  setTimeout(() => {
+    mapRef.current?.invalidateSize?.();
+  }, 800);
+}
 
 // ✅ Finalizar pedido — cambia estado en Supabase y limpia todo
 async function finalizarPedido() {
+  const currentJobId = jobId;
+  const currentChatId = chatId;
+  const currentWorkerName = selected?.full_name || 'el profesional';
+
   try {
-    if (!jobId) {
+    if (!currentJobId) {
       toast.warning('⚠️ No hay pedido activo para finalizar');
       return;
     }
 
     const { error } = await supabase
       .from('jobs')
-      .update({ status: 'completed', completed_at: new Date().toISOString() })
-      .eq('id', jobId);
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', currentJobId);
 
     if (error) throw error;
 
-    toast.success('✅ Pedido finalizado correctamente');
-    resetJobState(); // limpia mapa y estado local
-
-    if (chatId) {
-      await supabase.from('messages').insert([
+    // ✅ mandar mensaje ANTES de limpiar estado
+    if (currentChatId && me?.id) {
+      const { error: msgError } = await supabase.from('messages').insert([
         {
-          chat_id: chatId,
+          chat_id: currentChatId,
           sender_id: me.id,
-          text: '✅ El cliente marcó el trabajo como finalizado',
+          text: '✅ El cliente marcó el trabajo como finalizado.',
         },
       ]);
+
+      if (msgError) {
+        console.warn('No se pudo enviar mensaje de finalización:', msgError);
+      }
     }
+
+    // ✅ detener tracking visual, pero NO limpiar todo todavía
+    setIsTrackingWorker(false);
+    setRoute(null);
+    setEtaMinutes(null);
+    setIsChatOpen(false);
+
+    // ✅ importante: dejar selected/job vivos para el modal de valoración
+    setJobStatus('completed');
+    setProfileSheetMode('full');
+
+    toast.success(`✅ Pedido finalizado con ${currentWorkerName}`);
   } catch (err) {
     console.error('Error al finalizar pedido:', err.message);
     toast.error('No se pudo finalizar el pedido');
@@ -1740,6 +2240,7 @@ async function finalizarPedido() {
 // 🧹 Limpia todo el estado del pedido y refresca el mapa
 function resetJobState() {
   console.log('🧹 Limpieza de estado del pedido');
+
   setRoute(null);
   setSelected(null);
   setJobId(null);
@@ -1747,14 +2248,37 @@ function resetJobState() {
   setChatId(null);
   setIsChatOpen(false);
   setMessages([]);
+  setProfileSheetMode('full');
+
+  // ✅ apagar tracking
+  setIsTrackingWorker(false);
+  setEtaMinutes(null);
+
+  setWorkers((prev) =>
+    (prev || []).map((w) => ({
+      ...w,
+      _selected: false,
+    }))
+  );
+
   localStorage.removeItem('activeJobChat');
+
   fetchWorkers(selectedService || null);
 
-  // 🗺️ Recentrar mapa al cliente con animación suave
-  if (mapRef.current && me?.lat && me?.lon) {
-    mapRef.current.flyTo([me.lat, me.lon], 13, { duration: 1.2 });
+  // ✅ volver SIEMPRE a la vista general de Paraguay + clusters
+  if (mapRef.current) {
+    mapRef.current.setView(HOME_VIEW.center, HOME_VIEW.zoom, { animate: true });
+
+    setTimeout(() => {
+      mapRef.current?.invalidateSize?.();
+    }, 250);
+
+    setTimeout(() => {
+      mapRef.current?.invalidateSize?.();
+    }, 700);
   }
 }
+
 
 
 // ⭐ Guardar reseña del trabajador
@@ -1762,14 +2286,18 @@ async function confirmarReseña() {
   try {
     if (!jobId || !selected?.user_id) return;
 
-    // Insertar reseña en base de datos
+    if (!rating || rating < 1 || rating > 5) {
+      toast.error('Elegí una calificación de 1 a 5 estrellas');
+      return;
+    }
+
     const { error } = await supabase.from('reviews').insert([
       {
         job_id: jobId,
         worker_id: selected.user_id,
         client_id: me.id,
         rating,
-        comment,
+        comment: comment?.trim() || null,
         created_at: new Date().toISOString(),
       },
     ]);
@@ -1779,7 +2307,7 @@ async function confirmarReseña() {
     toast.success('✅ ¡Gracias por tu valoración!');
     setRating(0);
     setComment('');
-    resetJobState(); // limpia todo tras enviar
+    resetJobState();
   } catch (err) {
     console.error('Error guardando reseña:', err.message);
     toast.error('No se pudo guardar la valoración');
@@ -2003,29 +2531,15 @@ useEffect(() => {
   maxZoom={19}
   zoomControl={false}
   scrollWheelZoom={false}
-style={{
-  height: '100%',
-  width: '100%',
-  touchAction: 'pan-x pan-y',
-  overscrollBehavior: 'none',
-  WebkitOverflowScrolling: 'auto',
-}}
-  whenCreated={(map) => {
-    mapRef.current = map;
-
-    // ✅ track zoom para anti-overlap
-    setMapZoom(map.getZoom());
-    map.on('zoomend', () => setMapZoom(map.getZoom()));
-
-    // ✅ asegurar vista inicial fija (Paraguay)
-    map.setView(HOME_VIEW.center, HOME_VIEW.zoom, { animate: false });
-
-    const el = map.getContainer();
-    el.style.touchAction = 'pan-x pan-y';
-    el.style.overscrollBehavior = 'none';
-    setTimeout(() => map.invalidateSize(), 200);
+  style={{
+    height: '100%',
+    width: '100%',
+    touchAction: 'pan-x pan-y',
+    overscrollBehavior: 'none',
+    WebkitOverflowScrolling: 'auto',
   }}
 >
+  <MapEffectBinder onReady={bindMapInstance} />
     {/* 🗺️ CARTO Light (mapa blanco minimalista) */}
     <TileLayer
       url="https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
@@ -2041,180 +2555,243 @@ style={{
 {/* ✅ BLOQUE CLUSTER + FILTRO FINAL (REEMPLAZAR COMPLETO) */}
 {/* ✅ CLUSTER REAL: markers reales (sin anti-overlap) */}
 {/* ✅ CLUSTER REAL (ordenado + UX claro + modal por zona) */}
- <MarkerClusterGroup
-  chunkedLoading
-  showCoverageOnHover={false}
-  removeOutsideVisibleBounds={true}
-  disableClusteringAtZoom={16}
-  spiderfyOnMaxZoom={false}
+{/* 🛣 Ruta premium cliente → trabajador */}
+{route && (
+  <>
+    {/* base glow */}
+    <Polyline
+      positions={route}
+      pathOptions={{
+        color: "#34d399",
+        weight: 14,
+        opacity: 0.18,
+        lineJoin: "round",
+        lineCap: "round",
+      }}
+    />
 
-  // ✅ IMPORTANTE: que NO haga zoom automático
-  zoomToBoundsOnClick={false}
+    {/* capa media */}
+    <Polyline
+      positions={route}
+      pathOptions={{
+        color: "#10b981",
+        weight: 8,
+        opacity: 0.35,
+        lineJoin: "round",
+        lineCap: "round",
+      }}
+    />
 
-  // ✅ Radio dinámico (ok)
-  maxClusterRadius={(zoom) => {
-    if (zoom <= 7) return 120;
-    if (zoom <= 10) return 95;
-    if (zoom <= 12) return 70;
-    return 55;
-  }}
+    {/* línea principal */}
+    <Polyline
+      positions={route}
+      pathOptions={{
+        color: "#059669",
+        weight: 5,
+        opacity: 0.95,
+        lineJoin: "round",
+        lineCap: "round",
+        dashArray: "10 10",
+      }}
+    />
+  </>
+)}
 
-  iconCreateFunction={clusterIconCreateFunction}
+{/* ✅ MARKER LIVE DEL TRABAJADOR CUANDO ESTÁ VINIENDO */}
+{isTrackingWorker && selected && hasSelCoords && (
+  <Marker
+    key={`tracking-worker-${String(selected.user_id)}-${selLat}-${selLng}`}
+    position={[selLat, selLng]}
+    icon={
+      avatarIcon(selected.avatar_url, {
+        ...selected,
+        _selected: true,
+        _justUpdated: true,
+      }) || undefined
+    }
+    eventHandlers={{
+      add: (e) => {
+        const leafletMarker = e?.target;
+        if (!leafletMarker || !selected?.user_id) return;
 
-  eventHandlers={{
-    clusterclick: (e) => {
-      try {
-        // ✅ PREVENIR comportamiento default (por si la lib intenta algo)
-        e?.originalEvent?.preventDefault?.();
-        e?.originalEvent?.stopPropagation?.();
+        markersRef.current[String(selected.user_id)] = leafletMarker;
+      },
+      click: () => {
+        setProfileSheetMode('full');
+      },
+    }}
+  />
+)}
 
-        const cluster = e.layer;
-        if (!cluster) return;
+{/* ✅ TU UBICACIÓN MIENTRAS HAY TRACKING */}
+{isTrackingWorker && hasMeCoords && (
+  <Circle
+    center={[Number(me.lat), Number(me.lon)]}
+    radius={35}
+    pathOptions={{
+      color: '#2563eb',
+      fillColor: '#3b82f6',
+      fillOpacity: 0.35,
+      weight: 2,
+    }}
+  />
+)}
 
-        const childMarkers = cluster.getAllChildMarkers?.() || [];
-        if (!childMarkers.length) return;
+{!isTrackingWorker && (
+  <MarkerClusterGroup
+    chunkedLoading
+    showCoverageOnHover={false}
+    removeOutsideVisibleBounds={true}
+    disableClusteringAtZoom={16}
+    spiderfyOnMaxZoom={false}
+    zoomToBoundsOnClick={false}
+    maxClusterRadius={(zoom) => {
+      if (zoom <= 7) return 120;
+      if (zoom <= 10) return 95;
+      if (zoom <= 12) return 70;
+      return 55;
+    }}
+    iconCreateFunction={clusterIconCreateFunction}
+    eventHandlers={{
+      clusterclick: (e) => {
+        try {
+          e?.originalEvent?.preventDefault?.();
+          e?.originalEvent?.stopPropagation?.();
 
-        // ✅ Punto referencia (GPS -> centro mapa -> HOME)
+          const cluster = e.layer;
+          if (!cluster) return;
+
+          const childMarkers = cluster.getAllChildMarkers?.() || [];
+          if (!childMarkers.length) return;
+
+          const ref = typeof getRefPoint === 'function'
+            ? getRefPoint()
+            : { lat: Number(me?.lat), lng: Number(me?.lon), mode: 'home' };
+
+          const refOk = Number.isFinite(Number(ref?.lat)) && Number.isFinite(Number(ref?.lng));
+          const refLat = Number(ref?.lat);
+          const refLng = Number(ref?.lng);
+
+          const uniq = new Map();
+
+          for (const m of childMarkers) {
+            const w0 = m?.options?.__worker;
+            const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
+            if (!uid) continue;
+
+            const fresh = workersByIdRef.current?.get(uid);
+            const w = fresh || w0;
+            if (!w) continue;
+
+            const wLat = Number(w?.lat);
+            const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+            if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) continue;
+
+            if (refOk) {
+              const km = haversineKm(refLat, refLng, wLat, wLng);
+              if (Number.isFinite(km) && km > MAX_RADIUS_KM) continue;
+            }
+
+            uniq.set(uid, w);
+          }
+
+          let list = Array.from(uniq.values());
+          if (!list.length) {
+            toast('No hay profesionales disponibles en este clúster', { duration: 1200 });
+            return;
+          }
+
+          list = list
+            .map((w) => {
+              const wLat = Number(w?.lat);
+              const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+
+              const dist =
+                refOk && Number.isFinite(wLat) && Number.isFinite(wLng)
+                  ? haversineKm(refLat, refLng, wLat, wLng)
+                  : null;
+
+              return {
+                ...w,
+                _distKm: Number.isFinite(dist) ? dist : null,
+                _dist: Number.isFinite(dist) ? dist : null,
+                _online: isOnlineRecent(w),
+                _rating: Number(w?.avg_rating || 0),
+                _reviews: Number(w?.total_reviews || 0),
+              };
+            })
+            .sort((a, b) => {
+              if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
+              if (a._distKm != null) return -1;
+              if (b._distKm != null) return 1;
+
+              if (a._online !== b._online) return a._online ? -1 : 1;
+              if (a._rating !== b._rating) return b._rating - a._rating;
+              if (a._reviews !== b._reviews) return b._reviews - a._reviews;
+
+              return String(a.user_id).localeCompare(String(b.user_id));
+            });
+
+          setClusterMode('cluster');
+          setClusterList(list);
+          setClusterOpen(true);
+
+          toast.success(`👥 ${list.length} en esta zona`, { duration: 900 });
+        } catch (err) {
+          console.warn('cluster click error', err);
+        }
+      },
+    }}
+  >
+    {(workers || [])
+      .filter((w) => {
+        const wLat = Number(w?.lat);
+        const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+        if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
+
         const ref = typeof getRefPoint === 'function'
           ? getRefPoint()
           : { lat: Number(me?.lat), lng: Number(me?.lon), mode: 'home' };
 
         const refOk = Number.isFinite(Number(ref?.lat)) && Number.isFinite(Number(ref?.lng));
-        const refLat = Number(ref?.lat);
-        const refLng = Number(ref?.lng);
-
-        // ✅ Armar lista única con worker “fresh” desde workersByIdRef
-        const uniq = new Map();
-
-        for (const m of childMarkers) {
-          const w0 = m?.options?.__worker;
-const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
-          if (!uid) continue;
-
-          const fresh = workersByIdRef.current?.get(uid);
-          const w = fresh || w0;
-          if (!w) continue;
-
-          const wLat = Number(w?.lat);
-          const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-          if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) continue;
-
-        // ✅ NO filtrar por estado: incluir también paused e inactivos
-// (solo validamos coords)
-
-          // ✅ Filtro radio (si usás)
-          if (refOk) {
-            const km = haversineKm(refLat, refLng, wLat, wLng);
-            if (Number.isFinite(km) && km > MAX_RADIUS_KM) continue;
-          }
-
-          uniq.set(uid, w);
+        if (refOk) {
+          const km = haversineKm(Number(ref.lat), Number(ref.lng), wLat, wLng);
+          if (Number.isFinite(km) && km > MAX_RADIUS_KM) return false;
         }
 
-        let list = Array.from(uniq.values());
-        if (!list.length) {
-          toast('No hay profesionales disponibles en este clúster', { duration: 1200 });
-          return;
-        }
+        return true;
+      })
+      .map((w) => {
+        const wLat = Number(w?.lat);
+        const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
 
-        // ✅ Enriquecer + ordenar
-        list = list
-          .map((w) => {
-            const wLat = Number(w?.lat);
-            const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+        return (
+          <Marker
+            key={String(w.user_id)}
+            position={[wLat, wLng]}
+            icon={avatarIcon(w.avatar_url, w) || undefined}
+            __userId={String(w.user_id)}
+            __worker={workersByIdRef.current?.get(String(w.user_id)) || w}
+            eventHandlers={{
+              add: (e) => {
+                const leafletMarker = e?.target;
+                if (!leafletMarker) return;
 
-            const dist =
-              refOk && Number.isFinite(wLat) && Number.isFinite(wLng)
-                ? haversineKm(refLat, refLng, wLat, wLng)
-                : null;
+                const uid = String(w.user_id);
+                markersRef.current[uid] = leafletMarker;
+              },
+              click: () => {
+                const uid = String(w.user_id);
+                const fresh = workersByIdRef.current?.get(uid);
+                handleMarkerClick(fresh || w);
+              },
+            }}
+          />
+        );
+      })}
+  </MarkerClusterGroup>
+)}
 
-            return {
-              ...w,
-              _distKm: Number.isFinite(dist) ? dist : null,
-              _dist: Number.isFinite(dist) ? dist : null,
-              _online: isOnlineRecent(w),
-              _rating: Number(w?.avg_rating || 0),
-              _reviews: Number(w?.total_reviews || 0),
-            };
-          })
-          .sort((a, b) => {
-            if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
-            if (a._distKm != null) return -1;
-            if (b._distKm != null) return 1;
-
-            if (a._online !== b._online) return a._online ? -1 : 1;
-            if (a._rating !== b._rating) return b._rating - a._rating;
-            if (a._reviews !== b._reviews) return b._reviews - a._reviews;
-
-            return String(a.user_id).localeCompare(String(b.user_id));
-          });
-
-        // ✅ ABRIR DIRECTO el MODAL GRANDE (sin zoom)
-        setClusterMode('cluster');
-        setClusterList(list);
-        setClusterOpen(true);
-
-        toast.success(`👥 ${list.length} en esta zona`, { duration: 900 });
-      } catch (err) {
-        console.warn('cluster click error', err);
-      }
-    },
-  }}
->
-  {(workers || [])
-    .filter((w) => {
-      const wLat = Number(w?.lat);
-      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-      if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
-
-      // ✅ incluir también paused e inactivos (igual se muestran)
-
-      const ref = typeof getRefPoint === 'function'
-        ? getRefPoint()
-        : { lat: Number(me?.lat), lng: Number(me?.lon), mode: 'home' };
-
-      const refOk = Number.isFinite(Number(ref?.lat)) && Number.isFinite(Number(ref?.lng));
-      if (refOk) {
-        const km = haversineKm(Number(ref.lat), Number(ref.lng), wLat, wLng);
-        if (Number.isFinite(km) && km > MAX_RADIUS_KM) return false;
-      }
-
-      return true;
-    })
-    .map((w) => {
-      const wLat = Number(w?.lat);
-      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-
-      return (
-       <Marker
-  key={String(w.user_id)}
-  position={[wLat, wLng]}
-  icon={avatarIcon(w.avatar_url, w) || undefined}
-
-  // ✅ CLAVE: el cluster ahora SIEMPRE puede leer esto (queda en marker.options)
-  __userId={String(w.user_id)}
-  __worker={workersByIdRef.current?.get(String(w.user_id)) || w}
-
-  eventHandlers={{
-    add: (e) => {
-      const leafletMarker = e?.target;
-      if (!leafletMarker) return;
-
-      const uid = String(w.user_id);
-
-      // ✅ para animación (esto sí conviene dejarlo acá)
-      markersRef.current[uid] = leafletMarker;
-    },
-    click: () => {
-      const uid = String(w.user_id);
-      const fresh = workersByIdRef.current?.get(uid);
-      handleMarkerClick(fresh || w);
-    },
-  }}
-/>
-      );
-    })}
-</MarkerClusterGroup>
 
 </MapContainer>
 {/* ✅ MODAL CLUSTER (PORTAL + estrellas) */}
@@ -2816,28 +3393,120 @@ const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
     )}
   </AnimatePresence>
 </motion.div>
-  {/* PERFIL DEL TRABAJADOR / CHOFER (MODIFICADO) */}
+{/* PERFIL DEL TRABAJADOR / CHOFER */}
 <AnimatePresence>
-  {selected && !showPrice && (() => {
-    
- 
+  {selected && !showPrice && jobStatus !== 'completed' && jobStatus !== 'cancelled' && (() => {
+    const km =
+      hasMeCoords && hasSelCoords
+        ? Math.round(haversineKm(Number(me.lat), Number(me.lon), selLat, selLng) * 10) / 10
+        : null;
 
-       const km =
-  hasMeCoords && hasSelCoords
-    ? Math.round(haversineKm(Number(me.lat), Number(me.lon), selLat, selLng) * 10) / 10
-    : null;
+    const skillsList = Array.isArray(selected?.skills)
+      ? selected.skills
+      : typeof selected?.skills === 'string'
+      ? selected.skills.split(',')
+      : ['Limpieza', 'Plomería', 'Jardinería'];
 
-    // 🏅 Aro por plan (premium dorado / normal plateado / eco verde)
-    const tier = String(selected?.plan_tier || 'normal').toLowerCase();
-    const ringClass =
-      tier === 'premium'
-        ? 'border-yellow-400'
-        : tier === 'eco'
-        ? 'border-emerald-500'
-        : 'border-gray-300';
+    const renderActionButtons = () => {
+      if (!jobId) {
+        return (
+          <div className="flex justify-center gap-3 mt-5">
+            <button
+              onClick={() => {
+                setSelected(null);
+                setProfileSheetMode('full');
+              }}
+              className="px-5 py-3 rounded-xl border text-gray-700"
+            >
+              Cerrar
+            </button>
 
-    const tierLabel =
-      tier === 'premium' ? '⭐ Premium' : tier === 'eco' ? '🌿 Eco' : '🩶 Normal';
+            <button
+              onClick={solicitar}
+              className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
+            >
+              🚀 Solicitar
+            </button>
+          </div>
+        );
+      }
+
+      if (jobStatus === 'open') {
+        return (
+          <div className="flex flex-col gap-3 w-full mt-5">
+            <button
+              onClick={() => {
+                openChat();
+                setHasUnread(false);
+              }}
+              className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
+            >
+              <MessageCircle size={18} className="text-emerald-600" />
+              Chatear
+              {hasUnread && (
+                <>
+                  <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
+                  <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={cancelarPedido}
+              className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center justify-center gap-1"
+            >
+              <XCircle size={16} /> Cancelar pedido
+            </button>
+          </div>
+        );
+      }
+
+      if (jobStatus === 'accepted' || jobStatus === 'assigned') {
+        return (
+          <div className="flex flex-col gap-3 w-full mt-5">
+            <button
+  onClick={verTrabajadorViniendo}
+  className="px-6 py-3 rounded-2xl bg-emerald-500 text-white font-semibold flex items-center justify-center gap-2 shadow-md hover:bg-emerald-600 transition-all duration-200 active:scale-95"
+>
+  📍 Ver llegada
+</button>
+
+            <button
+              onClick={() => {
+                openChat();
+                setHasUnread(false);
+              }}
+              className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
+            >
+              <MessageCircle size={18} className="text-emerald-600" />
+              Chatear
+              {hasUnread && (
+                <>
+                  <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
+                  <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={cancelarPedido}
+              className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center justify-center gap-1"
+            >
+              <XCircle size={16} /> Cancelar pedido
+            </button>
+
+            <button
+              onClick={finalizarPedido}
+              className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center justify-center gap-1"
+            >
+              <CheckCircle2 size={16} /> Finalizar pedido
+            </button>
+          </div>
+        );
+      }
+
+      return null;
+    };
 
     return (
       <motion.div
@@ -2846,22 +3515,126 @@ const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
         transition={{ type: 'spring', stiffness: 120, damping: 18 }}
-        className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl p-6 z-[10000]"
+        className="fixed inset-x-0 bottom-0 z-[10000]"
       >
-        <div className="text-center">
-        
-            <>
-              {/* 🧑 Avatar con verificación */}
+        {profileSheetMode === 'mini' ? (
+          <div
+            className="mx-3 mb-3 rounded-3xl bg-white shadow-2xl border border-gray-200 p-4"
+            style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}
+          >
+            <button
+              onClick={() => setProfileSheetMode('full')}
+              className="w-full flex items-center justify-center mb-3"
+            >
+              <div className="h-1.5 w-12 bg-gray-300 rounded-full"></div>
+            </button>
+
+            <div className="flex items-center gap-3">
+              <img
+                src={selected.avatar_url || '/avatar-fallback.png'}
+                onError={(e) => {
+                  e.currentTarget.src = '/avatar-fallback.png';
+                }}
+                className="w-14 h-14 rounded-full border-2 border-emerald-500 object-cover object-center shadow-sm"
+                alt="avatar"
+              />
+
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-gray-800 truncate">
+                  {selected.full_name || 'Profesional'}
+                </div>
+
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {jobStatus === 'accepted' || jobStatus === 'assigned'
+                    ? '🟢 Trabajador en camino'
+                    : 'Pedido activo'}
+                </div>
+
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {Number.isFinite(km) && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-bold text-emerald-700">
+                      📍 {formatKm(km)}
+                    </span>
+                  )}
+
+                  {etaMinutes != null && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-[11px] font-bold text-emerald-700">
+                      ⏱ {etaMinutes} min
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <button
+                onClick={() => setProfileSheetMode('full')}
+                className="px-3 py-2 rounded-xl bg-emerald-500 text-white text-sm font-semibold"
+              >
+                Ver
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              <button
+                onClick={() => {
+                  openChat();
+                  setHasUnread(false);
+                }}
+                className="relative px-4 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
+              >
+                <MessageCircle size={18} className="text-emerald-600" />
+                Chatear
+                {hasUnread && (
+                  <>
+                    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
+                    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={() => setProfileSheetMode('full')}
+                className="px-4 py-3 rounded-2xl bg-gray-100 text-gray-700 font-semibold"
+              >
+                Subir perfil
+              </button>
+
+              <button
+                onClick={cancelarPedido}
+                className="px-4 py-3 rounded-2xl bg-red-500 text-white font-semibold flex items-center justify-center gap-2"
+              >
+                <XCircle size={16} />
+                Cancelar
+              </button>
+
+              <button
+                onClick={finalizarPedido}
+                className="px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 size={16} />
+                Finalizar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="bg-white rounded-t-3xl shadow-xl p-6"
+            style={{ paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}
+          >
+            <button
+              onClick={() => setProfileSheetMode('mini')}
+              className="w-full flex items-center justify-center mb-3"
+            >
+              <div className="h-1.5 w-12 bg-gray-300 rounded-full"></div>
+            </button>
+
+            <div className="text-center">
               <div className="relative w-20 h-20 mx-auto mb-2">
                 <img
                   src={selected.avatar_url || '/avatar-fallback.png'}
                   onError={(e) => {
                     e.currentTarget.src = '/avatar-fallback.png';
                   }}
-                  className="
-                    w-20 h-20 rounded-full border-4 border-emerald-500 shadow-md
-                    object-cover object-center
-                  "
+                  className="w-20 h-20 rounded-full border-4 border-emerald-500 shadow-md object-cover object-center"
                   alt="avatar"
                 />
 
@@ -2872,13 +3645,12 @@ const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
                 )}
               </div>
 
-              {/* 🧾 Nombre y descripción */}
               <h2 className="font-bold text-lg">{selected.full_name}</h2>
+
               <p className="text-sm italic text-gray-500 mb-2">
                 “{selected.bio || 'Sin descripción'}”
               </p>
 
-              {/* ⭐ Calificación dinámica */}
               <div className="flex justify-center items-center gap-1 mb-2">
                 {[...Array(5)].map((_, i) => (
                   <Star
@@ -2896,7 +3668,6 @@ const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
                 </span>
               </div>
 
-              {/* 🧠 Experiencia dinámica */}
               <p className="text-sm text-gray-600">
                 <Clock3 size={14} className="inline mr-1" />
                 {selected?.years_experience
@@ -2906,130 +3677,69 @@ const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
                   : 'Sin experiencia registrada'}
               </p>
 
-           {/* ⏰ Última actividad */}
-<p className="text-xs text-gray-500 mt-1">
-  {(() => {
-    const mins = minutesSince(selected?.updated_at);
-    if (mins == null) return 'Sin actividad reciente';
-    if (mins < 60) return `Activo hace ${mins} min`;
-    if (mins < 1440) return `Activo hace ${Math.floor(mins / 60)} h`;
-    return `Activo hace ${Math.floor(mins / 1440)} d`;
-  })()}
-</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {(() => {
+                  const mins = minutesSince(selected?.updated_at);
+                  if (mins == null) return 'Sin actividad reciente';
+                  if (mins < 60) return `Activo hace ${mins} min`;
+                  if (mins < 1440) return `Activo hace ${Math.floor(mins / 60)} h`;
+                  return `Activo hace ${Math.floor(mins / 1440)} d`;
+                })()}
+              </p>
 
+              <div className="mt-2 flex justify-center">
+                {Number.isFinite(km) ? (
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200">
+                    <span className="text-[12px] font-extrabold text-emerald-700">
+                      📍 {formatKm(km)}
+                    </span>
+                    <span className="text-[11px] font-semibold text-gray-500">
+                      desde tu ubicación
+                    </span>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-50 border border-gray-200">
+                    <span className="text-[12px] font-bold text-gray-500">📍 —</span>
+                    <span className="text-[11px] font-semibold text-gray-400">
+                      activá GPS para ver km
+                    </span>
+                  </div>
+                )}
+              </div>
 
+              {etaMinutes != null && (
+                <div className="mt-2 flex justify-center">
+                  <div className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
+                    ⏱️ llega en aprox {etaMinutes} min
+                  </div>
+                </div>
+              )}
 
-{/* 📍 Distancia al profesional */}
-<div className="mt-2 flex justify-center">
-  {Number.isFinite(km) ? (
-    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200">
-      <span className="text-[12px] font-extrabold text-emerald-700">
-        📍 {formatKm(km)}
-      </span>
-      <span className="text-[11px] font-semibold text-gray-500">
-        desde tu ubicación
-      </span>
-    </div>
-  ) : (
-    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-50 border border-gray-200">
-      <span className="text-[12px] font-bold text-gray-500">📍 —</span>
-      <span className="text-[11px] font-semibold text-gray-400">
-        activá GPS para ver km
-      </span>
-    </div>
-  )}
-</div>
-
-              {/* 🧰 Especialidades */}
               <div className="mt-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-2">Especialidades</h3>
                 <div className="flex flex-wrap justify-center gap-2">
-                  {(() => {
-                    let skillsList = [];
-
-                    if (Array.isArray(selected?.skills)) {
-                      skillsList = selected.skills;
-                    } else if (typeof selected?.skills === 'string') {
-                      skillsList = selected.skills.split(',');
-                    } else {
-                      skillsList = ['Limpieza', 'Plomería', 'Jardinería'];
-                    }
-
-                    return skillsList.map((skill, i) => (
-                      <span
-                        key={i}
-                        className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium text-sm shadow-sm border border-emerald-200"
-                      >
-                        {skill.trim()}
-                      </span>
-                    ));
-                  })()}
+                  {skillsList.map((skill, i) => (
+                    <span
+                      key={i}
+                      className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium text-sm shadow-sm border border-emerald-200"
+                    >
+                      {String(skill).trim()}
+                    </span>
+                  ))}
                 </div>
               </div>
 
-              {/* Estado de pedido si existe */}
               <div className="mt-3">{jobId && <StatusBadge />}</div>
 
-              {/* 🔘 Botones dinámicos */}
-              {!route ? (
-                <div className="flex justify-center gap-3 mt-5">
-                  <button
-                    onClick={() => setSelected(null)}
-                    className="px-5 py-3 rounded-xl border text-gray-700"
-                  >
-                    Cerrar
-                  </button>
-                  <button
-                    onClick={solicitar}
-                    className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
-                  >
-                    🚀 Solicitar
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-3 mt-5">
-                  <button
-                    onClick={() => {
-                      openChat();
-                      setHasUnread(false);
-                    }}
-                    className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
-                  >
-                    <MessageCircle size={18} className="text-emerald-600" />
-                    Chatear
-                    {hasUnread && (
-                      <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
-                    )}
-                    {hasUnread && (
-                      <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
-                    )}
-                  </button>
-
-                  {jobStatus === 'accepted' || jobStatus === 'assigned' ? (
-                    <button
-                      onClick={finalizarPedido}
-                      className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center gap-1"
-                    >
-                      <CheckCircle2 size={16} /> Finalizar pedido
-                    </button>
-                  ) : jobStatus === 'open' ? (
-                    <button
-                      onClick={cancelarPedido}
-                      className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center gap-1"
-                    >
-                      <XCircle size={16} /> Cancelar pedido
-                    </button>
-                  ) : null}
-                </div>
-              )}
-                        </>
-        </div>
+              {renderActionButtons()}
+            </div>
+          </div>
+        )}
       </motion.div>
     );
   })()}
 </AnimatePresence>
-
-    {/* 💵 MODAL PRECIO — versión final (dinámica y adaptativa) */}
+{/* 💵 MODAL INFORMACIÓN DE SOLICITUD — SIN PRECIOS FIJOS AÚN */}
 <AnimatePresence>
   {showPrice && (
     <motion.div
@@ -3046,78 +3756,31 @@ const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
         exit={{ scale: 0.9, y: 50 }}
         transition={{ type: 'spring', stiffness: 120, damping: 18 }}
       >
-        {/* 🧠 Encabezado emocional */}
-        <h3 className="text-lg font-semibold text-emerald-700 mb-1">
+        {/* 🧠 Encabezado */}
+        <h3 className="text-lg font-bold text-emerald-700 mb-1">
           Estás a un paso de tu solución ✨
         </h3>
-        <p className="text-sm text-gray-500 mb-4">
-          Confirmá tu pedido y un profesional irá a ayudarte.
+
+        <p className="text-sm text-gray-500 mb-5">
+          Enviá tu solicitud ahora y conectate con un profesional cerca tuyo.
         </p>
 
-        {/* 💰 Precio dinámico central */}
-        <p className="text-4xl font-extrabold text-emerald-700 mb-1 drop-shadow-sm transition-all duration-300">
-          ₲{precioEstimado.toLocaleString('es-PY')}
-        </p>
-        <p className="text-xs text-gray-500 mb-4">Precio estimado total</p>
+        {/* 📢 Estado actual de precios */}
+        <div className="rounded-2xl border border-emerald-200 bg-white p-4 mb-5 shadow-sm">
+          <p className="text-2xl font-extrabold text-emerald-600 mb-1">
+            Solicitud sin costo
+          </p>
+          <p className="text-xs text-gray-500">
+            Todavía estamos en etapa de reclutamiento y activación de profesionales.
+          </p>
+        </div>
 
-        {/* ⏱️ Control de horas dinámico (solo si aplica) */}
-        {(() => {
-          const serviciosPorHora = ['limpieza', 'jardinería', 'mascotas'];
-          const esPorHora = serviciosPorHora.includes(selectedService?.toLowerCase?.() || '');
-          return (
-            esPorHora && (
-              <div className="flex items-center justify-center gap-4 mb-5">
-                <button
-                  onClick={() => {
-                    const nuevaHora = Math.max(1, horasTrabajo - 1);
-                    setHorasTrabajo(nuevaHora);
-                    const nuevoPrecio = calcularPrecio(
-                      selectedService,
-                      distanciaKm,
-                      nuevaHora,
-                      false,
-                      false,
-                      selected
-                    );
-                    setPrecioEstimado(nuevoPrecio);
-                  }}
-                  className="w-9 h-9 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full text-xl font-bold text-gray-700 shadow-inner"
-                >
-                  −
-                </button>
-
-                <span className="text-base font-semibold text-gray-800">
-                  {horasTrabajo} hora{horasTrabajo > 1 ? 's' : ''}
-                </span>
-
-                <button
-                  onClick={() => {
-                    const nuevaHora = horasTrabajo + 1;
-                    setHorasTrabajo(nuevaHora);
-                    const nuevoPrecio = calcularPrecio(
-                      selectedService,
-                      distanciaKm,
-                      nuevaHora,
-                      false,
-                      false,
-                      selected
-                    );
-                    setPrecioEstimado(nuevoPrecio);
-                  }}
-                  className="w-9 h-9 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full text-xl font-bold text-gray-700 shadow-inner"
-                >
-                  +
-                </button>
-              </div>
-            )
-          );
-        })()}
-
-        {/* 🌟 Beneficios subconscientes */}
-        <div className="text-sm text-gray-600 space-y-1 mb-6">
-          <p>🚗 Incluye traslado promedio (hasta 3 km)</p>
-          <p>🌙 Urgencias nocturnas o feriados +20%</p>
-          <p>💰 Tarifa mínima garantizada ₲10.000</p>
+        {/* 🧩 Explicación clara para clientes */}
+        <div className="text-sm text-gray-600 space-y-2 mb-6 text-left">
+          <p>✅ Ya podés explorar profesionales y enviar tu solicitud.</p>
+          <p>🛠️ Las tarifas oficiales se activarán después del reclutamiento.</p>
+          <p>📲 Muy pronto vas a ver precios claros antes de confirmar cada servicio.</p>
+          <p>🚀 Estamos preparando una experiencia más rápida, transparente y profesional para vos.</p>
         </div>
 
         {/* 🔘 Botones CTA */}
@@ -3126,19 +3789,20 @@ const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
             onClick={() => setShowPrice(false)}
             className="py-3 w-1/2 rounded-xl bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition"
           >
-            Cancelar
+            Volver
           </button>
+
           <button
             onClick={confirmarSolicitud}
             className="py-3 w-1/2 rounded-xl bg-emerald-500 text-white font-semibold shadow-md hover:bg-emerald-600 active:scale-[0.98] transition"
           >
-            Confirmar pedido
+            Enviar solicitud
           </button>
         </div>
 
-        {/* 💚 Refuerzo psicológico final */}
+        {/* 💚 Refuerzo final */}
         <p className="text-[11px] text-gray-400 mt-5 italic">
-          Tu tranquilidad comienza en minutos 💚
+          ManosYA se está preparando para ofrecerte una nueva forma de pedir servicios.
         </p>
       </motion.div>
     </motion.div>
@@ -3147,132 +3811,216 @@ const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
 
 
 
-{/* 🌟 MODAL DE CALIFICACIÓN (cliente o trabajador finalizan) */}
+{/* 🌟 MODAL DE CALIFICACIÓN MANOSYA */}
 <AnimatePresence>
   {(jobStatus === 'worker_completed' || jobStatus === 'completed') && (
     <motion.div
       key="modal-review"
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10020]"
+      className="fixed inset-0 z-[10020] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onAnimationStart={() => {
-        // 📱 Vibración leve al abrir
         if (navigator.vibrate) navigator.vibrate(30);
-       
-      
       }}
     >
       <motion.div
-        className="bg-white rounded-3xl p-6 w-[85%] max-w-md text-center shadow-xl relative"
-        initial={{ scale: 0.9, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.9, y: 40, opacity: 0 }}
-        transition={{ type: 'spring', stiffness: 150, damping: 18 }}
+        initial={{ scale: 0.94, y: 24, opacity: 0 }}
+        animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.94, y: 30, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 160, damping: 18 }}
+        className="
+          relative w-full max-w-md overflow-hidden
+          rounded-[30px]
+          border border-emerald-100
+          bg-white
+          shadow-[0_30px_80px_rgba(0,0,0,0.35)]
+        "
       >
-        {/* ✖️ Cerrar modal manual */}
+
+        {/* decoración suave marca */}
+        <div className="pointer-events-none absolute -top-20 -right-20 h-44 w-44 rounded-full bg-emerald-400/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-20 -left-20 h-44 w-44 rounded-full bg-emerald-300/10 blur-3xl" />
+
+        {/* botón cerrar */}
         <button
           onClick={() => {
-            // 🧹 Cierra modal y vuelve al mapa con animación suave
             setJobStatus(null);
             setTimeout(() => {
               resetJobState();
-              if (mapRef.current && me?.lat && me?.lon) {
-                mapRef.current.flyTo([me.lat, me.lon], 13, { duration: 1.2 });
-              }
             }, 400);
           }}
-          className="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition"
+          className="
+            absolute top-4 right-4
+            h-9 w-9 rounded-full
+            bg-gray-100
+            text-gray-400
+            hover:text-red-500
+            transition
+            flex items-center justify-center
+          "
         >
-          <XCircle size={20} />
+          <XCircle size={18} />
         </button>
 
-        <img
-  src={selected?.avatar_url || '/avatar-fallback.png'}
-  alt="avatar trabajador"
-  onError={(e) => {
-    e.currentTarget.src = '/avatar-fallback.png';
-  }}
-  className="
-    w-16 h-16 aspect-square shrink-0
-    rounded-full border-4 border-emerald-500 shadow-sm mb-2
-    object-cover object-center
-  "
-  style={{ aspectRatio: '1 / 1' }}
-/>
+        <div className="px-7 pt-7 pb-6 text-center">
 
-        {/* ⭐ Calificación */}
-        <div className="flex justify-center gap-2 mb-4">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <Star
-              key={n}
-              size={28}
-              onClick={() => {
-                setRating(n);
-                // 💫 Vibración mini + click sound
-                if (navigator.vibrate) navigator.vibrate(15);
-              
+          {/* encabezado */}
+          <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-1.5 text-[12px] font-semibold text-emerald-700">
+            ✅ Servicio finalizado
+          </div>
+
+          {/* avatar */}
+          <div className="relative mx-auto mb-4 h-24 w-24">
+            <div className="absolute inset-0 rounded-full bg-emerald-400/25 blur-xl" />
+            <img
+              src={selected?.avatar_url || '/avatar-fallback.png'}
+              alt="avatar trabajador"
+              onError={(e) => {
+                e.currentTarget.src = '/avatar-fallback.png';
               }}
-              className={`cursor-pointer transition-transform ${
-                n <= rating
-                  ? 'fill-yellow-400 text-yellow-400 scale-110'
-                  : 'text-gray-300 hover:scale-105'
-              }`}
+              className="
+                relative z-10 h-24 w-24 rounded-full
+                object-cover object-center
+                border-4 border-emerald-500
+                shadow-[0_10px_25px_rgba(16,185,129,0.35)]
+              "
             />
-          ))}
-        </div>
+          </div>
 
-        {/* 💬 Comentario */}
-        <textarea
-          className="w-full border rounded-xl p-3 text-sm resize-none focus:ring-2 focus:ring-emerald-400"
-          rows={3}
-          placeholder="Comentá cómo fue la atención..."
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-        />
+          {/* título */}
+          <h3 className="text-[22px] font-bold text-gray-800">
+            ¿Cómo fue tu experiencia?
+          </h3>
 
-        {/* ⚙️ Botones */}
-        <div className="flex justify-center gap-3 mt-5">
-          {/* Omitir */}
-          <button
-            onClick={() => {
-              toast('Valoración omitida');
-              setJobStatus(null);
-              setTimeout(() => {
-                resetJobState();
-                if (mapRef.current && me?.lat && me?.lon) {
-                  mapRef.current.flyTo([me.lat, me.lon], 13, { duration: 1.2 });
-                }
-              }, 400);
-            }}
-            className="px-5 py-2 rounded-xl border text-gray-600 hover:bg-gray-50"
-          >
-            Omitir
-          </button>
+          <p className="mt-1 text-sm text-gray-500">
+            Valorá a <span className="font-semibold text-emerald-600">{selected?.full_name || 'el profesional'}</span> y ayudá a mejorar ManosYA.
+          </p>
 
-          {/* Finalizar y valorar */}
-          <button
-            onClick={async () => {
-              try {
-                await confirmarReseña();
-                toast.success('Gracias por valorar al profesional 🙌');
-                // 🧹 Limpieza total + zoom animado al mapa
+          {/* estrellas */}
+          <div className="mt-6 mb-3">
+            <div className="flex justify-center gap-2">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => {
+                    setRating(n);
+                    if (navigator.vibrate) navigator.vibrate(15);
+                  }}
+                  className={`
+                    h-11 w-11 rounded-xl
+                    flex items-center justify-center
+                    border transition
+                    ${
+                      n <= rating
+                        ? 'bg-emerald-500 border-emerald-500 shadow-md'
+                        : 'bg-white border-gray-200 hover:bg-emerald-50'
+                    }
+                  `}
+                >
+                  <Star
+                    size={22}
+                    className={
+                      n <= rating
+                        ? 'fill-white text-white'
+                        : 'text-gray-300'
+                    }
+                  />
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 text-xs text-gray-500 font-medium">
+              {rating === 0 && 'Seleccioná una cantidad de estrellas'}
+              {rating === 1 && 'Muy mala experiencia'}
+              {rating === 2 && 'Podría mejorar'}
+              {rating === 3 && 'Experiencia aceptable'}
+              {rating === 4 && 'Muy buena atención'}
+              {rating === 5 && 'Excelente servicio'}
+            </div>
+          </div>
+
+          {/* comentario */}
+          <div className="mt-5 text-left">
+            <label className="mb-2 block text-[12px] font-semibold text-gray-500">
+              COMENTARIO OPCIONAL
+            </label>
+
+            <textarea
+              rows={4}
+              placeholder="Comentá cómo fue la atención, puntualidad y calidad del servicio..."
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              className="
+                w-full resize-none rounded-2xl
+                border border-gray-200
+                px-4 py-3 text-sm
+                shadow-inner
+                outline-none
+                focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100
+              "
+            />
+          </div>
+
+          {/* botones */}
+          <div className="mt-6 flex gap-3">
+
+            <button
+              onClick={() => {
+                toast('Valoración omitida');
+                setJobStatus(null);
                 setTimeout(() => {
-                  setJobStatus(null);
                   resetJobState();
-                  if (mapRef.current && me?.lat && me?.lon) {
-                    mapRef.current.flyTo([me.lat, me.lon], 13, { duration: 1.2 });
-                  }
-                }, 600);
-              } catch (err) {
-                console.error('❌ Error al guardar reseña:', err);
-                toast.error('No se pudo guardar la valoración');
-              }
-            }}
-            className="px-6 py-2 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition"
-          >
-            Finalizar y valorar
-          </button>
+                }, 400);
+              }}
+              className="
+                flex-1 rounded-2xl
+                bg-gray-100
+                py-3 text-sm font-semibold
+                text-gray-600
+                hover:bg-gray-200
+                transition
+              "
+            >
+              Omitir
+            </button>
+
+            <button
+              onClick={async () => {
+                try {
+                  await confirmarReseña();
+                  toast.success('Gracias por valorar al profesional 🙌');
+
+                  setTimeout(() => {
+                    setJobStatus(null);
+                    resetJobState();
+                  }, 600);
+                } catch (err) {
+                  console.error('❌ Error al guardar reseña:', err);
+                  toast.error('No se pudo guardar la valoración');
+                }
+              }}
+              className="
+                flex-[1.4]
+                rounded-2xl
+                bg-emerald-500
+                py-3
+                text-sm font-bold text-white
+                shadow-lg shadow-emerald-400/30
+                hover:bg-emerald-600
+                transition
+              "
+            >
+              Finalizar y valorar
+            </button>
+
+          </div>
+
+          <div className="mt-4 text-[11px] text-gray-400">
+            Tu opinión ayuda a mejorar la calidad de los servicios en ManosYA.
+          </div>
+
         </div>
       </motion.div>
     </motion.div>
@@ -3368,29 +4116,79 @@ const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
               Inicia la conversación ✨
             </p>
           ) : (
-            messages.map((m) => {
-              const mine = m.sender_id === me?.id;
-              return (
-                <div 
-                  key={m.id} 
-                  className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`
-                      max-w-[80%] px-4 py-3 
-                      rounded-2xl text-[15px] 
-                      shadow-sm leading-relaxed
-                      ${mine 
-                        ? 'bg-emerald-500 text-white rounded-br-none shadow-emerald-300/30' 
-                        : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
-                      }
-                    `}
-                  >
-                    {m.text}
-                  </div>
+           messages.map((m) => {
+  const mine = String(m.sender_id) === String(me?.id);
+  const isLocation = m?.message_type === 'location';
+  const hasCoords = Number.isFinite(Number(m?.lat)) && Number.isFinite(Number(m?.lng));
+
+  return (
+    <div
+      key={m.id}
+      className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
+    >
+      {isLocation ? (
+        <button
+          type="button"
+          onClick={() => openLocationMessageOnMap(m)}
+          className={`
+            max-w-[82%] text-left overflow-hidden
+            rounded-2xl shadow-sm border
+            transition active:scale-[0.98]
+            ${mine
+              ? 'bg-emerald-500 text-white border-emerald-500 rounded-br-none'
+              : 'bg-white text-gray-800 border-gray-200 rounded-bl-none'
+            }
+          `}
+        >
+          <div className="px-4 pt-3 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[18px]">📍</span>
+              <div>
+                <div className="text-[14px] font-extrabold leading-none">
+                  Ubicación compartida
                 </div>
-              );
-            })
+                <div className={`text-[11px] mt-1 ${mine ? 'text-white/80' : 'text-gray-500'}`}>
+                  Tocá para abrir en el mapa
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            className={`
+              mx-3 mb-3 rounded-2xl px-3 py-3
+              ${mine ? 'bg-white/12 border border-white/15' : 'bg-emerald-50 border border-emerald-100'}
+            `}
+          >
+            <div className="text-[12px] font-bold">
+              {hasCoords
+                ? `${Number(m.lat).toFixed(6)}, ${Number(m.lng).toFixed(6)}`
+                : 'Ubicación no disponible'}
+            </div>
+
+            <div className={`text-[11px] mt-1 ${mine ? 'text-white/80' : 'text-gray-500'}`}>
+              Ver punto exacto en el mapa
+            </div>
+          </div>
+        </button>
+      ) : (
+        <div
+          className={`
+            max-w-[80%] px-4 py-3
+            rounded-2xl text-[15px]
+            shadow-sm leading-relaxed
+            ${mine
+              ? 'bg-emerald-500 text-white rounded-br-none shadow-emerald-300/30'
+              : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
+            }
+          `}
+        >
+          {m.text}
+        </div>
+      )}
+    </div>
+  );
+})
           )}
 
           {/* “ESCRIBIENDO...” efecto lujo */}
@@ -3412,50 +4210,50 @@ const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
         </div>
 
         {/* ✨ INPUT PREMIUM — MÁS ALTO & MEJOR DISEÑO */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const value = inputRef.current?.value?.trim() || '';
-            if (value) sendMessage(value);
-            inputRef.current.value = '';
-          }}
-          className="
-            flex items-center gap-3 
-            p-5 
-            bg-white/85 backdrop-blur-lg
-            border-t border-gray-200
-          "
-        >
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Escribí un mensaje…"
-            className="
-              flex-1 
-              px-5 py-3.5 
-              rounded-2xl 
-              bg-gray-100/70 
-              border border-gray-200 
-              focus:ring-2 focus:ring-emerald-400/40
-              text-gray-700 shadow-inner 
-              text-[15px]
-            "
-          />
+    <form
+  onSubmit={(e) => {
+    e.preventDefault();
+    const value = inputRef.current?.value?.trim() || '';
+    if (value) sendMessage(value);
+    inputRef.current.value = '';
+  }}
+  className="
+    flex items-center gap-3
+    p-5
+    bg-white/85 backdrop-blur-lg
+    border-t border-gray-200
+  "
+>
+  <input
+    ref={inputRef}
+    type="text"
+    placeholder="Escribí un mensaje…"
+    className="
+      flex-1
+      px-5 py-3.5
+      rounded-2xl
+      bg-gray-100/70
+      border border-gray-200
+      focus:ring-2 focus:ring-emerald-400/40
+      text-gray-700 shadow-inner
+      text-[15px]
+    "
+  />
 
-          <button
-            type="submit"
-            className="
-              p-4 rounded-2xl 
-              bg-emerald-500 hover:bg-emerald-600 
-              active:scale-95 
-              text-white 
-              shadow-lg shadow-emerald-300/30
-              transition
-            "
-          >
-            <SendHorizontal size={22} />
-          </button>
-        </form>
+  <button
+    type="submit"
+    className="
+      p-4 rounded-2xl
+      bg-emerald-500 hover:bg-emerald-600
+      active:scale-95
+      text-white
+      shadow-lg shadow-emerald-300/30
+      transition
+    "
+  >
+    <SendHorizontal size={22} />
+  </button>
+</form>
 
       </motion.div>
     </motion.div>
