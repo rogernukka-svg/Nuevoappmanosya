@@ -663,12 +663,15 @@ export default function WorkerPage() {
     }
   }
 
-  useEffect(() => {
-    if (!user?.id) return;
-    loadJobs();
-    const t = setInterval(loadJobs, 15000);
-    return () => clearInterval(t);
-  }, [user?.id]);
+useEffect(() => {
+  if (!user?.id) return;
+
+  // ✅ carga inicial una sola vez
+  loadJobs();
+
+  // ✅ sin polling agresivo cada 15s
+  // dejamos que realtime haga la mayor parte del trabajo
+}, [user?.id]);
 
   useEffect(() => {
     if (mapOpen) {
