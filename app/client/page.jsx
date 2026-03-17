@@ -704,64 +704,41 @@ useEffect(() => {
       return;
     }
 
-    // ⚠️ NO forzar el prompt al montar (PWA Android).
-    // Solo si ya está concedido -> arrancamos watcher.
-    try {
-      if (navigator.permissions?.query) {
-        const perm = await navigator.permissions.query({ name: 'geolocation' });
-        if (!alive) return;
-
-        if (perm.state === 'granted') {
-          requestGPS(); // ✅ permiso ya concedido
-        } else if (perm.state === 'denied') {
-          setGpsStatus('denied');
-          setGpsError('Permiso de ubicación denegado (activar en Permisos / Ubicación precisa).');
-        } else {
-          setGpsStatus('init'); // prompt: esperar botón
-          setGpsError(null);
-        }
-
-        perm.onchange = () => {
-          if (!alive) return;
-          if (perm.state === 'granted') requestGPS();
-          if (perm.state === 'denied') {
-            setGpsStatus('denied');
-            setGpsError('Permiso de ubicación denegado.');
-          }
-        };
-      } else {
-        setGpsStatus('init');
-        setGpsError(null);
-      }
-    } catch {
-      setGpsStatus('init');
-      setGpsError(null);
-    }
+    // ✅ No depender de navigator.permissions.query() para iniciar GPS.
+    // Dejamos la UI lista y el permiso se pide desde el botón.
+    if (!alive) return;
+    setGpsStatus('init');
+    setGpsError(null);
   }
 
   bootGeo();
+
   return () => {
     alive = false;
     try {
       if (navigator?.geolocation) {
-        if (gpsWatchFastRef.current != null) navigator.geolocation.clearWatch(gpsWatchFastRef.current);
-        if (gpsWatchPreciseRef.current != null) navigator.geolocation.clearWatch(gpsWatchPreciseRef.current);
+        if (gpsWatchFastRef.current != null) {
+          navigator.geolocation.clearWatch(gpsWatchFastRef.current);
+        }
+        if (gpsWatchPreciseRef.current != null) {
+          navigator.geolocation.clearWatch(gpsWatchPreciseRef.current);
+        }
       }
     } catch {}
+
     gpsWatchFastRef.current = null;
     gpsWatchPreciseRef.current = null;
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
-// eslint-disable-next-line no-unused-vars
-const [tick, setTick] = useState(0);
-
-useEffect(() => {
-  const t = setInterval(() => setTick(x => x + 1), 60000); // cada 1 minuto
-  return () => clearInterval(t);
-}, []);
-async function requestGPS() {
+ async function requestGPS() {
   if (typeof window === 'undefined') return;
+
+  if (!window.isSecureContext) {
+    setGpsStatus('error');
+    setGpsError('GPS requiere HTTPS o abrir la app desde el dominio seguro.');
+    toast.error('GPS requiere HTTPS');
+    return;
+  }
 
   if (!navigator?.geolocation) {
     setGpsStatus('error');
@@ -773,39 +750,49 @@ async function requestGPS() {
   setGpsStatus('requesting');
   setGpsError(null);
 
-  // ✅ Limpia watchers previos (FAST + PRECISE)
   try {
-    if (gpsWatchFastRef.current != null) navigator.geolocation.clearWatch(gpsWatchFastRef.current);
-    if (gpsWatchPreciseRef.current != null) navigator.geolocation.clearWatch(gpsWatchPreciseRef.current);
+    if (gpsWatchFastRef.current != null) {
+      navigator.geolocation.clearWatch(gpsWatchFastRef.current);
+    }
+    if (gpsWatchPreciseRef.current != null) {
+      navigator.geolocation.clearWatch(gpsWatchPreciseRef.current);
+    }
   } catch {}
+
   gpsWatchFastRef.current = null;
   gpsWatchPreciseRef.current = null;
 
-  const msgDenied =
-    'Permiso denegado. Activá Ubicación precisa para ver “Más cerca”.';
-  const msgUnavailable =
-    'Ubicación no disponible (GPS apagado / sin señal / ahorro de batería).';
-  const msgTimeoutSoft =
-    'Buscando ubicación… (podés usar la app igual).';
+  const msgDenied = 'Permiso denegado. Activá Ubicación precisa para ver “Más cerca”.';
+  const msgUnavailable = 'Ubicación no disponible.';
+  const msgTimeout = 'No se pudo obtener tu ubicación a tiempo.';
 
   const onFix = (pos, playToast = false) => {
     const lat = Number(pos?.coords?.latitude);
     const lon = Number(pos?.coords?.longitude);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      setGpsStatus('error');
+      setGpsError('Ubicación no disponible.');
+      return;
+    }
 
     saveLastGps(lat, lon);
-
     setMe((prev) => ({ ...prev, lat, lon }));
     setCenter([lat, lon]);
-
-    // ✅ NO auto-zoom por GPS (mantenés tu decisión)
     setGpsStatus('granted');
     setGpsError(null);
 
-    if (playToast) toast.success('📍 Ubicación activada');
+    if (mapRef.current && !gpsCenteredRef.current) {
+      gpsCenteredRef.current = true;
+      mapRef.current.flyTo([lat, lon], 15, { duration: 1.1 });
+      setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+    }
+
+    if (playToast) {
+      toast.success('📍 Ubicación activada');
+    }
   };
 
-  // ✅ 0) fallback instantáneo: último GPS guardado (no espera)
   const cached = loadLastGps();
   if (cached && !gpsCenteredRef.current && mapRef.current) {
     setMe((prev) => ({ ...prev, lat: cached.lat, lon: cached.lon }));
@@ -815,100 +802,73 @@ async function requestGPS() {
     setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
   }
 
-  const startFastWatch = () => {
-    const id = navigator.geolocation.watchPosition(
-      (pos) => onFix(pos, gpsStatusRef.current !== 'granted'),
+  try {
+    const pos = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      });
+    });
+
+    onFix(pos, true);
+
+    gpsWatchPreciseRef.current = navigator.geolocation.watchPosition(
+      (watchPos) => onFix(watchPos, false),
       (err) => {
         if (err?.code === 1) {
           setGpsStatus('denied');
           setGpsError(msgDenied);
-          toast.error(`📍 ${msgDenied}`);
           return;
         }
+
+        if (err?.code === 2) {
+          setGpsStatus('error');
+          setGpsError(msgUnavailable);
+          return;
+        }
+
         if (err?.code === 3) {
-          setGpsStatus('requesting');
-          setGpsError(msgTimeoutSoft);
+          setGpsStatus('error');
+          setGpsError(msgTimeout);
           return;
         }
-        setGpsStatus('requesting');
+
+        setGpsStatus('error');
         setGpsError(msgUnavailable);
       },
       {
-        enableHighAccuracy: false,
-        maximumAge: 180000, // ✅ 3 min cache ayuda en Android
-        timeout: 20000,
-      }
-    );
-    gpsWatchFastRef.current = id;
-  };
-
-  const startPreciseWatch = () => {
-    const id = navigator.geolocation.watchPosition(
-      (pos) => onFix(pos, gpsStatusRef.current !== 'granted'),
-      (err) => {
-        if (err?.code === 1) return; // denied ya manejado
-        // timeout/unavailable no fatal
-      },
-      {
         enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 120000, // ✅ Android indoor puede tardar mucho
+        timeout: 20000,
+        maximumAge: 5000,
       }
     );
-    gpsWatchPreciseRef.current = id;
-  };
-
-   // ✅ 1) Primero: fix rápido (coarse) -> casi nunca timeoutea en Android
-  navigator.geolocation.getCurrentPosition(
-    (pos1) => {
-      onFix(pos1, true);
-
-      // ✅ arrancamos watchers igual (para ir refinando)
-      startFastWatch();
-      startPreciseWatch();
-
-      // ✅ 2) Segundo: intento preciso (solo para mejorar)
-      navigator.geolocation.getCurrentPosition(
-        (pos2) => {
-          onFix(pos2, false);
-        },
-        (err2) => {
-          // si falla la precisa no es fatal
-          if (err2?.code === 1) {
-            // si justo se denegó acá, marcamos denied
-            setGpsStatus('denied');
-            setGpsError(msgDenied);
-          }
-          // timeout/unavailable: ignorar, ya tenemos coarse + watchers
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 45000,
-          maximumAge: 0,
-        }
-      );
-    },
-    (err1) => {
-      if (err1?.code === 1) {
-        setGpsStatus('denied');
-        setGpsError(msgDenied);
-        toast.error(`📍 ${msgDenied}`);
-        return;
-      }
-
-      setGpsStatus('requesting');
-      setGpsError(err1?.code === 3 ? msgTimeoutSoft : msgUnavailable);
-
-      // ✅ aunque falle el coarse, igual intentamos watchers
-      startFastWatch();
-      startPreciseWatch();
-    },
-    {
-      enableHighAccuracy: false,
-      timeout: 12000,
-      maximumAge: 60000,
+  } catch (err) {
+    if (err?.code === 1) {
+      setGpsStatus('denied');
+      setGpsError(msgDenied);
+      toast.error(`📍 ${msgDenied}`);
+      return;
     }
-  );
+
+    if (err?.code === 2) {
+      setGpsStatus('error');
+      setGpsError(msgUnavailable);
+      toast.error(`📍 ${msgUnavailable}`);
+      return;
+    }
+
+    if (err?.code === 3) {
+      setGpsStatus('error');
+      setGpsError(msgTimeout);
+      toast.error(`📍 ${msgTimeout}`);
+      return;
+    }
+
+    setGpsStatus('error');
+    setGpsError(msgUnavailable);
+    toast.error(`📍 ${msgUnavailable}`);
+  }
 }
 
 // ✅ Reintento de centrado: cuando el mapa ya existe y el GPS ya llegó
