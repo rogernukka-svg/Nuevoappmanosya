@@ -1631,9 +1631,9 @@ useEffect(() => {
                 style={{ height: '70vh', minHeight: '380px', position: 'relative' }}
               >
                 <MapContainer
-  whenReady={(map) => {
+  whenReady={(e) => {
     setTimeout(() => {
-      map.target.invalidateSize();
+      e.target.invalidateSize();
     }, 350);
   }}
   center={[-25.5093, -54.6111]}
@@ -1642,52 +1642,54 @@ useEffect(() => {
   style={{ height: '100%', width: '100%' }}
 >
   <TileLayer
-    url="https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png"
-    attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>'
+    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+    attribution="&copy; OpenStreetMap contributors &copy; CARTO"
   />
 
   {HOTSPOTS.map((p) => {
-  const outerRadius = Math.max(180, p.intensity * 55);
-  const innerRadius = Math.max(10, p.intensity + 6);
+    const outerRadius = Math.max(180, p.intensity * 55);
+    const innerRadius = Math.max(10, p.intensity + 6);
+    const zoneColor =
+      p.intensity >= 9 ? '#ef4444' : p.intensity >= 7 ? '#f59e0b' : '#10b981';
 
-  return (
-    <Fragment key={p.name}>
-      <Circle
-        center={[p.lat, p.lng]}
-        radius={outerRadius}
-        pathOptions={{
-          color: p.intensity >= 9 ? '#ef4444' : p.intensity >= 7 ? '#f59e0b' : '#10b981',
-          fillColor: p.intensity >= 9 ? '#ef4444' : p.intensity >= 7 ? '#f59e0b' : '#10b981',
-          fillOpacity: 0.16,
-          weight: 2,
-        }}
-      />
+    return (
+      <Fragment key={p.name}>
+        <Circle
+          center={[p.lat, p.lng]}
+          radius={outerRadius}
+          pathOptions={{
+            color: zoneColor,
+            fillColor: zoneColor,
+            fillOpacity: 0.14,
+            weight: 2,
+          }}
+        />
 
-      <CircleMarker
-        center={[p.lat, p.lng]}
-        radius={innerRadius}
-        pathOptions={{
-          color: '#ffffff',
-          weight: 3,
-          fillColor: p.intensity >= 9 ? '#ef4444' : p.intensity >= 7 ? '#f59e0b' : '#10b981',
-          fillOpacity: 0.95,
-        }}
-      >
-        <Popup>
-          <div className="min-w-[160px]">
-            <div className="font-extrabold text-gray-800">{p.name}</div>
-            <div className="text-sm text-gray-500 mt-1">
-              Zona de alta circulación
+        <CircleMarker
+          center={[p.lat, p.lng]}
+          radius={innerRadius}
+          pathOptions={{
+            color: '#ffffff',
+            weight: 3,
+            fillColor: zoneColor,
+            fillOpacity: 0.95,
+          }}
+        >
+          <Popup>
+            <div className="min-w-[180px]">
+              <div className="font-extrabold text-gray-800">{p.name}</div>
+              <div className="text-sm text-gray-500 mt-1">
+                Zona de alta circulación
+              </div>
+              <div className="mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-white text-gray-700 border-gray-200">
+                Intensidad: {p.intensity}/10
+              </div>
             </div>
-            <div className="mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-emerald-50 text-emerald-700 border-emerald-200">
-              Intensidad: {p.intensity}/10
-            </div>
-          </div>
-        </Popup>
-      </CircleMarker>
-    </Fragment>
-  );
-})}
+          </Popup>
+        </CircleMarker>
+      </Fragment>
+    );
+  })}
 </MapContainer>
               </div>
             </motion.div>
