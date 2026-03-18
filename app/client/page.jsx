@@ -177,10 +177,21 @@ function ensureManosyaGlobalStyles() {
       100% { transform: scale(0.6); opacity: 0; }
     }
 
-    @keyframes onlinePulse {
+       @keyframes onlinePulse {
       0%   { transform: scale(0.6); opacity: .7; }
       70%  { transform: scale(1.25); opacity: 0; }
       100% { transform: scale(1.25); opacity: 0; }
+    }
+
+    @keyframes clientGpsPulse {
+      0%   { transform: scale(0.75); opacity: 0.55; }
+      70%  { transform: scale(1.9); opacity: 0; }
+      100% { transform: scale(1.9); opacity: 0; }
+    }
+
+    @keyframes clientGpsGlow {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 rgba(14,165,233,0.0); }
+      50%      { transform: scale(1.06); box-shadow: 0 0 26px rgba(37,99,235,0.35); }
     }
   `;
   document.head.appendChild(s);
@@ -268,6 +279,63 @@ const onlineBadge = online
     </div>`;
 
   return L.divIcon({ html, iconSize: [size, size], className: '' });
+}
+
+function clientLocationIcon() {
+  if (typeof window === 'undefined') return null;
+  const L = require('leaflet');
+
+  const size = 54;
+
+  const html = `
+    <div style="
+      width:${size}px;
+      height:${size}px;
+      position:relative;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      pointer-events:none;
+    ">
+      <div style="
+        position:absolute;
+        width:54px;
+        height:54px;
+        border-radius:999px;
+        background:rgba(14,165,233,0.18);
+        animation:clientGpsPulse 1.8s ease-out infinite;
+      "></div>
+
+      <div style="
+        position:absolute;
+        width:34px;
+        height:34px;
+        border-radius:999px;
+        background:rgba(59,130,246,0.18);
+        border:2px solid rgba(14,165,233,0.35);
+        animation:clientGpsGlow 1.8s ease-in-out infinite;
+      "></div>
+
+      <div style="
+        position:absolute;
+        width:18px;
+        height:18px;
+        border-radius:999px;
+        background:linear-gradient(180deg,#38bdf8 0%, #2563eb 100%);
+        border:3px solid #ffffff;
+        box-shadow:
+          0 0 0 4px rgba(14,165,233,0.20),
+          0 10px 22px rgba(37,99,235,0.35);
+      "></div>
+    </div>
+  `;
+
+  return L.divIcon({
+    html,
+    className: '',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
 }
 
 
@@ -2449,27 +2517,45 @@ useEffect(() => {
   </div>
 )}
 {(gpsStatus === 'init' || gpsStatus === 'requesting' || gpsStatus === 'denied' || gpsStatus === 'error') && (
-  <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[20000]">
-    <div className="bg-white/95 border border-gray-200 shadow-lg rounded-2xl px-4 py-3 text-sm">
-      <div className="font-semibold text-gray-800">
-        📍 {gpsStatus === 'requesting' ? 'Buscando tu ubicación…' : 'Activá tu ubicación'}
+  <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[20000] px-3 w-full max-w-sm">
+    <div className="bg-white/95 border border-gray-200 shadow-lg rounded-2xl px-4 py-4 text-sm">
+      <div className="font-bold text-gray-800 text-[15px]">
+        📍 {gpsStatus === 'requesting' ? 'Buscando tu ubicación...' : 'Usá tu ubicación'}
       </div>
 
-      {gpsError && <div className="text-gray-500 mt-1">{gpsError}</div>}
+      <div className="text-gray-600 mt-2 leading-relaxed">
+        {gpsStatus === 'requesting'
+          ? 'Estamos buscando dónde estás para mostrarte tu punto en el mapa y los profesionales más cercanos.'
+          : 'Tocá el botón verde para que el mapa te muestre dónde estás y quién está más cerca de vos.'}
+      </div>
 
-      <div className="flex gap-2 mt-3">
+      {gpsStatus === 'denied' && (
+        <div className="mt-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+          No diste permiso para ver tu ubicación.
+        </div>
+      )}
+
+      {gpsStatus === 'error' && (
+        <div className="mt-2 text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+          No pudimos encontrar tu ubicación. Probá otra vez.
+        </div>
+      )}
+
+      <div className="flex gap-2 mt-4">
         <button
-          onClick={requestGPS}   // tu función actual
-          className="px-3 py-2 rounded-xl bg-emerald-500 text-white font-semibold active:scale-95"
+          onClick={requestGPS}
+          className="flex-1 px-3 py-3 rounded-xl bg-emerald-500 text-white font-bold active:scale-95"
         >
-          Activar GPS
+          {gpsStatus === 'requesting' ? 'Buscando...' : 'Ver mi ubicación'}
         </button>
 
         <button
-          onClick={() => toast('Abrí: Ajustes > Apps > ManosYA > Permisos > Ubicación (Precisa)')}
-          className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 font-semibold active:scale-95"
+          onClick={() =>
+            toast('Abrí Ajustes del celular > Aplicaciones > ManosYA > Permisos > Ubicación > Permitir')
+          }
+          className="flex-1 px-3 py-3 rounded-xl bg-gray-100 text-gray-700 font-semibold active:scale-95"
         >
-          Cómo habilitar
+          Cómo activar
         </button>
       </div>
     </div>
@@ -2583,18 +2669,42 @@ useEffect(() => {
   />
 )}
 
-{/* ✅ TU UBICACIÓN MIENTRAS HAY TRACKING */}
-{isTrackingWorker && hasMeCoords && (
-  <Circle
-    center={[Number(me.lat), Number(me.lon)]}
-    radius={35}
-    pathOptions={{
-      color: '#2563eb',
-      fillColor: '#3b82f6',
-      fillOpacity: 0.35,
-      weight: 2,
-    }}
-  />
+{/* ✅ TU UBICACIÓN PREMIUM CUANDO EL GPS ESTÁ ACTIVO */}
+{hasMeCoords && (
+  <>
+    {/* área visible de referencia del cliente */}
+    <Circle
+      center={[Number(me.lat), Number(me.lon)]}
+      radius={500}
+      pathOptions={{
+        color: '#0ea5e9',
+        fillColor: '#38bdf8',
+        fillOpacity: 0.10,
+        weight: 2,
+      }}
+    />
+
+    {/* aro tecnológico elegante */}
+    <Circle
+      center={[Number(me.lat), Number(me.lon)]}
+      radius={120}
+      pathOptions={{
+        color: '#38bdf8',
+        fillColor: '#38bdf8',
+        fillOpacity: 0.08,
+        weight: 3,
+      }}
+    />
+
+    {/* marcador premium animado tipo GPS/Uber */}
+    <Marker
+      key={`client-location-${Number(me.lat)}-${Number(me.lon)}`}
+      position={[Number(me.lat), Number(me.lon)]}
+      icon={clientLocationIcon() || undefined}
+      interactive={false}
+      zIndexOffset={1200}
+    />
+  </>
 )}
 
 {!isTrackingWorker && (
