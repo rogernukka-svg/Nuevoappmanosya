@@ -1068,11 +1068,10 @@ function OnboardForm({ user }) {
           </div>
         )}
       </SimpleSection>
-
       {/* DATOS BANCARIOS */}
       <SimpleSection
         number="7"
-        title="Datos para cobros"
+        title="Datos bancarios"
         subtitle="Dejá tus datos bancarios para recibir pagos más fácilmente."
       >
         <div className="grid md:grid-cols-2 gap-4">
