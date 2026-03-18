@@ -285,41 +285,88 @@ function OnboardForm({ user }) {
       setErr('No se pudo subir la foto: ' + e.message);
     }
   }
-
+function getCurrentTrackFacingMode() {
+  try {
+    const track = streamRef.current?.getVideoTracks?.()?.[0];
+    const settings = track?.getSettings?.();
+    return settings?.facingMode || null;
+  } catch {
+    return null;
+  }
+}
   async function openCamera(mode) {
-    try {
-      setErr(null);
-      setCameraError(null);
-      setCapturedPreview(null);
-      setCapturedBlob(null);
-      setCameraMode(mode);
-      setCameraOpen(true);
+  try {
+    setErr(null);
+    setCameraError(null);
+    setCapturedPreview(null);
+    setCapturedBlob(null);
+    setCameraMode(mode);
 
-      const stream = await navigator.mediaDevices.getUserMedia({
+    // ✅ cerrar stream anterior si existía
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    setCameraOpen(true);
+
+    const isAvatar = mode === 'avatar';
+    let stream = null;
+
+    // ✅ intento principal: cámara correcta según el modo
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: mode === 'avatar' ? 'user' : 'environment',
+          facingMode: { ideal: isAvatar ? 'user' : 'environment' },
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
         audio: false,
       });
+    } catch (firstErr) {
+      console.warn('Primer intento de cámara falló:', firstErr);
 
-      streamRef.current = stream;
+      // ✅ segundo intento: forzar exacto
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { exact: isAvatar ? 'user' : 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      } catch (secondErr) {
+        console.warn('Segundo intento de cámara falló:', secondErr);
 
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-      }, 80);
-    } catch (e) {
-      console.error(e);
-      setCameraOpen(false);
-      setCameraError('No se pudo abrir la cámara. Revisá permisos.');
-      setErr('No se pudo abrir la cámara. Revisá permisos.');
+        // ✅ último fallback: cualquier cámara disponible
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
     }
-  }
 
+    streamRef.current = stream;
+
+    setTimeout(async () => {
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          console.warn('No se pudo reproducir el video:', playErr);
+        }
+      }
+    }, 120);
+  } catch (e) {
+    console.error(e);
+    setCameraOpen(false);
+    setCameraError('No se pudo abrir la cámara. Revisá permisos.');
+    setErr('No se pudo abrir la cámara. Revisá permisos.');
+  }
+}
   function closeCamera() {
     try {
       if (streamRef.current) {
@@ -1206,12 +1253,14 @@ function OnboardForm({ user }) {
             {!capturedPreview ? (
               <>
                 <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="absolute inset-0 w-full h-full object-cover"
-                />
+  ref={videoRef}
+  autoPlay
+  playsInline
+  muted
+  className={`absolute inset-0 w-full h-full object-cover ${
+    cameraMode === 'avatar' ? 'scale-x-[-1]' : ''
+  }`}
+/>
 
                                {cameraMode === 'avatar' ? (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-6">
