@@ -955,7 +955,39 @@ const [comment, setComment] = useState('')
 
 // 🧩 Nuevo: indicador de mensajes sin leer
 const [hasUnread, setHasUnread] = useState(false);
+const [unreadCount, setUnreadCount] = useState(0);
 const [statusBanner, setStatusBanner] = useState(null);
+
+// 🔊 sonido de notificación
+const notificationAudioRef = useRef(null);
+
+useEffect(() => {
+  if (typeof window === 'undefined') return;
+
+  notificationAudioRef.current = new Audio('/notify.mp3'); // 👈 cambiá extensión si no es mp3
+  notificationAudioRef.current.preload = 'auto';
+  notificationAudioRef.current.volume = 0.9;
+
+  return () => {
+    if (notificationAudioRef.current) {
+      notificationAudioRef.current.pause();
+      notificationAudioRef.current = null;
+    }
+  };
+}, []);
+
+function playIncomingMessageSound() {
+  try {
+    if (!notificationAudioRef.current) return;
+
+    notificationAudioRef.current.currentTime = 0;
+    notificationAudioRef.current.play().catch((err) => {
+      console.warn('No se pudo reproducir sonido:', err);
+    });
+  } catch (err) {
+    console.warn('Error reproduciendo sonido:', err);
+  }
+}
  const bindMapInstance = useMemo(() => {
   return (map) => {
     if (!map) return;
@@ -1565,52 +1597,62 @@ case 'job': {
       toast.error('🚫 El trabajador rechazó o canceló el pedido');
       resetJobState();
     } 
-    else if (data.status === 'accepted' || data.status === 'assigned') {
-      setIsTrackingWorker(true);
+   else if (data.status === 'accepted' || data.status === 'assigned') {
+  setIsTrackingWorker(true);
 
-      toast.success('🟢 El trabajador aceptó tu pedido');
+  toast.success('🟢 Tu profesional aceptó y ya está en camino');
 
-      // ✅ cerrar overlays
-      setShowPrice(false);
-      setClusterOpen(false);
-      setClusterMiniOpen(false);
-      setServicesOpen(false);
+  // ✅ cerrar overlays para dejar solo mapa + seguimiento
+  setShowPrice(false);
+  setClusterOpen(false);
+  setClusterMiniOpen(false);
+  setServicesOpen(false);
+  setIsChatOpen(false);
 
-      // ✅ mantener panel disponible
-      setPanelLevel('mini');
+  const workerFresh =
+    workersByIdRef.current?.get(String(data.worker_id)) || selected;
 
-      const workerFresh =
-        workersByIdRef.current?.get(String(data.worker_id)) || selected;
+  if (workerFresh) {
+    setSelected(workerFresh);
 
-      if (workerFresh) {
-        setSelected(workerFresh);
+    const wLat = Number(workerFresh?.lat);
+    const wLng = Number(workerFresh?.lng ?? workerFresh?.lon ?? workerFresh?.long);
+    const cLat = Number(me?.lat);
+    const cLng = Number(me?.lon);
 
-        const wLat = Number(workerFresh?.lat);
-        const wLng = Number(workerFresh?.lng ?? workerFresh?.lon ?? workerFresh?.long);
-        const cLat = Number(me?.lat);
-        const cLng = Number(me?.lon);
+    // ✅ dejamos la UI en modo simplificado
+    setProfileSheetMode('mini');
 
-        if (
-          Number.isFinite(cLat) &&
-          Number.isFinite(cLng) &&
-          Number.isFinite(wLat) &&
-          Number.isFinite(wLng)
-        ) {
-          setRoute([
-            [cLat, cLng],
-            [wLat, wLng],
-          ]);
+    if (
+      Number.isFinite(cLat) &&
+      Number.isFinite(cLng) &&
+      Number.isFinite(wLat) &&
+      Number.isFinite(wLng)
+    ) {
+      const liveRoute = [
+        [cLat, cLng],
+        [wLat, wLng],
+      ];
 
-          // ✅ zoom directo hacia el trabajador para verlo viniendo
-          mapRef.current?.flyTo([wLat, wLng], 15, { duration: 1.2 });
+      setRoute(liveRoute);
 
-          // ✅ pequeño ajuste de cámara después
-          setTimeout(() => {
-            mapRef.current?.invalidateSize?.();
-          }, 250);
-        }
-      }
+      // ✅ mostrar automáticamente al trabajador viniendo
+      runSuperFocusOnWorker(wLat, wLng, liveRoute);
+
+      const distKm = haversineKm(cLat, cLng, wLat, wLng);
+      const fallbackMin = Math.max(1, Math.round((distKm / 35) * 60));
+      setEtaMinutes(fallbackMin);
+
+      setTimeout(() => {
+        mapRef.current?.invalidateSize?.();
+      }, 250);
+
+      setTimeout(() => {
+        mapRef.current?.invalidateSize?.();
+      }, 800);
     }
+  }
+}
   }
   break;
 }
@@ -1635,22 +1677,57 @@ case 'job': {
 // 🛰️ ESCUCHAR MENSAJES NUEVOS GLOBALES (aunque el chat no esté abierto)
 useEffect(() => {
   if (!me?.id) return;
+  if (!jobId) return;
 
   const channelGlobal = supabase
-    .channel('global-messages')
+    .channel(`global-messages-${jobId}`)
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages' },
-      (payload) => {
+      async (payload) => {
         const msg = payload?.new;
         if (!msg) return;
 
         const isMine = String(msg.sender_id) === String(me.id);
-        const isSameChat = msg.chat_id && chatId && String(msg.chat_id) === String(chatId);
+        if (isMine) return;
 
-        // ✅ Solo avisar si: no es mío, es del chat activo, y el chat está cerrado
-        if (!isMine && isSameChat && !isChatOpen) {
+        let activeChatId = chatId;
+
+        // ✅ si todavía no tenemos chatId en memoria, lo aseguramos en caliente
+        if (!activeChatId && jobId) {
+          try {
+            const { data: ensuredChatId, error: ensureErr } = await supabase.rpc('ensure_chat_for_job', {
+              p_job_id: jobId,
+            });
+
+            if (!ensureErr && ensuredChatId) {
+              activeChatId = ensuredChatId;
+              setChatId(ensuredChatId);
+            }
+          } catch (err) {
+            console.warn('No se pudo asegurar chat en listener global:', err);
+          }
+        }
+
+        const isSameChat =
+          msg.chat_id &&
+          activeChatId &&
+          String(msg.chat_id) === String(activeChatId);
+
+        if (!isSameChat) return;
+
+        if (!isChatOpen) {
           setHasUnread(true);
+          setUnreadCount((prev) => prev + 1);
+
+          // 🔊 reproducir sonido
+          playIncomingMessageSound();
+
+          // 📳 vibración opcional en celular
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate([120, 60, 120]);
+          }
+
           toast.info('💬 Nuevo mensaje de un profesional');
         }
       }
@@ -1660,8 +1737,7 @@ useEffect(() => {
   return () => {
     supabase.removeChannel(channelGlobal);
   };
-}, [me?.id, chatId, isChatOpen, supabase]);
-
+}, [me?.id, jobId, chatId, isChatOpen, supabase]);
 /* === Interacciones mejoradas === */
 function handleMarkerClick(worker) {
   if (jobId && jobStatus !== 'completed' && jobStatus !== 'cancelled') {
@@ -1782,10 +1858,27 @@ const { data: inserted, error: insertError } = await supabase
 
 if (insertError) throw insertError;
 
-    // 5️⃣ Actualizar estado local y UI
-    setJobId(inserted.id);
-    setJobStatus(inserted.status);
-    toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
+   // 5️⃣ Actualizar estado local y UI
+setJobId(inserted.id);
+setJobStatus(inserted.status);
+
+// ✅ asegurar chat DESDE EL INICIO para que el contador funcione aunque el cliente nunca abra el modal
+try {
+  const { data: ensuredChatId, error: ensureErr } = await supabase.rpc('ensure_chat_for_job', {
+    p_job_id: inserted.id,
+  });
+
+  if (ensureErr) {
+    console.warn('No se pudo asegurar chat al crear solicitud:', ensureErr);
+  } else if (ensuredChatId) {
+    setChatId(ensuredChatId);
+  }
+} catch (chatBootErr) {
+  console.warn('Error creando chat inicial:', chatBootErr);
+}
+
+toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
+
 // ✅ NO recortar la lista de workers, solo mantener selección visual
 setWorkers((prev) =>
   (prev || []).map((w) => ({
@@ -1888,7 +1981,7 @@ async function openChat(forceChatId = null) {
 
     if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
 
-    const channel = supabase
+        const channel = supabase
       .channel(`chat-${cid}`, {
         config: {
           broadcast: { self: true },
@@ -1897,25 +1990,26 @@ async function openChat(forceChatId = null) {
         },
       })
       .on(
-  'postgres_changes',
-  { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${String(cid)}` },
-  (payload) => {
-    const newMsg = payload?.new;
-    if (!newMsg) return;
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${String(cid)}` },
+        (payload) => {
+          const newMsg = payload?.new;
+          if (!newMsg) return;
 
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === newMsg.id)) return prev;
-      return [...prev, newMsg];
-    });
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMsg.id)) return prev;
+            return [...prev, newMsg];
+          });
 
-    // ✅ si el chat está abierto, ya no tiene sentido “unread”
-    setHasUnread(false);
+          // ✅ si el chat está abierto, limpiar contador
+          setHasUnread(false);
+          setUnreadCount(0);
 
-    if (String(newMsg.sender_id) !== String(me?.id)) {
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-    }
-  }
-)
+          if (String(newMsg.sender_id) !== String(me?.id)) {
+            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+          }
+        }
+      )
       .subscribe((status) => console.log('📡 Canal de chat conectado:', status));
 
     chatChannelRef.current = channel;
@@ -3501,79 +3595,146 @@ useEffect(() => {
         );
       }
 
-      if (jobStatus === 'open') {
-        return (
-          <div className="flex flex-col gap-3 w-full mt-5">
-            <button
-              onClick={() => {
-                openChat();
-                setHasUnread(false);
-              }}
-              className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
-            >
-              <MessageCircle size={18} className="text-emerald-600" />
-              Chatear
-              {hasUnread && (
-                <>
-                  <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
-                  <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
-                </>
-              )}
-            </button>
+     if (jobStatus === 'open') {
+  return (
+    <div className="flex flex-col gap-3 w-full mt-5">
+      <button
+        onClick={() => {
+          openChat();
+          setHasUnread(false);
+          setUnreadCount(0);
+        }}
+        className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
+      >
+        <MessageCircle size={18} className="text-emerald-600" />
+        Chatear
 
-            <button
-              onClick={cancelarPedido}
-              className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center justify-center gap-1"
-            >
-              <XCircle size={16} /> Cancelar pedido
-            </button>
-          </div>
-        );
-      }
+        {unreadCount > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      <button
+        onClick={cancelarPedido}
+        className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center justify-center gap-1"
+      >
+        <XCircle size={16} /> Cancelar pedido
+      </button>
+    </div>
+  );
+}
 
       if (jobStatus === 'accepted' || jobStatus === 'assigned') {
-        return (
-          <div className="flex flex-col gap-3 w-full mt-5">
-            <button
-  onClick={verTrabajadorViniendo}
-  className="px-6 py-3 rounded-2xl bg-emerald-500 text-white font-semibold flex items-center justify-center gap-2 shadow-md hover:bg-emerald-600 transition-all duration-200 active:scale-95"
+  return (
+    <div className="flex flex-col gap-3 w-full mt-5">
+      {/* Estado principal ultra claro */}
+      <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white px-4 py-4 text-center shadow-sm">
+        <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-600">
+          En camino
+        </div>
+
+        <div className="mt-1 text-lg font-black text-gray-800">
+          {selected?.full_name || 'Tu profesional'} ya viene hacia vos
+        </div>
+
+        <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
+          {Number.isFinite(km) && (
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[12px] font-extrabold">
+              📍 {formatKm(km)}
+            </span>
+          )}
+
+          {etaMinutes != null && (
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-700 text-[12px] font-extrabold">
+              ⏱ {etaMinutes} min aprox
+            </span>
+          )}
+        </div>
+
+        <p className="mt-2 text-xs text-gray-500">
+          Mirá el mapa para seguir su llegada en tiempo real.
+        </p>
+      </div>
+
+      {/* Acción principal */}
+      <button
+        onClick={verTrabajadorViniendo}
+        className="
+          relative overflow-hidden
+          px-6 py-4 rounded-2xl
+          bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600
+          text-white font-extrabold text-[15px]
+          flex items-center justify-center gap-2
+          shadow-[0_18px_35px_rgba(16,185,129,0.28)]
+          active:scale-[0.98] transition
+        "
+      >
+        <span className="absolute inset-0 opacity-60">
+          <span className="absolute -left-10 top-0 h-full w-10 rotate-12 bg-white/25 blur-md animate-[ctaShine_2.6s_ease-in-out_infinite]" />
+        </span>
+        <span className="relative z-10">📍 Ver llegada en el mapa</span>
+      </button>
+
+      {/* Acciones secundarias simplificadas */}
+      <div className="grid grid-cols-2 gap-3">
+       <button
+  onClick={() => {
+    openChat();
+    setHasUnread(false);
+    setUnreadCount(0);
+  }}
+  className="
+    relative px-4 py-3 rounded-2xl
+    border-2 border-emerald-300 bg-white
+    text-emerald-700 font-bold
+    flex items-center justify-center gap-2
+    shadow-sm active:scale-[0.98] transition
+  "
 >
-  📍 Ver llegada
+  <MessageCircle size={18} className="text-emerald-600" />
+  Chatear
+
+  {unreadCount > 0 && (
+    <>
+      <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
+        {unreadCount > 99 ? '99+' : unreadCount}
+      </span>
+    </>
+  )}
 </button>
 
-            <button
-              onClick={() => {
-                openChat();
-                setHasUnread(false);
-              }}
-              className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
-            >
-              <MessageCircle size={18} className="text-emerald-600" />
-              Chatear
-              {hasUnread && (
-                <>
-                  <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
-                  <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
-                </>
-              )}
-            </button>
+        <button
+          onClick={cancelarPedido}
+          className="
+            px-4 py-3 rounded-2xl
+            bg-red-500 text-white font-bold
+            flex items-center justify-center gap-2
+            shadow-sm active:scale-[0.98] transition
+          "
+        >
+          <XCircle size={16} />
+          Cancelar
+        </button>
+      </div>
 
-            <button
-              onClick={cancelarPedido}
-              className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center justify-center gap-1"
-            >
-              <XCircle size={16} /> Cancelar pedido
-            </button>
-
-            <button
-              onClick={finalizarPedido}
-              className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold flex items-center justify-center gap-1"
-            >
-              <CheckCircle2 size={16} /> Finalizar pedido
-            </button>
-          </div>
-        );
-      }
+      <button
+        onClick={finalizarPedido}
+        className="
+          px-6 py-3 rounded-2xl
+          bg-gray-900 text-white font-bold
+          flex items-center justify-center gap-2
+          shadow-[0_12px_26px_rgba(17,24,39,0.18)]
+          active:scale-[0.98] transition
+        "
+      >
+        <CheckCircle2 size={16} />
+        Finalizar trabajo
+      </button>
+    </div>
+  );
+}
 
       return null;
     };
@@ -3645,28 +3806,28 @@ useEffect(() => {
 
             <div className="grid grid-cols-2 gap-2 mt-4">
               <button
-                onClick={() => {
-                  openChat();
-                  setHasUnread(false);
-                }}
-                className="relative px-4 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
-              >
-                <MessageCircle size={18} className="text-emerald-600" />
-                Chatear
-                {hasUnread && (
-                  <>
-                    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></span>
-                    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 rounded-full"></span>
-                  </>
-                )}
-              </button>
+  onClick={() => {
+    openChat();
+    setHasUnread(false);
+    setUnreadCount(0);
+  }}
+  className="relative px-4 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
+>
+  <MessageCircle size={18} className="text-emerald-600" />
+  Chatear
+  {unreadCount > 0 && (
+    <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
+      {unreadCount > 99 ? '99+' : unreadCount}
+    </span>
+  )}
+</button>
 
               <button
-                onClick={() => setProfileSheetMode('full')}
-                className="px-4 py-3 rounded-2xl bg-gray-100 text-gray-700 font-semibold"
-              >
-                Subir perfil
-              </button>
+  onClick={() => setProfileSheetMode('full')}
+  className="px-4 py-3 rounded-2xl bg-gray-100 text-gray-700 font-semibold"
+>
+  Ver detalles
+</button>
 
               <button
                 onClick={cancelarPedido}
@@ -4134,21 +4295,23 @@ useEffect(() => {
           bg-white/70 backdrop-blur-xl
         ">
           
-          {/* VOLVER */}
           <button
-            onClick={() => {
-              setIsChatOpen(false);
-              setMessages([]);
-              if (chatChannelRef.current) {
-                supabase.removeChannel(chatChannelRef.current);
-                chatChannelRef.current = null;
-              }
-            }}
-            className="flex items-center gap-1 text-gray-500 hover:text-emerald-600 transition font-medium"
-          >
-            <ChevronLeft size={22} />
-            Volver
-          </button>
+  onClick={() => {
+    setIsChatOpen(false);
+    setMessages([]);
+    setHasUnread(false);
+    setUnreadCount(0);
+
+    if (chatChannelRef.current) {
+      supabase.removeChannel(chatChannelRef.current);
+      chatChannelRef.current = null;
+    }
+  }}
+  className="flex items-center gap-1 text-gray-500 hover:text-emerald-600 transition font-medium"
+>
+  <ChevronLeft size={22} />
+  Volver
+</button>
 
           {/* NOMBRE + ESTADO */}
           <div className="flex items-center gap-3">

@@ -354,8 +354,9 @@ export default function WorkerPage() {
   const [messages, setMessages] = useState([]);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [sending, setSending] = useState(false);
-  const [isActive, setIsActive] = useState(true);
+   const [isActive, setIsActive] = useState(true);
   const [hasUnread, setHasUnread] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [clientTyping, setClientTyping] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [workerLocation, setWorkerLocation] = useState(null);
@@ -417,42 +418,6 @@ export default function WorkerPage() {
     })();
   }, [router]);
 
-  /* === NUEVOS TRABAJOS === */
-  useEffect(() => {
-    if (!user?.id) return;
-
-    let sound;
-    if (typeof Audio !== 'undefined') {
-      sound = new Audio('/notify.mp3');
-      sound.load();
-    }
-
-    const channel = supabase
-      .channel('worker-new-job-sound')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'jobs' },
-        (payload) => {
-          const job = payload.new;
-          if (!job) return;
-
-          if (job.status === 'open' && status === 'available') {
-            try {
-              sound?.play?.();
-            } catch (err) {
-              console.warn('Error reproduciendo sonido:', err);
-            }
-
-            toast('🆕 ¡Nueva solicitud de trabajo disponible!');
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id, status]);
 
   /* === GEO === */
   useEffect(() => {
@@ -683,177 +648,254 @@ useEffect(() => {
     }
   }, [mapOpen]);
 
-  /* === REALTIME CORE === */
-  useEffect(() => {
-    if (!user?.id) return;
+/* === NUEVOS TRABAJOS === */
+useEffect(() => {
+  if (!user?.id) return;
 
-    const stop = startRealtimeCore((type, data) => {
-      try {
-        switch (type) {
-          case 'job': {
-            if (data.__source === 'insert' && data.status === 'open') {
-              if (status === 'available') {
-                (async () => {
-                  let client = null;
+  const playNotify = async () => {
+    try {
+      if (!soundRef.current) return;
+      soundRef.current.pause();
+      soundRef.current.currentTime = 0;
+      await soundRef.current.play();
+    } catch (err) {
+      console.warn('Error reproduciendo sonido de nuevo trabajo:', err);
+    }
+  };
 
-                  if (data.client_id) {
-                    const { data: profile, error: profileErr } = await supabase
-                      .from('profiles')
-                      .select('id, full_name, avatar_url')
-                      .eq('id', data.client_id)
-                      .maybeSingle();
+  const channel = supabase
+    .channel(`worker-new-job-sound-${user.id}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'jobs' },
+      async (payload) => {
+        const job = payload.new;
+        if (!job) return;
 
-                    if (!profileErr) {
-                      client = profile || null;
-                    }
-                  }
+        if (job.status !== 'open') return;
 
-                  const enrichedJob = { ...data, client };
-
-                  setJobs((prev) => {
-                    const exists = prev.some((j) => j.id === enrichedJob.id);
-                    return exists ? prev : [enrichedJob, ...prev];
-                  });
-
-                  toast('🆕 Nuevo pedido disponible cerca tuyo');
-                })();
-              }
-              return;
-            }
-
-            if (data.worker_id === user.id) {
-              setJobs((prev) =>
-                prev.some((j) => j.id === data.id)
-                  ? prev.map((j) => (j.id === data.id ? { ...j, ...data } : j))
-                  : [data, ...prev]
-              );
-
-              if (selectedJob?.id === data.id) {
-                setSelectedJob((prev) => (prev ? { ...prev, status: data.status } : prev));
-              }
-
-              if (data.status === 'cancelled') {
-                toast.warning('🚫 El cliente canceló el trabajo.');
-
-                (async () => {
-                  const { data: wp } = await supabase
-                    .from('worker_profiles')
-                    .select('status')
-                    .eq('user_id', user.id)
-                    .maybeSingle();
-
-                  const nextStatus = wp?.status === 'paused' ? 'paused' : 'available';
-
-                  await supabase
-                    .from('worker_profiles')
-                    .update({
-                      status: nextStatus,
-                      is_active: nextStatus === 'available',
-                      busy_until: null,
-                      updated_at: new Date().toISOString(),
-                    })
-                    .eq('user_id', user.id);
-
-                  setStatus(nextStatus);
-                })();
-              } else if (data.status === 'completed') {
-                toast.success('🎉 Trabajo finalizado por el cliente.');
-
-                (async () => {
-                  const { data: wp } = await supabase
-                    .from('worker_profiles')
-                    .select('status')
-                    .eq('user_id', user.id)
-                    .maybeSingle();
-
-                  const nextStatus = wp?.status === 'paused' ? 'paused' : 'available';
-
-                  await supabase
-                    .from('worker_profiles')
-                    .update({
-                      status: nextStatus,
-                      is_active: nextStatus === 'available',
-                      busy_until: null,
-                      updated_at: new Date().toISOString(),
-                    })
-                    .eq('user_id', user.id);
-
-                  setStatus(nextStatus);
-                })();
-
-                setIsChatOpen(false);
-              } else if (data.status === 'accepted') {
-                setStatus('busy');
-              }
-            }
-
-            if (data.__source === 'delete') {
-              setJobs((prev) => prev.filter((j) => j.id !== data.id));
-            }
-            break;
-          }
-
-          case 'message': {
-            if (selectedJob?.chat_id === data.chat_id && isChatOpen) {
-              setMessages((prev) => {
-                if (prev.some((m) => m.id === data.id)) return prev;
-                return [...prev, data];
-              });
-              if (data.sender_id !== user.id) soundRef.current?.play?.();
-            } else if (data.sender_id !== user.id) {
-              setHasUnread(true);
-              soundRef.current?.play?.();
-            }
-            break;
-          }
-
-          case 'profile': {
-            if (data.user_id === user.id && data.status) {
-              setStatus(data.status);
-            }
-            break;
-          }
-
-          default:
-            console.log('Evento realtime desconocido:', type, data);
-        }
-      } catch (err) {
-        console.warn('⚠️ Error en RealtimeCore worker:', err);
+        await playNotify();
+        toast('🆕 ¡Nueva solicitud de trabajo disponible!');
       }
-    });
+    )
+    .subscribe();
 
-    return () => stopRealtimeCore();
-  }, [user?.id, selectedJob?.chat_id, status, isChatOpen]);
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [user?.id]);
 
-  /* === MENSAJES GLOBALES === */
-  useEffect(() => {
-    if (!user?.id) return;
+/* === REALTIME CORE === */
+useEffect(() => {
+  if (!user?.id) return;
 
-    const globalMessagesChannel = supabase
-      .channel('global-message-listener')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
-        (payload) => {
-          const msg = payload.new;
+  const stop = startRealtimeCore((type, data) => {
+    try {
+      switch (type) {
+        case 'job': {
+          if (data.__source === 'insert' && data.status === 'open') {
+            if (status === 'available') {
+              (async () => {
+                let client = null;
 
-          if (msg.sender_id === user.id) return;
+                if (data.client_id) {
+                  const { data: profile, error: profileErr } = await supabase
+                    .from('profiles')
+                    .select('id, full_name, avatar_url')
+                    .eq('id', data.client_id)
+                    .maybeSingle();
 
-          if (!isChatOpen || msg.chat_id !== selectedJob?.chat_id) {
+                  if (!profileErr) {
+                    client = profile || null;
+                  }
+                }
+
+                const enrichedJob = { ...data, client };
+
+                setJobs((prev) => {
+                  const exists = prev.some((j) => j.id === enrichedJob.id);
+                  return exists ? prev : [enrichedJob, ...prev];
+                });
+
+               try {
+  soundRef.current?.pause?.();
+  if (soundRef.current) soundRef.current.currentTime = 0;
+  soundRef.current?.play?.();
+} catch (err) {
+  console.warn('Error reproduciendo sonido en realtime core:', err);
+}
+
+toast('🆕 Nuevo pedido disponible cerca tuyo');
+              })();
+            }
+            return;
+          }
+
+          if (data.worker_id === user.id) {
+            setJobs((prev) =>
+              prev.some((j) => j.id === data.id)
+                ? prev.map((j) => (j.id === data.id ? { ...j, ...data } : j))
+                : [data, ...prev]
+            );
+
+            if (selectedJob?.id === data.id) {
+              setSelectedJob((prev) => (prev ? { ...prev, status: data.status } : prev));
+            }
+
+            if (data.status === 'cancelled') {
+              toast.warning('🚫 El cliente canceló el trabajo.');
+
+              (async () => {
+                const { data: wp } = await supabase
+                  .from('worker_profiles')
+                  .select('status')
+                  .eq('user_id', user.id)
+                  .maybeSingle();
+
+                const nextStatus = wp?.status === 'paused' ? 'paused' : 'available';
+
+                await supabase
+                  .from('worker_profiles')
+                  .update({
+                    status: nextStatus,
+                    is_active: nextStatus === 'available',
+                    busy_until: null,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('user_id', user.id);
+
+                setStatus(nextStatus);
+              })();
+            } else if (data.status === 'completed') {
+              toast.success('🎉 Trabajo finalizado por el cliente.');
+
+              (async () => {
+                const { data: wp } = await supabase
+                  .from('worker_profiles')
+                  .select('status')
+                  .eq('user_id', user.id)
+                  .maybeSingle();
+
+                const nextStatus = wp?.status === 'paused' ? 'paused' : 'available';
+
+                await supabase
+                  .from('worker_profiles')
+                  .update({
+                    status: nextStatus,
+                    is_active: nextStatus === 'available',
+                    busy_until: null,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('user_id', user.id);
+
+                setStatus(nextStatus);
+              })();
+
+              setIsChatOpen(false);
+            } else if (data.status === 'accepted') {
+              setStatus('busy');
+            }
+          }
+
+          if (data.__source === 'delete') {
+            setJobs((prev) => prev.filter((j) => j.id !== data.id));
+          }
+          break;
+        }
+
+               case 'message': {
+          if (selectedJob?.chat_id === data.chat_id && isChatOpen) {
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === data.id)) return prev;
+              return [...prev, data];
+            });
+
+            if (data.sender_id !== user.id) {
+              setHasUnread(false);
+              setUnreadCount(0);
+
+              try {
+                soundRef.current?.pause?.();
+                if (soundRef.current) soundRef.current.currentTime = 0;
+                soundRef.current?.play?.();
+              } catch (err) {
+                console.warn('Error reproduciendo sonido mensaje:', err);
+              }
+            }
+          } else if (data.sender_id !== user.id) {
             setHasUnread(true);
-            soundRef.current?.play?.();
+            setUnreadCount((prev) => prev + 1);
+
+            try {
+              soundRef.current?.pause?.();
+              if (soundRef.current) soundRef.current.currentTime = 0;
+              soundRef.current?.play?.();
+            } catch (err) {
+              console.warn('Error reproduciendo sonido mensaje:', err);
+            }
+          }
+          break;
+        }
+
+        case 'profile': {
+          if (data.user_id === user.id && data.status) {
+            setStatus(data.status);
+          }
+          break;
+        }
+
+        default:
+          console.log('Evento realtime desconocido:', type, data);
+      }
+    } catch (err) {
+      console.warn('⚠️ Error en RealtimeCore worker:', err);
+    }
+  });
+
+  return () => stopRealtimeCore();
+}, [user?.id, selectedJob?.chat_id, status, isChatOpen]);
+
+/* === MENSAJES GLOBALES === */
+useEffect(() => {
+  if (!user?.id) return;
+
+  const globalMessagesChannel = supabase
+    .channel('global-message-listener')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages' },
+      async (payload) => {
+        const msg = payload.new;
+
+        if (msg.sender_id === user.id) return;
+
+        if (!isChatOpen || msg.chat_id !== selectedJob?.chat_id) {
+          setHasUnread(true);
+          setUnreadCount((prev) => prev + 1);
+
+          try {
+            if (soundRef.current) {
+              soundRef.current.currentTime = 0;
+              await soundRef.current.play();
+            }
+          } catch (err) {
+            console.warn('Error reproduciendo sonido global:', err);
           }
         }
-      )
-      .subscribe();
+      }
+    )
+    .subscribe();
 
-    return () => {
-      supabase.removeChannel(globalMessagesChannel);
-    };
-  }, [user?.id, isChatOpen, selectedJob?.chat_id]);
+  return () => {
+    supabase.removeChannel(globalMessagesChannel);
+  };
+}, [user?.id, isChatOpen, selectedJob?.chat_id]);
 
-  useEffect(() => {
-    if (isChatOpen) setHasUnread(false);
+   useEffect(() => {
+    if (isChatOpen) {
+      setHasUnread(false);
+      setUnreadCount(0);
+    }
   }, [isChatOpen]);
 
   /* === TOGGLE STATUS === */
@@ -1552,9 +1594,10 @@ useEffect(() => {
               <span className="text-[11px] font-bold mt-1">Trabajos</span>
             </button>
 
-            <button
+                        <button
               onClick={async () => {
                 setHasUnread(false);
+                setUnreadCount(0);
 
                 if (!selectedJob) {
                   const activeJob = jobs.find((j) => j.status === 'accepted') || jobs[0];
@@ -1570,9 +1613,13 @@ useEffect(() => {
               className="relative flex flex-col items-center text-gray-500 min-w-[70px] py-2"
             >
               <MessageCircle size={18} />
-              {hasUnread && (
-                <span className="absolute top-1 right-5 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 right-3 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
               )}
+
               <span className="text-[11px] font-bold mt-1">Chats</span>
             </button>
 

@@ -1,7 +1,7 @@
 'use client';
 
 import '../globals.css';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase } from '@/lib/supabase';
 
 const supabase = getSupabase();
@@ -43,10 +43,21 @@ export default function ReclutamientoPage() {
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
 
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [capturedPreview, setCapturedPreview] = useState(null);
+  const [capturedBlob, setCapturedBlob] = useState(null);
+  const [cameraError, setCameraError] = useState('');
+  const [isCheckingPhoto, setIsCheckingPhoto] = useState(false);
+
   const [form, setForm] = useState({
     full_name: '',
     phone: '',
     ci_number: '',
+    ci_photo_url: '',
     city: '',
     zone: '',
     main_skill: '',
@@ -101,6 +112,7 @@ export default function ReclutamientoPage() {
       full_name: '',
       phone: '',
       ci_number: '',
+      ci_photo_url: '',
       city: '',
       zone: '',
       main_skill: '',
@@ -120,6 +132,192 @@ export default function ReclutamientoPage() {
       needs_invoice_help: false,
       notes: '',
     });
+  }
+
+  async function openCamera() {
+    try {
+      setErr('');
+      setCameraError('');
+      setCapturedPreview(null);
+      setCapturedBlob(null);
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+
+      setCameraOpen(true);
+
+      let stream = null;
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      streamRef.current = stream;
+
+      setTimeout(async () => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          try {
+            await videoRef.current.play();
+          } catch {}
+        }
+      }, 120);
+    } catch (e) {
+      console.error(e);
+      setCameraOpen(false);
+      setCameraError('No se pudo abrir la cámara. Revisá permisos.');
+      setErr('No se pudo abrir la cámara. Revisá permisos.');
+    }
+  }
+
+  function closeCamera() {
+    try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    } catch {}
+    streamRef.current = null;
+    setCameraOpen(false);
+    setCapturedPreview(null);
+    setCapturedBlob(null);
+    setIsCheckingPhoto(false);
+  }
+
+  function varianceOfLaplacian(imageData) {
+    const { data, width, height } = imageData;
+    const gray = new Float32Array(width * height);
+
+    for (let i = 0; i < width * height; i++) {
+      const r = data[i * 4];
+      const g = data[i * 4 + 1];
+      const b = data[i * 4 + 2];
+      gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+    }
+
+    const lap = [];
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = y * width + x;
+        const value =
+          gray[idx - width] +
+          gray[idx - 1] -
+          4 * gray[idx] +
+          gray[idx + 1] +
+          gray[idx + width];
+        lap.push(value);
+      }
+    }
+
+    const mean = lap.reduce((a, b) => a + b, 0) / Math.max(lap.length, 1);
+    const variance =
+      lap.reduce((acc, v) => acc + (v - mean) * (v - mean), 0) / Math.max(lap.length, 1);
+
+    return variance;
+  }
+
+  async function captureFromCamera() {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    try {
+      setIsCheckingPhoto(true);
+
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+
+      const w = video.videoWidth || 1280;
+      const h = video.videoHeight || 720;
+
+      canvas.width = w;
+      canvas.height = h;
+
+      ctx.drawImage(video, 0, 0, w, h);
+
+      const imageData = ctx.getImageData(0, 0, w, h);
+      const sharpness = varianceOfLaplacian(imageData);
+
+      const preview = canvas.toDataURL('image/jpeg', 0.92);
+
+      const blob = await new Promise((resolve) =>
+        canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
+      );
+
+      if (!blob) {
+        setIsCheckingPhoto(false);
+        setErr('No se pudo capturar la foto.');
+        return;
+      }
+
+      setCapturedPreview(preview);
+      setCapturedBlob(blob);
+      setIsCheckingPhoto(false);
+
+      if (sharpness < 90) {
+        setErr('La foto salió un poco borrosa. Te recomendamos repetirla.');
+      } else {
+        setErr('');
+      }
+    } catch (e) {
+      console.error(e);
+      setIsCheckingPhoto(false);
+      setErr('No se pudo capturar la foto.');
+    }
+  }
+
+  function retakePhoto() {
+    setCapturedPreview(null);
+    setCapturedBlob(null);
+    setErr('');
+  }
+
+  async function uploadCiPhoto(fileOrBlob) {
+    const file =
+      fileOrBlob instanceof File
+        ? fileOrBlob
+        : new File([fileOrBlob], `ci_${Date.now()}.jpg`, { type: 'image/jpeg' });
+
+    try {
+      setErr('');
+      setMsg('');
+
+      const path = `worker-leads/ci_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2)}.jpg`;
+
+      const { error } = await supabase.storage
+        .from('worker-docs')
+        .upload(path, file, { cacheControl: '3600', upsert: false });
+
+      if (error) throw error;
+
+      const { data } = supabase.storage.from('worker-docs').getPublicUrl(path);
+      const url = data.publicUrl;
+
+      setField('ci_photo_url', url);
+      setMsg('Foto de cédula cargada correctamente.');
+      closeCamera();
+    } catch (e) {
+      setErr('No se pudo subir la foto de la cédula: ' + (e.message || e));
+    }
+  }
+
+  async function confirmCapturedPhoto() {
+    if (!capturedBlob) return;
+    await uploadCiPhoto(capturedBlob);
   }
 
   const canSave = useMemo(() => {
@@ -169,6 +367,7 @@ export default function ReclutamientoPage() {
       'Nombre',
       'Telefono',
       'Cedula',
+      'Foto cedula',
       'Ciudad',
       'Zona',
       'Oficio principal',
@@ -195,6 +394,7 @@ export default function ReclutamientoPage() {
       safe(r.full_name),
       safe(r.phone),
       safe(r.ci_number),
+      safe(r.ci_photo_url),
       safe(r.city),
       safe(r.zone),
       safe(r.main_skill),
@@ -240,6 +440,7 @@ export default function ReclutamientoPage() {
       `Nombre: ${row.full_name || '-'}\n` +
       `Teléfono: ${row.phone || '-'}\n` +
       `Cédula: ${row.ci_number || '-'}\n` +
+      `Foto cédula: ${row.ci_photo_url || '-'}\n` +
       `Ciudad: ${row.city || '-'}\n` +
       `Zona: ${row.zone || '-'}\n` +
       `Oficio principal: ${row.main_skill || '-'}\n` +
@@ -276,44 +477,44 @@ export default function ReclutamientoPage() {
       <div className="max-w-7xl mx-auto">
         <header className="mb-6">
           <div className="rounded-[32px] border border-emerald-100/80 bg-white/80 backdrop-blur-xl shadow-[0_20px_70px_rgba(16,185,129,0.10)] p-6">
-           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-  <div className="flex items-start gap-4">
-    <div className="hidden sm:flex h-20 w-20 md:h-24 md:w-24 rounded-3xl bg-slate-950 shadow-[0_18px_40px_rgba(15,23,42,0.20)] items-center justify-center p-3 shrink-0">
-      <img
-        src="/gestion.png"
-        alt="Gestión 360"
-        className="w-full h-full object-contain"
-      />
-    </div>
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+              <div className="flex items-start gap-4">
+                <div className="hidden sm:flex h-20 w-20 md:h-24 md:w-24 rounded-3xl bg-slate-950 shadow-[0_18px_40px_rgba(15,23,42,0.20)] items-center justify-center p-3 shrink-0">
+                  <img
+                    src="/gestion.png"
+                    alt="Gestión 360"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
 
-    <div>
-      <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 border border-emerald-200 px-4 py-2 text-emerald-700 text-sm font-bold shadow-sm">
-        ManosYA · Centro de Reclutamiento
-      </div>
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 border border-emerald-200 px-4 py-2 text-emerald-700 text-sm font-bold shadow-sm">
+                    ManosYA · Centro de Reclutamiento
+                  </div>
 
-      <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight mt-4 bg-gradient-to-r from-slate-900 via-emerald-700 to-cyan-600 text-transparent bg-clip-text leading-tight">
-        Gestión estratégica de trabajadores
-      </h1>
+                  <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight mt-4 bg-gradient-to-r from-slate-900 via-emerald-700 to-cyan-600 text-transparent bg-clip-text leading-tight">
+                    Gestión estratégica de trabajadores
+                  </h1>
 
-      <p className="text-slate-600 mt-3 max-w-3xl leading-relaxed">
-        Registrá, organizá y analizá información esencial de cada trabajador para
-        fortalecer el reclutamiento, la operación y la expansión de ManosYA.
-      </p>
+                  <p className="text-slate-600 mt-3 max-w-3xl leading-relaxed">
+                    Registrá, organizá y analizá información esencial de cada trabajador para
+                    fortalecer el reclutamiento, la operación y la expansión de ManosYA.
+                  </p>
 
-      <div className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs md:text-sm font-semibold text-amber-700">
-        <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-        Con apoyo operativo de Gestión 360
-      </div>
-    </div>
-  </div>
+                  <div className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs md:text-sm font-semibold text-amber-700">
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                    Con apoyo operativo de Gestión 360
+                  </div>
+                </div>
+              </div>
 
-  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-    <StatCard label="Registros" value={stats.total} />
-    <StatCard label="Con herramientas" value={stats.tools} />
-    <StatCard label="Ayuda bancaria" value={stats.bankHelp} />
-    <StatCard label="Ayuda factura" value={stats.invoiceHelp} />
-  </div>
-</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <StatCard label="Registros" value={stats.total} />
+                <StatCard label="Con herramientas" value={stats.tools} />
+                <StatCard label="Ayuda bancaria" value={stats.bankHelp} />
+                <StatCard label="Ayuda factura" value={stats.invoiceHelp} />
+              </div>
+            </div>
           </div>
         </header>
 
@@ -404,6 +605,21 @@ export default function ReclutamientoPage() {
                     placeholder="Ej: 4567890"
                   />
                 </Field>
+
+                <div className="md:col-span-2 xl:col-span-2">
+                  <Field label="Foto de cédula del trabajador">
+                    <UploadCard
+                      title="Cédula del trabajador"
+                      subtitle="Poné la cédula dentro del marco y sacá la foto."
+                      uploaded={!!form.ci_photo_url}
+                      uploadLabel="Sacar foto"
+                      fileHref={form.ci_photo_url}
+                      onFileChange={(file) => uploadCiPhoto(file)}
+                      onOpenCamera={openCamera}
+                      frame="document"
+                    />
+                  </Field>
+                </div>
 
                 <Field label="Ciudad">
                   <select
@@ -732,6 +948,26 @@ export default function ReclutamientoPage() {
                       </div>
                     </div>
 
+                    {row.ci_photo_url && (
+                      <div className="mt-4">
+                        <div className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">
+                          Foto de cédula
+                        </div>
+                        <a
+                          href={row.ci_photo_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block rounded-2xl overflow-hidden border border-slate-200 bg-slate-50"
+                        >
+                          <img
+                            src={row.ci_photo_url}
+                            alt="Cédula del trabajador"
+                            className="w-full h-48 object-cover"
+                          />
+                        </a>
+                      </div>
+                    )}
+
                     <div className="mt-4 flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -753,6 +989,101 @@ export default function ReclutamientoPage() {
               </div>
             )}
           </Panel>
+        )}
+
+        {cameraOpen && (
+          <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 text-white border-b border-white/10">
+              <div>
+                <div className="text-sm font-bold">Foto de cédula</div>
+                <div className="text-xs text-white/70">
+                  Alineá la cédula dentro del marco
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeCamera}
+                className="px-3 py-2 rounded-xl bg-white/10 text-white font-semibold"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="relative flex-1 flex items-center justify-center overflow-hidden bg-black">
+              {!capturedPreview ? (
+                <>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="relative w-[88%] max-w-[340px] aspect-[1.6/1] rounded-2xl border-[4px] border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]">
+                      <div className="absolute left-3 top-3 w-8 h-8 border-l-4 border-t-4 border-white rounded-tl-md" />
+                      <div className="absolute right-3 top-3 w-8 h-8 border-r-4 border-t-4 border-white rounded-tr-md" />
+                      <div className="absolute left-3 bottom-3 w-8 h-8 border-l-4 border-b-4 border-white rounded-bl-md" />
+                      <div className="absolute right-3 bottom-3 w-8 h-8 border-r-4 border-b-4 border-white rounded-br-md" />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <img
+                  src={capturedPreview}
+                  alt="captura previa"
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              )}
+
+              <canvas ref={canvasRef} className="hidden" />
+            </div>
+
+            <div className="px-4 py-4 bg-black border-t border-white/10">
+              {!capturedPreview ? (
+                <div className="flex items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={captureFromCamera}
+                    disabled={isCheckingPhoto}
+                    className="w-20 h-20 rounded-full border-[6px] border-white bg-emerald-500 shadow-lg disabled:opacity-60"
+                  >
+                    <span className="sr-only">Capturar</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={retakePhoto}
+                    className="flex-1 px-4 py-3 rounded-2xl bg-white/10 text-white font-bold"
+                  >
+                    Volver a sacar
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={confirmCapturedPhoto}
+                    className="flex-1 px-4 py-3 rounded-2xl bg-emerald-500 text-white font-extrabold"
+                  >
+                    Usar esta foto
+                  </button>
+                </div>
+              )}
+
+              <p className="text-center text-xs text-white/70 mt-3">
+                {capturedPreview
+                  ? 'Si se ve bien y nítida, confirmá la foto.'
+                  : 'Mantené el pulso firme y buena luz para evitar fotos borrosas.'}
+              </p>
+
+              {cameraError && (
+                <p className="text-center text-xs text-red-300 mt-2">{cameraError}</p>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -804,6 +1135,104 @@ function MiniItem({ label, value }) {
     <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
       <div className="text-[11px] uppercase tracking-wide text-slate-400 font-bold">{label}</div>
       <div className="text-sm font-semibold text-slate-800 mt-1">{value || '-'}</div>
+    </div>
+  );
+}
+
+function UploadCard({
+  title,
+  subtitle,
+  uploaded = false,
+  uploadLabel = 'Subir',
+  fileHref = null,
+  onFileChange,
+  onOpenCamera,
+  accept = 'image/*',
+  frame = 'document',
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-extrabold text-slate-900">{title}</div>
+          <div className="text-xs text-slate-500 mt-1">{subtitle}</div>
+        </div>
+
+        <span
+          className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+            uploaded
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-white text-slate-600 border-slate-200'
+          }`}
+        >
+          {uploaded ? 'Subido' : 'Pendiente'}
+        </span>
+      </div>
+
+      <div className="mt-4 rounded-2xl bg-white border border-dashed border-emerald-300 p-3">
+        <div className="relative mx-auto w-full max-w-[260px] h-[160px] rounded-2xl bg-gradient-to-br from-emerald-50 to-cyan-50 border border-emerald-200 overflow-hidden">
+          {fileHref ? (
+            <img
+              src={fileHref}
+              alt={title}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(16,185,129,0.12),transparent_60%)]" />
+          )}
+
+          {frame === 'document' && (
+            <>
+              <div className="absolute inset-[14px] rounded-xl border-[3px] border-emerald-500/80 shadow-[0_0_0_2px_rgba(255,255,255,0.8)]" />
+              <div className="absolute left-6 top-6 w-7 h-7 border-l-4 border-t-4 border-emerald-600 rounded-tl-md" />
+              <div className="absolute right-6 top-6 w-7 h-7 border-r-4 border-t-4 border-emerald-600 rounded-tr-md" />
+              <div className="absolute left-6 bottom-6 w-7 h-7 border-l-4 border-b-4 border-emerald-600 rounded-bl-md" />
+              <div className="absolute right-6 bottom-6 w-7 h-7 border-r-4 border-b-4 border-emerald-600 rounded-br-md" />
+
+              {!fileHref && (
+                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center">
+                  <span className="inline-flex px-3 py-1 rounded-full bg-white/85 text-[11px] font-bold text-emerald-700 border border-emerald-200">
+                    Centrá la cédula aquí
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2 items-center">
+        <button
+          type="button"
+          onClick={onOpenCamera}
+          className="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm shadow hover:bg-emerald-700 transition"
+        >
+          {uploadLabel}
+        </button>
+
+        <label className="inline-flex items-center justify-center px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-sm hover:bg-slate-50 transition cursor-pointer">
+          Elegir archivo
+          <input
+            type="file"
+            hidden
+            accept={accept}
+            onChange={(e) => onFileChange?.(e.target.files?.[0])}
+          />
+        </label>
+
+        {fileHref ? (
+          <a
+            href={fileHref}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center px-4 py-2 rounded-xl border border-emerald-200 bg-white text-emerald-700 font-semibold text-sm hover:bg-emerald-50 transition"
+          >
+            Ver archivo
+          </a>
+        ) : (
+          <span className="text-xs text-slate-400 font-medium">Todavía no subiste archivo</span>
+        )}
+      </div>
     </div>
   );
 }
