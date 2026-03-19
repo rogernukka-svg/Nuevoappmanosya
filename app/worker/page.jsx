@@ -1183,20 +1183,16 @@ useEffect(() => {
                 </div>
 
                 <div className="flex flex-col items-end gap-2">
-                  <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-white/15 border border-white/20">
-                    {meta.pill}
-                  </span>
+  <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-white/15 border border-white/20">
+    {meta.pill}
+  </span>
 
-                  <span
-                    className={`text-[11px] font-bold px-3 py-1.5 rounded-full border ${
-                      isConnected
-                        ? 'bg-white/15 text-white border-white/20'
-                        : 'bg-red-500/20 text-white border-red-200/20'
-                    }`}
-                  >
-                    {isConnected ? 'Conectado' : 'Sin internet'}
-                  </span>
-                </div>
+  {!isConnected && (
+    <span className="text-[11px] font-bold px-3 py-1.5 rounded-full border bg-red-500/20 text-white border-red-200/20">
+      Sin internet
+    </span>
+  )}
+</div>
               </div>
             </div>
 
