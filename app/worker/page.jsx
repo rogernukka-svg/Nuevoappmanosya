@@ -1128,12 +1128,13 @@ useEffect(() => {
           <div className="relative z-10 p-5">
             <div className="flex items-center justify-between gap-3">
               <button
-                onClick={() => router.push('/role-selector')}
-                className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:border-emerald-200 hover:text-emerald-700"
-              >
-                <ChevronLeft size={16} />
-                Volver
-              </button>
+  type="button"
+  onClick={() => router.push('/worker/onboard')}
+  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-[15px] font-semibold text-slate-700 shadow-[0_10px_28px_rgba(15,23,42,0.10)] transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:text-emerald-700 hover:shadow-[0_16px_34px_rgba(16,185,129,0.14)] active:scale-[0.98]"
+>
+  <ChevronLeft size={18} className="opacity-80" />
+  <span>Volver</span>
+</button>
 
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-bold text-emerald-700">
                 <Sparkles size={14} />

@@ -3,7 +3,7 @@
 import '../../globals.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase } from '@/lib/supabase';
-
+import { useRouter } from 'next/navigation';
 const supabase = getSupabase();
 
 /* ====================== CONFIG ====================== */
@@ -35,6 +35,7 @@ const showPolice = new Date() >= POLICE_REQUIRE_AFTER;
 /* ====================== PAGE ====================== */
 export default function WorkerOnboardPage() {
   const [user, setUser] = useState(null);
+  const router = useRouter();
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -45,6 +46,19 @@ export default function WorkerOnboardPage() {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7fffc_0%,#ffffff_45%,#f8fafc_100%)] px-4 py-6">
       <div className="max-w-3xl mx-auto">
+        
+<div className="flex items-center mb-5">
+  <button
+    type="button"
+    onClick={() => router.push('/worker')}
+    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-[15px] font-semibold text-slate-700 shadow-[0_10px_28px_rgba(15,23,42,0.10)] transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:text-emerald-700 hover:shadow-[0_16px_34px_rgba(16,185,129,0.14)] active:scale-[0.98]"
+  >
+    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full">
+      ←
+    </span>
+    <span>Volver</span>
+  </button>
+</div>
         <header className="text-center mb-6">
           <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 border border-emerald-200 px-4 py-2 text-emerald-700 text-sm font-bold mb-4">
             ManosYA Profesional
@@ -1115,27 +1129,40 @@ function getCurrentTrackFacingMode() {
           </div>
         )}
       </SimpleSection>
-      {/* DATOS BANCARIOS */}
+            {/* DATOS BANCARIOS */}
       <SimpleSection
         number="7"
         title="Datos bancarios"
-        subtitle="Dejá tus datos bancarios para recibir pagos más fácilmente."
+        subtitle="Esta sección estará disponible más adelante. Por ahora todavía no se utilizará."
       >
-        <div className="grid md:grid-cols-2 gap-4">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 mb-5">
+          <div className="text-sm font-extrabold text-amber-800">
+            Próximamente
+          </div>
+          <div className="text-xs text-amber-700 mt-1 leading-relaxed">
+            ManosYA todavía no va a utilizar datos bancarios en esta etapa.
+            Esta sección queda visible solo como referencia, pero por ahora no
+            es obligatoria ni se usará para pagos.
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4 opacity-60 pointer-events-none select-none">
           <Field label="Banco">
             <input
-              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-400"
+              disabled
+              className="w-full rounded-xl border border-gray-200 bg-gray-100 px-4 py-3 outline-none"
               value={bankName}
               onChange={(e) => setBankName(e.target.value)}
-              placeholder="Ej: Itaú, Visión, Ueno..."
+              placeholder="Próximamente"
             />
           </Field>
 
           <Field label="Tipo de cuenta">
             <select
+              disabled
               value={accountType}
               onChange={(e) => setAccountType(e.target.value)}
-              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-400"
+              className="w-full rounded-xl border border-gray-200 bg-gray-100 px-4 py-3 outline-none"
             >
               <option value="ahorro">Caja de ahorro</option>
               <option value="corriente">Cuenta corriente</option>
@@ -1144,29 +1171,32 @@ function getCurrentTrackFacingMode() {
 
           <Field label="Número o alias">
             <input
-              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-400"
+              disabled
+              className="w-full rounded-xl border border-gray-200 bg-gray-100 px-4 py-3 outline-none"
               value={accountNumber}
               onChange={(e) => setAccountNumber(e.target.value)}
-              placeholder="Número de cuenta o alias"
+              placeholder="Próximamente"
             />
           </Field>
 
           <Field label="Nombre del titular">
             <input
-              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-400"
+              disabled
+              className="w-full rounded-xl border border-gray-200 bg-gray-100 px-4 py-3 outline-none"
               value={holderName}
               onChange={(e) => setHolderName(e.target.value)}
-              placeholder="Nombre y apellido"
+              placeholder="Próximamente"
             />
           </Field>
 
           <div className="md:col-span-2">
             <Field label="Documento del titular">
               <input
-                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-400"
+                disabled
+                className="w-full rounded-xl border border-gray-200 bg-gray-100 px-4 py-3 outline-none"
                 value={holderDoc}
                 onChange={(e) => setHolderDoc(e.target.value)}
-                placeholder="CI / DNI / Pasaporte"
+                placeholder="Próximamente"
               />
             </Field>
           </div>
