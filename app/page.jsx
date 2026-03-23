@@ -21,12 +21,23 @@ export default function RootPage() {
       const savedRole =
         typeof window !== 'undefined' ? localStorage.getItem('app_role') : null;
 
-      await new Promise((r) => setTimeout(r, 1400));
+      await new Promise((r) => setTimeout(r, 450));
       if (!alive) return;
 
-      if (!user) return router.replace('/auth/login');
-      if (savedRole === 'worker') return router.replace('/worker');
-      if (savedRole === 'client') return router.replace('/client');
+      if (!user) {
+        router.replace('/auth/login');
+        return;
+      }
+
+      if (savedRole === 'worker') {
+        router.replace('/worker');
+        return;
+      }
+
+      if (savedRole === 'client') {
+        router.replace('/client');
+        return;
+      }
 
       router.replace('/role-selector');
     }
@@ -40,11 +51,7 @@ export default function RootPage() {
 
   return (
     <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#f8fafc]">
-      
-      {/* 🌐 fondo tecnológico */}
       <div className="pointer-events-none absolute inset-0">
-
-        {/* grid sutil */}
         <div
           className="absolute inset-0 opacity-[0.05]"
           style={{
@@ -54,7 +61,6 @@ export default function RootPage() {
           }}
         />
 
-        {/* glow vivo */}
         <motion.div
           animate={{
             opacity: [0.25, 0.45, 0.25],
@@ -64,7 +70,6 @@ export default function RootPage() {
           className="absolute left-1/2 top-1/2 h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-r from-emerald-200/40 via-cyan-200/30 to-teal-200/40 blur-3xl"
         />
 
-        {/* pulso externo */}
         <motion.div
           animate={{
             scale: [1, 1.2],
@@ -75,24 +80,19 @@ export default function RootPage() {
         />
       </div>
 
-      {/* 🚀 logo */}
       <div className="relative z-10 flex items-center justify-center">
-
-        {/* anillo lento */}
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 14, repeat: Infinity, ease: 'linear' }}
           className="absolute h-[160px] w-[160px] rounded-full border border-emerald-200/60"
         />
 
-        {/* anillo inverso */}
         <motion.div
           animate={{ rotate: -360 }}
           transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
           className="absolute h-[200px] w-[200px] rounded-full border border-cyan-200/40"
         />
 
-        {/* glow detrás */}
         <motion.div
           animate={{
             scale: [1, 1.1, 1],
@@ -102,13 +102,12 @@ export default function RootPage() {
           className="absolute h-28 w-72 rounded-full bg-gradient-to-r from-emerald-200 via-cyan-200 to-teal-200 blur-3xl"
         />
 
-        {/* logo principal */}
         <motion.img
           src="/logo-manosya.png"
           alt="ManosYA"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: [1, 1.03, 1] }}
-          transition={{ duration: 1.2, repeat: Infinity }}
+          initial={{ opacity: 0, scale: 0.92 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.8 }}
           className="relative w-[230px] object-contain drop-shadow-[0_15px_35px_rgba(15,23,42,0.18)]"
         />
       </div>
