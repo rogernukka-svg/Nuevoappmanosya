@@ -4294,7 +4294,7 @@ useEffect(() => {
               </div>
 
               <h2 className="font-bold text-lg">{selected.full_name}</h2>
-              <div className="flex flex-wrap gap-2 mt-3">
+              <div className="flex flex-wrap justify-center gap-2 mt-3">
   <span
     className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border ${
       isOnlineRecent(selected)
@@ -4302,31 +4302,18 @@ useEffect(() => {
         : 'bg-slate-50 text-slate-600 border-slate-200'
     }`}
   >
-    {isOnlineRecent(selected) ? '🟢 En línea' : '⚪ No reciente'}
+    {isOnlineRecent(selected) ? '🟢 En línea' : '🕘 No reciente'}
   </span>
 
   {distanceToSelectedKm != null ? (
     <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-cyan-50 text-cyan-700 border-cyan-200">
       📍 {formatKm(distanceToSelectedKm)}
     </span>
-  ) : null}
-</div>
-<div className="flex flex-wrap gap-2 mt-3">
-  <span
-    className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border ${
-      isOnlineRecent(selected)
-        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-        : 'bg-slate-50 text-slate-600 border-slate-200'
-    }`}
-  >
-    {isOnlineRecent(selected) ? '🟢 En línea' : '⚪ No reciente'}
-  </span>
-
-  {distanceToSelectedKm != null ? (
-    <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-cyan-50 text-cyan-700 border-cyan-200">
-      📍 {formatKm(distanceToSelectedKm)}
+  ) : (
+    <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-slate-50 text-slate-500 border-slate-200">
+      📍 Sin distancia
     </span>
-  ) : null}
+  )}
 </div>
               <p className="text-sm italic text-gray-500 mb-2">
                 “{selected.bio || 'Sin descripción'}”
