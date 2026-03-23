@@ -598,6 +598,8 @@ const markerMetaRef = useRef(new Map());
 const workersByIdRef = useRef(new Map());
 // ✅ Workers state (mover aquí arriba)
 const [workers, setWorkers] = useState([]);
+const [workerSearch, setWorkerSearch] = useState('');
+const [workerSearchOpen, setWorkerSearchOpen] = useState(false);
 
 useEffect(() => {
   workersByIdRef.current = new Map(
@@ -735,6 +737,66 @@ const distanceToSelectedKm =
   hasMeCoords && hasSelCoords
     ? haversineKm(Number(me.lat), Number(me.lon), selLat, selLng)
     : null;
+
+const normalizedWorkerSearch = workerSearch
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .trim();
+
+const searchedWorkers = useMemo(() => {
+  if (!normalizedWorkerSearch) return [];
+
+  return (workers || [])
+    .filter((w) => {
+      const fullName = (w?.full_name || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+
+      const skillsText = Array.isArray(w?.skills)
+        ? w.skills.join(' ')
+        : String(w?.skills || '');
+
+      const normalizedSkills = skillsText
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+
+      const cityText = String(w?.city || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+
+      return (
+        fullName.includes(normalizedWorkerSearch) ||
+        normalizedSkills.includes(normalizedWorkerSearch) ||
+        cityText.includes(normalizedWorkerSearch)
+      );
+    })
+    .map((w) => {
+      const wLat = Number(w?.lat);
+      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
+
+      const distKm =
+        hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
+          ? haversineKm(Number(me.lat), Number(me.lon), wLat, wLng)
+          : null;
+
+      return {
+        ...w,
+        _distKm: distKm,
+        _onlineNow: isOnlineRecent(w),
+      };
+    })
+    .sort((a, b) => {
+      if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
+      if (a._distKm != null) return -1;
+      if (b._distKm != null) return 1;
+      return String(a?.full_name || '').localeCompare(String(b?.full_name || ''));
+    })
+    .slice(0, 12);
+}, [workers, normalizedWorkerSearch, hasMeCoords, me?.lat, me?.lon]);
   // 🟢 Panel estilo Uber (3 niveles)
 const [panelLevel, setPanelLevel] = useState("hidden"); 
 // niveles: "mini" | "mid" | "full"
@@ -1745,6 +1807,8 @@ function handleMarkerClick(worker) {
     return;
   }
 
+  setWorkerSearchOpen(false);
+
   setWorkers((prev) =>
     prev.map((w) => ({
       ...w,
@@ -1770,6 +1834,38 @@ function handleMarkerClick(worker) {
   });
 }
 
+function focusWorkerFromSearch(worker) {
+  if (!worker) return;
+
+  setWorkerSearch(worker.full_name || '');
+  setWorkerSearchOpen(false);
+
+  handleMarkerClick(worker);
+
+  const wLat = Number(worker?.lat);
+  const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
+
+  if (mapRef.current && Number.isFinite(wLat) && Number.isFinite(wLng)) {
+    mapRef.current.flyTo([wLat, wLng], 16, { duration: 1.2 });
+  }
+
+  const onlineText = isOnlineRecent(worker) ? '🟢 En línea' : '⚪ No reciente';
+
+  const distKm =
+    hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
+      ? haversineKm(Number(me.lat), Number(me.lon), wLat, wLng)
+      : null;
+
+  const distText =
+    distKm != null
+      ? ` • ${formatKm(distKm)} de distancia`
+      : '';
+
+  toast.success(`${worker.full_name || 'Trabajador'} • ${onlineText}${distText}`, {
+    duration: 2200,
+  });
+}
+
 function solicitar() {
   if (!selected) {
     toast.error('Seleccioná un trabajador primero');
@@ -1779,7 +1875,6 @@ function solicitar() {
   // 🎬 Mostrar el modal de precio
   setShowPrice(true);
 }
-
 
   // ✅ CONFIRMAR — guarda el pedido en Supabase y muestra visualmente el flujo
 async function confirmarSolicitud() {
@@ -2598,7 +2693,6 @@ useEffect(() => {
     text-sm font-semibold
     hidden sm:block
   ">
-    Estás a un paso de tu solución 💚
   </div>
 </div>
 
@@ -2664,6 +2758,329 @@ useEffect(() => {
     touchAction: 'pan-x pan-y', // ✅ permite drag del mapa en móvil
   }}
 >
+<div className="absolute top-4 left-4 right-4 z-[70] pointer-events-none">
+  <div className="mx-auto max-w-xl pointer-events-auto">
+    <div className="rounded-[22px] border border-white/80 bg-white/95 backdrop-blur-xl shadow-[0_18px_40px_rgba(15,23,42,0.16)] overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="text-emerald-600 text-lg">🔎</div>
+
+        <input
+          type="text"
+          value={workerSearch}
+          onChange={(e) => {
+            setWorkerSearch(e.target.value);
+            setWorkerSearchOpen(true);
+          }}
+          onFocus={() => setWorkerSearchOpen(true)}
+          placeholder="Buscar trabajador o servicio. Ej: albañil, plomero, chofer..."
+          className="flex-1 bg-transparent text-[15px] text-slate-800 placeholder:text-slate-400 outline-none"
+        />
+
+        {workerSearch ? (
+          <button
+            type="button"
+            onClick={() => {
+              setWorkerSearch('');
+              setWorkerSearchOpen(false);
+            }}
+            className="shrink-0 rounded-full px-2 py-1 text-xs font-bold text-slate-500 hover:bg-slate-100"
+          >
+            ✕
+          </button>
+        ) : null}
+      </div>
+
+      {workerSearchOpen && workerSearch.trim() ? (
+        <div className="border-t border-slate-100 max-h-[320px] overflow-y-auto">
+          {searchedWorkers.length > 0 ? (
+            <div className="p-2 space-y-2">
+              {searchedWorkers.map((worker) => {
+                const workerSkills = Array.isArray(worker?.skills)
+                  ? worker.skills.join(', ')
+                  : String(worker?.skills || '');
+
+                return (
+                  <button
+                    key={worker.user_id}
+                    type="button"
+                    onClick={() => focusWorkerFromSearch(worker)}
+                    className="w-full text-left rounded-2xl border border-slate-200 bg-white px-3 py-3 hover:border-emerald-300 hover:bg-emerald-50/60 transition"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-extrabold text-slate-900 truncate">
+                          {worker.full_name || 'Trabajador'}
+                        </div>
+
+                        <div className="text-xs text-slate-500 mt-1 line-clamp-2">
+                          {workerSkills || 'Sin oficio cargado'}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold border ${
+                              worker._onlineNow
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-slate-50 text-slate-600 border-slate-200'
+                            }`}
+                          >
+                            {worker._onlineNow ? 'En línea' : 'No reciente'}
+                          </span>
+
+                          <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold border bg-cyan-50 text-cyan-700 border-cyan-200">
+                            {worker._distKm != null
+                              ? formatKm(worker._distKm)
+                              : 'Distancia no disponible'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] font-bold text-emerald-700 shrink-0">
+                        Ver en mapa
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="px-4 py-4 text-sm text-slate-500">
+              No encontramos trabajadores con esa búsqueda.
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  </div>
+</div>
+{/* 🔍 BUSCADOR ÚNICO MANOSYA */}
+<div
+  style={{
+    position: 'absolute',
+    top: 58,
+    left: 12,
+    right: 12,
+    zIndex: 9999,
+  }}
+>
+  <div
+    style={{
+      background: 'rgba(255,255,255,0.92)',
+      backdropFilter: 'blur(18px)',
+      WebkitBackdropFilter: 'blur(18px)',
+      borderRadius: 20,
+      border: '1px solid rgba(255,255,255,0.95)',
+      boxShadow: '0 18px 40px rgba(15,23,42,0.14)',
+      overflow: 'hidden',
+    }}
+  >
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '10px 12px',
+        background:
+          'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(6,182,212,0.08) 100%)',
+      }}
+    >
+      <div
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 12,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
+          color: '#fff',
+          fontSize: 16,
+          fontWeight: 900,
+          boxShadow: '0 10px 20px rgba(16,185,129,0.25)',
+          flexShrink: 0,
+        }}
+      >
+        🔎
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 800,
+            color: '#0f766e',
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
+            marginBottom: 2,
+          }}
+        >
+          Buscar profesional
+        </div>
+
+        <input
+          type="text"
+          value={workerSearch}
+          onChange={(e) => {
+            setWorkerSearch(e.target.value);
+            setWorkerSearchOpen(true);
+          }}
+          onFocus={() => setWorkerSearchOpen(true)}
+          placeholder="Ej: albañil, pintor, chofer."
+          style={{
+            width: '100%',
+            border: 'none',
+            outline: 'none',
+            background: 'transparent',
+            fontSize: 14,
+            fontWeight: 600,
+            color: '#0f172a',
+            lineHeight: 1.2,
+          }}
+        />
+      </div>
+
+      {workerSearch ? (
+        <button
+          type="button"
+          onClick={() => {
+            setWorkerSearch('');
+            setWorkerSearchOpen(false);
+          }}
+          style={{
+            border: 'none',
+            background: 'rgba(15,23,42,0.06)',
+            width: 30,
+            height: 30,
+            borderRadius: 10,
+            cursor: 'pointer',
+            color: '#475569',
+            fontSize: 14,
+            flexShrink: 0,
+          }}
+        >
+          ✕
+        </button>
+      ) : (
+        <div
+          style={{
+            padding: '4px 8px',
+            borderRadius: 999,
+            background: 'rgba(16,185,129,0.10)',
+            color: '#047857',
+            fontSize: 10,
+            fontWeight: 800,
+            flexShrink: 0,
+          }}
+        >
+          EN VIVO
+        </div>
+      )}
+    </div>
+
+    {workerSearchOpen && workerSearch.trim() ? (
+      <div
+        style={{
+          maxHeight: 220,
+          overflowY: 'auto',
+          background: 'rgba(255,255,255,0.97)',
+          borderTop: '1px solid #eef2f7',
+        }}
+      >
+        {searchedWorkers.length > 0 ? (
+          searchedWorkers.map((w, i) => (
+            <button
+              key={w.user_id}
+              type="button"
+              onClick={() => focusWorkerFromSearch(w)}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: '11px 12px',
+                border: 'none',
+                borderBottom:
+                  i !== searchedWorkers.length - 1 ? '1px solid #eef2f7' : 'none',
+                background: '#fff',
+                cursor: 'pointer',
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: 13,
+                  color: '#0f172a',
+                  lineHeight: 1.2,
+                }}
+              >
+                {w.full_name || 'Trabajador'}
+              </div>
+
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#64748b',
+                  marginTop: 3,
+                  lineHeight: 1.25,
+                }}
+              >
+                {Array.isArray(w.skills)
+                  ? w.skills.join(', ')
+                  : String(w.skills || 'Sin oficio cargado')}
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 6,
+                  flexWrap: 'wrap',
+                  marginTop: 7,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    padding: '4px 8px',
+                    borderRadius: 999,
+                    background: w._onlineNow ? '#ecfdf5' : '#f8fafc',
+                    color: w._onlineNow ? '#047857' : '#475569',
+                    border: `1px solid ${w._onlineNow ? '#a7f3d0' : '#e2e8f0'}`,
+                  }}
+                >
+                  {w._onlineNow ? 'En línea' : 'No reciente'}
+                </span>
+
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    padding: '4px 8px',
+                    borderRadius: 999,
+                    background: '#ecfeff',
+                    color: '#0f766e',
+                    border: '1px solid #a5f3fc',
+                  }}
+                >
+                  {w._distKm != null ? formatKm(w._distKm) : 'Sin distancia'}
+                </span>
+              </div>
+            </button>
+          ))
+        ) : (
+          <div
+            style={{
+              padding: 14,
+              fontSize: 12,
+              color: '#64748b',
+              lineHeight: 1.4,
+            }}
+          >
+            No encontramos resultados. Probá con un oficio o una ciudad.
+          </div>
+        )}
+      </div>
+    ) : null}
+  </div>
+</div>
 <MapContainer
   center={HOME_VIEW.center}
   zoom={HOME_VIEW.zoom}
@@ -3877,7 +4294,40 @@ useEffect(() => {
               </div>
 
               <h2 className="font-bold text-lg">{selected.full_name}</h2>
+              <div className="flex flex-wrap gap-2 mt-3">
+  <span
+    className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border ${
+      isOnlineRecent(selected)
+        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        : 'bg-slate-50 text-slate-600 border-slate-200'
+    }`}
+  >
+    {isOnlineRecent(selected) ? '🟢 En línea' : '⚪ No reciente'}
+  </span>
 
+  {distanceToSelectedKm != null ? (
+    <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-cyan-50 text-cyan-700 border-cyan-200">
+      📍 {formatKm(distanceToSelectedKm)}
+    </span>
+  ) : null}
+</div>
+<div className="flex flex-wrap gap-2 mt-3">
+  <span
+    className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border ${
+      isOnlineRecent(selected)
+        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        : 'bg-slate-50 text-slate-600 border-slate-200'
+    }`}
+  >
+    {isOnlineRecent(selected) ? '🟢 En línea' : '⚪ No reciente'}
+  </span>
+
+  {distanceToSelectedKm != null ? (
+    <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-cyan-50 text-cyan-700 border-cyan-200">
+      📍 {formatKm(distanceToSelectedKm)}
+    </span>
+  ) : null}
+</div>
               <p className="text-sm italic text-gray-500 mb-2">
                 “{selected.bio || 'Sin descripción'}”
               </p>

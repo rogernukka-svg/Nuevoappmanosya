@@ -9,16 +9,63 @@ const supabase = getSupabase();
 /* ====================== CONFIG ====================== */
 const ALL_SKILLS = [
   { slug: 'taxi', name: 'Taxi' },
+  { slug: 'chofer', name: 'Chofer' },
   { slug: 'limpieza', name: 'Limpieza' },
+  { slug: 'limpieza-piscinas', name: 'Limpieza de piscinas' },
   { slug: 'plomeria', name: 'Plomería' },
-  { slug: 'jardineria', name: 'Jardinería / Césped' },
   { slug: 'electricidad', name: 'Electricidad' },
+  { slug: 'jardineria', name: 'Jardinería / Césped' },
+  { slug: 'podador', name: 'Podador' },
+
+  { slug: 'pintor', name: 'Pintor' },
+  { slug: 'carpinteria', name: 'Carpintería' },
+  { slug: 'albanileria', name: 'Albañilería' },
+  { slug: 'metalurgica', name: 'Metalúrgica' },
+
   { slug: 'auxilio-vehicular', name: 'Auxilio vehicular' },
   { slug: 'fletes', name: 'Fletes y mudanzas' },
+  { slug: 'delivery', name: 'Delivery' },
+  { slug: 'mecanica', name: 'Taller mecánico' },
+  { slug: 'refrigeracion', name: 'Técnico en refrigeración' },
+  { slug: 'instalacion-aires', name: 'Instalación de aires acondicionados' },
+  { slug: 'electronica', name: 'Técnico en electrónica' },
+  { slug: 'informatica', name: 'Informática' },
+  { slug: 'mantenimientos-electronicos', name: 'Mantenimientos electrónicos' },
+  { slug: 'fumigacion', name: 'Fumigación' },
+  { slug: 'cerrajeria', name: 'Cerrajería / Copia de llave' },
+
   { slug: 'contador', name: 'Contador' },
   { slug: 'abogado', name: 'Abogado' },
-  { slug: 'peluquero', name: 'Peluquero' },
   { slug: 'gestiones-documentos', name: 'Gestiones de documentos' },
+  { slug: 'diseno-grafico', name: 'Diseñador gráfico' },
+  { slug: 'profesor-particular', name: 'Profesor particular' },
+  { slug: 'profesor-tenis', name: 'Profesor de tenis' },
+  { slug: 'consejero-matrimonial', name: 'Consejero matrimonial' },
+
+  { slug: 'peluqueria', name: 'Peluquería masculino / femenino' },
+  { slug: 'peluquero', name: 'Peluquero' },
+  { slug: 'manicurista', name: 'Manicurista' },
+  { slug: 'extension-pestanas', name: 'Extensión de pestañas' },
+  { slug: 'masaje-estetico', name: 'Masaje estético' },
+  { slug: 'modista', name: 'Modista' },
+
+  { slug: 'fisioterapeuta', name: 'Fisioterapeuta' },
+  { slug: 'enfermeria', name: 'Enfermería' },
+  { slug: 'entrenador', name: 'Entrenador' },
+
+  { slug: 'mozo', name: 'Mozo' },
+  { slug: 'parrillero', name: 'Parrillero' },
+  { slug: 'pizzero', name: 'Pizzero' },
+  { slug: 'servicio-tragos', name: 'Servicio de tragos' },
+  { slug: 'barman', name: 'Barman' },
+
+  { slug: 'fotografo', name: 'Fotógrafo' },
+  { slug: 'musico', name: 'Músico / artista en general' },
+  { slug: 'payaso', name: 'Payaso' },
+
+  { slug: 'escolta', name: 'Escolta' },
+  { slug: 'escolta-privado', name: 'Escolta privado' },
+  { slug: 'personal-shopper', name: 'Personal shopper' },
 ];
 
 const RADII = [3, 5, 10, 15, 20];
@@ -104,7 +151,8 @@ function OnboardForm({ user }) {
   const [radius, setRadius] = useState(5);
   const [coords, setCoords] = useState(null);
   const [bio, setBio] = useState('');
-  const [yearsExp, setYearsExp] = useState('');
+ const [yearsExp, setYearsExp] = useState('');
+const [skillQuery, setSkillQuery] = useState('');
 
   // Ciudad
   const [city, setCity] = useState('');
@@ -265,9 +313,26 @@ function OnboardForm({ user }) {
   const totalSteps = 12;
   const progress = Math.round((completedCount / totalSteps) * 100);
 
-  const canSave = useMemo(() => {
+   const canSave = useMemo(() => {
     return fullName?.trim() && phone?.trim() && skills.length > 0 && city && radius > 0;
   }, [fullName, phone, skills, city, radius]);
+
+  const normalizedSkillQuery = skillQuery.trim().toLowerCase();
+
+  const selectedSkillItems = useMemo(() => {
+    return ALL_SKILLS.filter((s) => skills.includes(s.slug));
+  }, [skills]);
+
+  const filteredAvailableSkillItems = useMemo(() => {
+    return ALL_SKILLS.filter((s) => {
+      const isSelected = skills.includes(s.slug);
+      const matchesSearch =
+        !normalizedSkillQuery ||
+        s.name.toLowerCase().includes(normalizedSkillQuery);
+
+      return !isSelected && matchesSearch;
+    });
+  }, [skills, normalizedSkillQuery]);
 
   /* --------- HELPERS --------- */
   async function handleAvatar(fileOrEvent) {
@@ -839,32 +904,113 @@ function getCurrentTrackFacingMode() {
         </div>
       </SimpleSection>
 
-      {/* OFICIOS */}
+           {/* OFICIOS */}
       <SimpleSection
         number="2"
         title="Qué trabajos hacés"
         subtitle="Elegí tus oficios para que te encuentren más fácil."
       >
-        <div className="flex flex-wrap gap-2">
-          {ALL_SKILLS.map((s) => {
-            const on = skills.includes(s.slug);
-            return (
-              <button
-                key={s.slug}
-                type="button"
-                onClick={() =>
-                  setSkills(on ? skills.filter((x) => x !== s.slug) : [...skills, s.slug])
-                }
-                className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
-                  on
-                    ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
-                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                {s.name}
-              </button>
-            );
-          })}
+        <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-cyan-50 p-4 mb-5">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <div className="text-sm font-extrabold text-emerald-800">
+                Elegí tus servicios principales
+              </div>
+              <p className="text-xs text-emerald-700/80 mt-1">
+                Mostrá primero lo que realmente hacés. Un perfil claro genera más confianza y más pedidos.
+              </p>
+            </div>
+
+            <div className="shrink-0 rounded-2xl bg-white border border-emerald-200 px-4 py-3 text-center shadow-sm">
+              <div className="text-2xl font-extrabold text-emerald-700">{skills.length}</div>
+              <div className="text-[11px] font-semibold text-emerald-600">
+                oficio{skills.length === 1 ? '' : 's'} seleccionado{skills.length === 1 ? '' : 's'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-5">
+          <Field label="Buscar oficio">
+            <input
+              type="text"
+              value={skillQuery}
+              onChange={(e) => setSkillQuery(e.target.value)}
+              placeholder="Ej: peluquería, chofer, albañilería, técnico..."
+              className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-300 focus:bg-white focus:ring-2 focus:ring-emerald-400"
+            />
+          </Field>
+        </div>
+
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <div className="text-sm font-extrabold text-gray-900">Tus oficios elegidos</div>
+                <div className="text-xs text-gray-500 mt-1">
+                  Esto es lo primero que debés revisar antes de guardar.
+                </div>
+              </div>
+
+              {skills.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSkills([])}
+                  className="text-xs font-bold text-red-600 hover:text-red-700"
+                >
+                  Limpiar todo
+                </button>
+              )}
+            </div>
+
+            {selectedSkillItems.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {selectedSkillItems.map((s) => (
+                  <button
+                    key={s.slug}
+                    type="button"
+                    onClick={() => setSkills(skills.filter((x) => x !== s.slug))}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-emerald-500 bg-emerald-500 text-white text-sm font-bold shadow-sm transition hover:bg-emerald-600"
+                  >
+                    <span>{s.name}</span>
+                    <span className="text-white/90">×</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-500">
+                Todavía no seleccionaste ningún oficio.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="mb-3">
+              <div className="text-sm font-extrabold text-gray-900">Oficios disponibles</div>
+              <div className="text-xs text-gray-500 mt-1">
+                Tocá para agregar. Lo seleccionado desaparece de abajo para que no confunda.
+              </div>
+            </div>
+
+            {filteredAvailableSkillItems.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {filteredAvailableSkillItems.map((s) => (
+                  <button
+                    key={s.slug}
+                    type="button"
+                    onClick={() => setSkills([...skills, s.slug])}
+                    className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-500">
+                No encontramos oficios con esa búsqueda.
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="grid md:grid-cols-2 gap-4 mt-5">
