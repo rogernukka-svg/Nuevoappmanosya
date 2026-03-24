@@ -343,6 +343,30 @@ export function AvailabilityCarousel({ value, onChange }) {
 /* =========================
    PAGE
 ========================= */
+function openGoogleMaps(lat, lng) {
+  if (!lat || !lng) {
+    toast.error('Ubicación no disponible');
+    return;
+  }
+
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+
+  try {
+    const isPWA =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+
+    if (isPWA) {
+      window.location.href = url;
+      return;
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+  } catch (err) {
+    console.error('Error abriendo Google Maps:', err);
+    window.location.href = url;
+  }
+}
 
 export default function WorkerPage() {
   const router = useRouter();
@@ -1414,37 +1438,32 @@ useEffect(() => {
                     </div>
                   )}
 
-                  {job.status === 'accepted' && (
-                    <div className="grid gap-3 mt-4">
-                      <button
-                        onClick={() =>
-                          window.open(
-                            `https://www.google.com/maps/dir/?api=1&destination=${job.client_lat},${job.client_lng}`,
-                            '_blank'
-                          )
-                        }
-                        className="w-full rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700 py-3 font-bold hover:bg-emerald-100 transition flex items-center justify-center gap-2"
-                      >
-                        <Map size={16} /> Ver ubicación
-                      </button>
+                 {job.status === 'accepted' && (
+  <div className="grid gap-3 mt-4">
+    <button
+      onClick={() => openGoogleMaps(job.client_lat, job.client_lng)}
+      className="w-full rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700 py-3 font-bold hover:bg-emerald-100 transition flex items-center justify-center gap-2"
+    >
+      <Map size={16} /> Ver ubicación
+    </button>
 
-                      <button
-                        onClick={() => openChat(job)}
-                        className="w-full rounded-2xl border border-gray-200 bg-white text-gray-800 py-3 font-bold hover:bg-gray-50 transition flex items-center justify-center gap-2"
-                      >
-                        <MessageCircle size={16} />
-                        Chat con cliente
-                      </button>
+    <button
+      onClick={() => openChat(job)}
+      className="w-full rounded-2xl border border-gray-200 bg-white text-gray-800 py-3 font-bold hover:bg-gray-50 transition flex items-center justify-center gap-2"
+    >
+      <MessageCircle size={16} />
+      Chat con cliente
+    </button>
 
-                      <button
-                        onClick={() => completeJob(job)}
-                        className="w-full rounded-2xl bg-emerald-600 text-white py-3 font-extrabold hover:bg-emerald-700 transition flex items-center justify-center gap-2"
-                      >
-                        <CheckSquare size={16} />
-                        Finalizar trabajo
-                      </button>
-                    </div>
-                  )}
+    <button
+      onClick={() => completeJob(job)}
+      className="w-full rounded-2xl bg-emerald-600 text-white py-3 font-extrabold hover:bg-emerald-700 transition flex items-center justify-center gap-2"
+    >
+      <CheckSquare size={16} />
+      Finalizar trabajo
+    </button>
+  </div>
+)}
 
                   {job.status === 'completed' && (
                     <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 py-3 text-center text-emerald-700 font-bold">
@@ -1490,16 +1509,11 @@ useEffect(() => {
                     </div>
 
                     <button
-                      onClick={() =>
-                        window.open(
-                          `https://www.google.com/maps/dir/?api=1&destination=${selectedJob.client_lat},${selectedJob.client_lng}`,
-                          '_blank'
-                        )
-                      }
-                      className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800 text-sm font-semibold"
-                    >
-                      <Map size={16} /> Mapa
-                    </button>
+  onClick={() => openGoogleMaps(selectedJob.client_lat, selectedJob.client_lng)}
+  className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800 text-sm font-semibold"
+>
+  <Map size={16} /> Mapa
+</button>
                   </div>
 
                   {clientTyping && (
