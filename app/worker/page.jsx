@@ -344,27 +344,61 @@ export function AvailabilityCarousel({ value, onChange }) {
    PAGE
 ========================= */
 function openGoogleMaps(lat, lng) {
-  if (!lat || !lng) {
+  if (lat == null || lng == null) {
     toast.error('Ubicación no disponible');
     return;
   }
 
-  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+  const la = Number(lat);
+  const lo = Number(lng);
+
+  if (Number.isNaN(la) || Number.isNaN(lo)) {
+    toast.error('Ubicación inválida');
+    return;
+  }
+
+  const ua = navigator.userAgent || '';
+  const isAndroid = /Android/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+
+  const googleWebUrl = `https://www.google.com/maps/search/?api=1&query=${la},${lo}`;
+  const appleWebUrl = `https://maps.apple.com/?daddr=${la},${lo}`;
 
   try {
-    const isPWA =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true;
+    if (isAndroid) {
+  const a = document.createElement('a');
+  a.href = `google.navigation:q=${la},${lo}`;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 
-    if (isPWA) {
-      window.location.href = url;
+  // 🔥 fallback nativo Android (MUY IMPORTANTE)
+  setTimeout(() => {
+    window.location.href = `geo:${la},${lo}?q=${la},${lo}`;
+  }, 400);
+
+  // 🌐 fallback web final
+  setTimeout(() => {
+    window.open(googleWebUrl, '_blank', 'noopener,noreferrer');
+  }, 1200);
+
+  return;
+}
+
+    if (isIOS) {
+      window.location.href = `comgooglemaps://?daddr=${la},${lo}&directionsmode=driving`;
+
+      setTimeout(() => {
+        window.open(appleWebUrl, '_blank', 'noopener,noreferrer');
+      }, 900);
       return;
     }
 
-    window.open(url, '_blank', 'noopener,noreferrer');
+    window.open(googleWebUrl, '_blank', 'noopener,noreferrer');
   } catch (err) {
-    console.error('Error abriendo Google Maps:', err);
-    window.location.href = url;
+    console.error('Error abriendo mapa:', err);
+    window.open(googleWebUrl, '_blank', 'noopener,noreferrer');
   }
 }
 
