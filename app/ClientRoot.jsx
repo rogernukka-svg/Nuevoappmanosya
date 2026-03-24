@@ -76,8 +76,8 @@ export default function ClientRoot({ children }) {
       }
 
       if (event === "SIGNED_OUT") {
-        console.log("🚪 Sesión cerrada → redirigiendo a /login");
-        router.replace("/login");
+        console.log("🚪 Sesión cerrada → redirigiendo a /auth/login");
+        router.replace("/auth/login");
       }
     });
 
@@ -95,10 +95,8 @@ export default function ClientRoot({ children }) {
 
   // === Ocultar header en auth y cliente ===
   const hideHeader =
-    pathname?.startsWith("/login") ||
-    pathname?.startsWith("/register") ||
-    pathname?.startsWith("/role-selector") ||
     pathname?.startsWith("/auth") ||
+    pathname?.startsWith("/role-selector") ||
     pathname?.startsWith("/client");
 
   const homeLink = isWorker
