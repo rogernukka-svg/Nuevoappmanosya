@@ -2853,95 +2853,81 @@ useEffect(() => {
     </div>
   </div>
 </div>
-{/* 🔍 BUSCADOR ÚNICO MANOSYA */}
+{/* 🔍 BUSCADOR INTELIGENTE MANOSYA — FIX PRO */}
 <div
   style={{
     position: 'absolute',
-    top: 58,
-    left: 12,
-    right: 12,
+    top: 10,
+    left: 120, // 👈 MÁS SEPARADO DEL BOTÓN ←
+    right: 60, // 👈 MÁS CORTO (NO OCUPA TODO)
     zIndex: 9999,
+    pointerEvents: 'auto',
   }}
 >
   <div
     style={{
-      background: 'rgba(255,255,255,0.92)',
-      backdropFilter: 'blur(18px)',
-      WebkitBackdropFilter: 'blur(18px)',
-      borderRadius: 20,
-      border: '1px solid rgba(255,255,255,0.95)',
-      boxShadow: '0 18px 40px rgba(15,23,42,0.14)',
+      background: 'rgba(255,255,255,0.88)',
+      backdropFilter: 'blur(16px)',
+      WebkitBackdropFilter: 'blur(16px)',
+      borderRadius: 16,
+      border: '1px solid rgba(255,255,255,0.9)',
+      boxShadow: '0 10px 22px rgba(15,23,42,0.10)',
       overflow: 'hidden',
     }}
   >
+    {/* 🔹 INPUT */}
     <div
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 10,
-        padding: '10px 12px',
+        gap: 8,
+        padding: '8px 10px',
+        minHeight: 42, // 👈 un poquito más alto (UX mejor)
         background:
-          'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(6,182,212,0.08) 100%)',
+          'linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(6,182,212,0.04) 100%)',
       }}
     >
       <div
         style={{
-          width: 36,
-          height: 36,
-          borderRadius: 12,
+          width: 28,
+          height: 28,
+          borderRadius: 9,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
           color: '#fff',
-          fontSize: 16,
+          fontSize: 12,
           fontWeight: 900,
-          boxShadow: '0 10px 20px rgba(16,185,129,0.25)',
+          boxShadow: '0 6px 14px rgba(16,185,129,0.18)',
           flexShrink: 0,
         }}
       >
         🔎
       </div>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 800,
-            color: '#0f766e',
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-            marginBottom: 2,
-          }}
-        >
-          Buscar profesional
-        </div>
-
-        <input
-          type="text"
-          value={workerSearch}
-          onChange={(e) => {
-            setWorkerSearch(e.target.value);
-            setWorkerSearchOpen(true);
-          }}
-          onFocus={() => setWorkerSearchOpen(true)}
-          placeholder="Ej: albañil, pintor, chofer."
-          style={{
-            width: '100%',
-            border: 'none',
-            outline: 'none',
-            background: 'transparent',
-            fontSize: 14,
-            fontWeight: 600,
-            color: '#0f172a',
-            lineHeight: 1.2,
-          }}
-        />
-      </div>
+      <input
+        type="text"
+        value={workerSearch}
+        onChange={(e) => {
+          setWorkerSearch(e.target.value);
+          setWorkerSearchOpen(true);
+        }}
+        onFocus={() => setWorkerSearchOpen(true)}
+        placeholder="Ej: albañil, pintor..."
+        style={{
+          width: '100%',
+          border: 'none',
+          outline: 'none',
+          background: 'transparent',
+          fontSize: 13,
+          fontWeight: 700,
+          color: '#0f172a',
+        }}
+      />
 
       {workerSearch ? (
         <button
-          type="button"
           onClick={() => {
             setWorkerSearch('');
             setWorkerSearchOpen(false);
@@ -2949,13 +2935,11 @@ useEffect(() => {
           style={{
             border: 'none',
             background: 'rgba(15,23,42,0.06)',
-            width: 30,
-            height: 30,
-            borderRadius: 10,
+            width: 22,
+            height: 22,
+            borderRadius: 7,
             cursor: 'pointer',
-            color: '#475569',
-            fontSize: 14,
-            flexShrink: 0,
+            fontSize: 11,
           }}
         >
           ✕
@@ -2963,122 +2947,86 @@ useEffect(() => {
       ) : (
         <div
           style={{
-            padding: '4px 8px',
+            padding: '3px 6px',
             borderRadius: 999,
-            background: 'rgba(16,185,129,0.10)',
+            background: 'rgba(16,185,129,0.12)',
             color: '#047857',
-            fontSize: 10,
+            fontSize: 8,
             fontWeight: 800,
-            flexShrink: 0,
           }}
         >
-          EN VIVO
+          ''
         </div>
       )}
     </div>
 
-    {workerSearchOpen && workerSearch.trim() ? (
+    {/* 🔹 RESULTADOS */}
+    {workerSearchOpen && workerSearch.trim() && (
       <div
         style={{
-          maxHeight: 220,
+          maxHeight: 200,
           overflowY: 'auto',
-          background: 'rgba(255,255,255,0.97)',
+          background: '#fff',
           borderTop: '1px solid #eef2f7',
         }}
       >
         {searchedWorkers.length > 0 ? (
-          searchedWorkers.map((w, i) => (
-            <button
-              key={w.user_id}
-              type="button"
-              onClick={() => focusWorkerFromSearch(w)}
-              style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '11px 12px',
-                border: 'none',
-                borderBottom:
-                  i !== searchedWorkers.length - 1 ? '1px solid #eef2f7' : 'none',
-                background: '#fff',
-                cursor: 'pointer',
-              }}
-            >
-              <div
-                style={{
-                  fontWeight: 800,
-                  fontSize: 13,
-                  color: '#0f172a',
-                  lineHeight: 1.2,
-                }}
-              >
-                {w.full_name || 'Trabajador'}
-              </div>
+          searchedWorkers.map((w, i) => {
+            const workerSkills = Array.isArray(w.skills)
+              ? w.skills.join(', ')
+              : String(w?.skills || '');
 
-              <div
-                style={{
-                  fontSize: 11,
-                  color: '#64748b',
-                  marginTop: 3,
-                  lineHeight: 1.25,
-                }}
-              >
-                {Array.isArray(w.skills)
-                  ? w.skills.join(', ')
-                  : String(w.skills || 'Sin oficio cargado')}
-              </div>
+            const mainService =
+              workerSkills ||
+              w?.main_skill ||
+              w?.category ||
+              'Servicio no especificado';
 
-              <div
+            return (
+              <button
+                key={w.user_id}
+                onClick={() => focusWorkerFromSearch(w)}
                 style={{
-                  display: 'flex',
-                  gap: 6,
-                  flexWrap: 'wrap',
-                  marginTop: 7,
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '10px 12px',
+                  border: 'none',
+                  borderBottom:
+                    i !== searchedWorkers.length - 1
+                      ? '1px solid #eef2f7'
+                      : 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
                 }}
               >
-                <span
+                <div style={{ fontSize: 13, fontWeight: 800 }}>
+                  {w.full_name}
+                </div>
+
+                <div
                   style={{
-                    fontSize: 10,
-                    fontWeight: 800,
-                    padding: '4px 8px',
-                    borderRadius: 999,
-                    background: w._onlineNow ? '#ecfdf5' : '#f8fafc',
-                    color: w._onlineNow ? '#047857' : '#475569',
-                    border: `1px solid ${w._onlineNow ? '#a7f3d0' : '#e2e8f0'}`,
-                  }}
-                >
-                  {w._onlineNow ? 'En línea' : 'No reciente'}
-                </span>
-
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 800,
-                    padding: '4px 8px',
-                    borderRadius: 999,
-                    background: '#ecfeff',
+                    fontSize: 11,
                     color: '#0f766e',
-                    border: '1px solid #a5f3fc',
+                    fontWeight: 600,
                   }}
                 >
-                  {w._distKm != null ? formatKm(w._distKm) : 'Sin distancia'}
-                </span>
-              </div>
-            </button>
-          ))
+                  {mainService}
+                </div>
+
+                <div style={{ fontSize: 11, color: '#64748b' }}>
+                  {w._onlineNow ? '🟢 En línea' : '⚪ No reciente'}
+                  {w._distKm != null && ` • ${formatKm(w._distKm)}`}
+                </div>
+              </button>
+            );
+          })
         ) : (
-          <div
-            style={{
-              padding: 14,
-              fontSize: 12,
-              color: '#64748b',
-              lineHeight: 1.4,
-            }}
-          >
-            No encontramos resultados. Probá con un oficio o una ciudad.
+          <div style={{ padding: 12, fontSize: 12, color: '#64748b' }}>
+            No encontramos resultados.
           </div>
         )}
       </div>
-    ) : null}
+    )}
   </div>
 </div>
 <MapContainer

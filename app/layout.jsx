@@ -5,8 +5,17 @@ import ClientOnlyLayout from "./ClientOnlyLayout";
 import GlobalAudio from "@/components/GlobalAudio";
 import "leaflet/dist/leaflet.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  variable: "--font-manrope",
+  display: "swap",
+});
 
 /* === 🧠 SEO + PWA Metadata === */
 export const metadata = {
@@ -34,7 +43,7 @@ export default function RootLayout({ children }) {
       className={`${inter.variable} ${manrope.variable} antialiased`}
     >
       <head>
-        {/* === 🧠 Metadatos PWA === */}
+        {/* PWA */}
         <meta name="theme-color" content="#14B8A6" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -50,37 +59,78 @@ export default function RootLayout({ children }) {
         <link rel="apple-touch-icon" href="/icons/icon-512x512.png" />
         <link rel="manifest" href="/manifest.json" />
 
-        {/* ✅ FIX: evita pantalla gris (no bloqueamos render) */}
-        <style>{`body{visibility:visible}`}</style>
+        {/* Evita flicker */}
+        <style>{`
+          html, body {
+            background: #f8fafc;
+          }
+          body {
+            visibility: visible;
+          }
+        `}</style>
       </head>
 
-      {/* ⛔ FIX: evita que los celulares agranden la letra */}
       <body
-        style={{ WebkitTextSizeAdjust: "none", textSizeAdjust: "none" }}
+        style={{
+          WebkitTextSizeAdjust: "none",
+          textSizeAdjust: "none",
+        }}
         className="
           min-h-[100dvh]
-          bg-[#F9FAFB] text-gray-900 antialiased
           overflow-x-hidden
-          selection:bg-emerald-200 selection:text-emerald-800
+          bg-slate-50
+          text-slate-900
+          antialiased
+          selection:bg-emerald-200
+          selection:text-emerald-900
+          [font-family:var(--font-manrope)]
         "
       >
-        {/* 🌟 Sistema global de notificaciones */}
-        <Toaster position="top-center" richColors />
+        {/* 🌫️ Fondo global tecnológico limpio */}
+        <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(to_bottom,#f8fafc,#f1f5f9)]" />
 
-        {/* 🎧 AUDIO GLOBAL — Persistente en TODA la app */}
+          <div className="absolute left-1/2 top-[-180px] h-[420px] w-[820px] -translate-x-1/2 rounded-full bg-emerald-300/20 blur-3xl" />
+          <div className="absolute left-[-120px] top-[18%] h-[260px] w-[260px] rounded-full bg-cyan-300/15 blur-3xl" />
+          <div className="absolute bottom-[-120px] right-[-80px] h-[320px] w-[320px] rounded-full bg-teal-300/15 blur-3xl" />
+
+          <div
+            className="absolute inset-0 opacity-[0.045]"
+            style={{
+              backgroundImage:
+                "linear-gradient(to right, rgba(15,23,42,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(15,23,42,0.08) 1px, transparent 1px)",
+              backgroundSize: "42px 42px",
+            }}
+          />
+
+          <div className="absolute inset-0 bg-white/45" />
+        </div>
+
+        {/* 🔔 Toaster premium */}
+        <Toaster
+          position="top-center"
+          richColors
+          toastOptions={{
+            classNames: {
+              toast:
+                "!rounded-2xl !border !border-white/80 !bg-white/90 !backdrop-blur-xl !shadow-[0_14px_40px_rgba(15,23,42,0.10)]",
+              title: "!text-slate-900 !font-bold",
+              description: "!text-slate-600",
+            },
+          }}
+        />
+
+        {/* 🎧 Audio global */}
         <GlobalAudio />
 
-        {/* ⚙️ Layout dinámico para roles y navegación */}
+        {/* ⚙️ Layout dinámico */}
         <ClientOnlyLayout>{children}</ClientOnlyLayout>
 
-        {/* ⚡ Registro del Service Worker SOLO en producción */}
+        {/* ⚡ Service Worker */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              if (
-                'serviceWorker' in navigator &&
-                location.hostname !== 'localhost'
-              ) {
+              if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
                 window.addEventListener('load', () => {
                   navigator.serviceWorker
                     .register('/service-worker.js')
@@ -92,7 +142,7 @@ export default function RootLayout({ children }) {
           }}
         />
 
-        {/* 🎵 Habilitar audio al primer toque del usuario */}
+        {/* 🎵 Activar audio en primer toque */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -100,7 +150,9 @@ export default function RootLayout({ children }) {
                 "click",
                 () => {
                   const audio = document.querySelector("audio");
-                  if (audio && audio.paused) audio.play().catch(() => {});
+                  if (audio && audio.paused) {
+                    audio.play().catch(() => {});
+                  }
                 },
                 { once: true }
               );

@@ -13,18 +13,22 @@ function DynamicFooterMessage() {
 
   useEffect(() => {
     if (!pathname) return;
-    if (pathname.startsWith("/client"))
+
+    if (pathname.startsWith("/client")) {
       setMessage("— Conectamos clientes y profesionales 💪");
-    else if (pathname.startsWith("/worker"))
+    } else if (pathname.startsWith("/worker")) {
       setMessage("— Impulsamos tu trabajo en cada pedido ⚙️");
-    else if (pathname.startsWith("/admin"))
+    } else if (pathname.startsWith("/admin")) {
       setMessage("— Panel interno de gestión y monitoreo 🧠");
-    else setMessage("");
+    } else {
+      setMessage("");
+    }
   }, [pathname]);
 
   if (!message) return null;
+
   return (
-    <div className="mt-1 text-emerald-600/80 text-xs font-medium animate-fadeIn">
+    <div className="mt-1 text-xs font-medium text-emerald-600/80 animate-fadeIn">
       {message}
     </div>
   );
@@ -56,29 +60,26 @@ export default function ClientRoot({ children }) {
     }
 
     // 🧠 Listener global de sesión Supabase
-   const { data: { subscription } } = supabase.auth.onAuthStateChange(
-  async (event, session) => {
-    if (event === "SIGNED_IN" && session?.user) {
-      console.log("🟢 Sesión activa:", session.user.email);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_IN" && session?.user) {
+        console.log("🟢 Sesión activa:", session.user.email);
 
-      // 🛎 Intentar registrar la suscripción PUSH
-      try {
-        const { registerPushSubscription } = await import("@/lib/pushSubscription");
-
-        await registerPushSubscription(session.user.id);
-        console.log("🔔 Push subscription registrada");
-      } catch (err) {
-        console.warn("⚠ No se pudo registrar push subscription:", err);
+        try {
+          const { registerPushSubscription } = await import("@/lib/pushSubscription");
+          await registerPushSubscription(session.user.id);
+          console.log("🔔 Push subscription registrada");
+        } catch (err) {
+          console.warn("⚠ No se pudo registrar push subscription:", err);
+        }
       }
-    }
 
-    if (event === "SIGNED_OUT") {
-      console.log("🚪 Sesión cerrada → redirigiendo a /login");
-      router.replace("/login");
-    }
-  }
-);
-
+      if (event === "SIGNED_OUT") {
+        console.log("🚪 Sesión cerrada → redirigiendo a /login");
+        router.replace("/login");
+      }
+    });
 
     return () => {
       subscription.unsubscribe();
@@ -92,83 +93,73 @@ export default function ClientRoot({ children }) {
   const isClient = pathname?.startsWith("/client");
   const isAdmin = pathname?.startsWith("/admin");
 
-  // === Ocultar header en pantallas de autenticación ===
+  // === Ocultar header en auth y cliente ===
   const hideHeader =
     pathname?.startsWith("/login") ||
     pathname?.startsWith("/register") ||
-    pathname?.startsWith("/role-selector");
+    pathname?.startsWith("/role-selector") ||
+    pathname?.startsWith("/auth") ||
+    pathname?.startsWith("/client");
 
   const homeLink = isWorker
     ? "/worker/onboard"
     : isClient
-    ? "/client"
-    : isAdmin
-    ? "/admin"
-    : "/";
+      ? "/client"
+      : isAdmin
+        ? "/admin"
+        : "/";
 
   return (
     <div
       suppressHydrationWarning
       className="
-        bg-white text-gray-900 min-h-screen flex flex-col
-        antialiased selection:bg-emerald-100 selection:text-emerald-700
-        overflow-x-hidden overflow-y-visible relative
+        relative flex min-h-screen flex-col overflow-x-hidden overflow-y-visible
+        bg-slate-50 text-slate-900 antialiased
+        selection:bg-emerald-100 selection:text-emerald-700
       "
     >
       {/* ===== FONDO ===== */}
       <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute inset-0 bg-gradient-to-b from-white via-gray-50 to-gray-100" />
-        <div className="absolute inset-0 opacity-40 bg-[radial-gradient(ellipse_at_30%_20%,rgba(20,184,166,0.08),transparent_70%)]" />
-        <div className="absolute inset-0 opacity-25 bg-[radial-gradient(ellipse_at_70%_40%,rgba(59,130,246,0.05),transparent_70%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,#ffffff,#f8fafc,#f1f5f9)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(20,184,166,0.09),transparent_70%)] opacity-50" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_40%,rgba(59,130,246,0.05),transparent_70%)] opacity-40" />
+        <div
+          className="absolute inset-0 opacity-[0.035]"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(15,23,42,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(15,23,42,0.08) 1px, transparent 1px)",
+            backgroundSize: "42px 42px",
+          }}
+        />
       </div>
 
       {/* ===== HEADER ===== */}
       {!hideHeader && (
-        <header className="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-white/90 backdrop-blur-sm shadow-sm">
-          <Link
-            href={homeLink}
-            className="text-[1.4rem] font-extrabold tracking-tight hover:opacity-90 transition-opacity"
-          >
-            <span className="text-gray-900">Manos</span>
-            <span className="text-emerald-600">YA</span>
-          </Link>
-
-          {isWorker && (
-            <span className="text-sm text-gray-600 font-medium">
-              Modo Trabajador 🧑‍🔧
-            </span>
-          )}
-          {isClient && (
-            <span className="text-sm text-gray-600 font-medium">
-              Modo Cliente 🏡
-            </span>
-          )}
-          {isAdmin && (
-            <span className="text-sm text-gray-600 font-medium">
-              Modo Admin 🧠
-            </span>
-          )}
-          {!isWorker && !isClient && !isAdmin && (
-            <span className="text-xs text-gray-500 tracking-wide">
-              v1.0 Beta
-            </span>
-          )}
+        <header className="sticky top-0 z-40 border-b border-white/70 bg-white/80 backdrop-blur-xl shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
+          <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-4">
+            <Link
+              href={homeLink}
+              className="text-[1.4rem] font-extrabold tracking-tight transition-opacity hover:opacity-90"
+            >
+              <span className="text-slate-900">Manos</span>
+              <span className="text-emerald-600">YA</span>
+            </Link>
+          </div>
         </header>
       )}
 
       {/* ===== MAIN ===== */}
-      <main className="flex-1 relative z-10 animate-fadeIn">{children}</main>
+      <main className="relative z-10 flex-1 animate-fadeIn">{children}</main>
 
       {/* ===== FOOTER ===== */}
-      {!pathname?.startsWith("/client") &&
-        !pathname?.startsWith("/worker") && (
-          <footer className="bg-gray-50 text-center py-4 border-t border-gray-200 text-sm text-gray-600">
-            © {new Date().getFullYear()}{" "}
-            <span className="text-emerald-600 font-semibold">ManosYA</span> · Alto Paraná 🇵🇾
-            <DynamicFooterMessage />
-            <div className="mt-1 text-xs text-gray-500">Tu ayuda al instante ⚡</div>
-          </footer>
-        )}
+      {!pathname?.startsWith("/client") && !pathname?.startsWith("/worker") && (
+        <footer className="border-t border-white/70 bg-white/70 py-4 text-center text-sm text-slate-600 backdrop-blur-md">
+          © {new Date().getFullYear()}{" "}
+          <span className="font-semibold text-emerald-600">ManosYA</span> · Alto Paraná 🇵🇾
+          <DynamicFooterMessage />
+          <div className="mt-1 text-xs text-slate-500">Tu ayuda al instante ⚡</div>
+        </footer>
+      )}
 
       {/* ===== TOASTER ===== */}
       <Toaster
@@ -176,10 +167,11 @@ export default function ClientRoot({ children }) {
         richColors
         toastOptions={{
           style: {
-            background: "#fff",
-            color: "#1f2937",
-            border: "1px solid rgba(0,0,0,0.05)",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+            background: "rgba(255,255,255,0.92)",
+            color: "#0f172a",
+            border: "1px solid rgba(255,255,255,0.75)",
+            boxShadow: "0 10px 30px rgba(15,23,42,0.10)",
+            backdropFilter: "blur(14px)",
           },
         }}
       />
