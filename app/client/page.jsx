@@ -1106,18 +1106,30 @@ useEffect(() => {
   }
 
   const { jid, jstatus, cid, selectedWorker } = parsed || {};
+  const active =
+    jid && jstatus && !['completed', 'cancelled', 'worker_completed'].includes(jstatus);
+
+  if (!active) {
+    localStorage.removeItem('activeJobChat');
+    return;
+  }
 
   if (jid) setJobId(jid);
   if (jstatus) setJobStatus(jstatus);
   if (selectedWorker) setSelected(selectedWorker);
 
+  setIsTrackingWorker(jstatus === 'accepted' || jstatus === 'assigned');
+  setProfileSheetMode('mini');
+  setShowPrice(false);
+  setServicesOpen(false);
+  setClusterOpen(false);
+  setClusterMiniOpen(false);
+
   setTimeout(() => {
-    if (cid && jid && jstatus !== 'completed' && jstatus !== 'cancelled') {
+    if (cid) {
       setChatId(cid);
-      setIsChatOpen(true);
-      openChat(cid);
     }
-  }, 300);
+  }, 150);
 }, []);
 // ✅ Ruta SOLO si hay pedido activo (y no está finalizado/cancelado)
 useEffect(() => {
@@ -1174,20 +1186,26 @@ useEffect(() => {
 
 /* 💾 Guardar estado actual del pedido y chat */
 useEffect(() => {
-  if (isChatOpen && chatId && selected && jobId) {
+  if (typeof window === 'undefined') return;
+
+  const hasActiveJob =
+    !!jobId && jobStatus && !['completed', 'cancelled', 'worker_completed'].includes(jobStatus);
+
+  if (hasActiveJob && selected) {
     localStorage.setItem(
       'activeJobChat',
       JSON.stringify({
         jid: jobId,
         jstatus: jobStatus,
-        cid: chatId,
+        cid: chatId || null,
         selectedWorker: selected,
       })
     );
-  } else if (!isChatOpen) {
-    localStorage.removeItem('activeJobChat');
+    return;
   }
-}, [isChatOpen, chatId, selected, jobId, jobStatus]);
+
+  localStorage.removeItem('activeJobChat');
+}, [chatId, selected, jobId, jobStatus]);
 
 
 /* 🔴 Estado: indicador de mensaje no leído
@@ -1203,8 +1221,6 @@ useEffect(() => {
 // 🧩 Recuperar pedido activo desde Supabase si no hay nada en localStorage
 useEffect(() => {
   if (jobId || !me?.id) return;
-
-  // ✅ Esperar coordenadas del cliente antes de setRoute
   if (!Number(me?.lat) || !Number(me?.lon)) return;
 
   (async () => {
@@ -1222,6 +1238,11 @@ useEffect(() => {
 
       setJobId(job.id);
       setJobStatus(job.status);
+      setIsTrackingWorker(job.status === 'accepted' || job.status === 'assigned');
+      setShowPrice(false);
+      setServicesOpen(false);
+      setClusterOpen(false);
+      setClusterMiniOpen(false);
 
       const { data: worker } = await supabase
         .from('map_workers_view')
@@ -1230,19 +1251,30 @@ useEffect(() => {
         .maybeSingle();
 
       const wLat = Number(worker?.lat);
-const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
+      const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
 
-if (Number.isFinite(wLat) && Number.isFinite(wLng)) {
-  setSelected(worker);
-setProfileSheetMode('full');
-  setRoute([[Number(me.lat), Number(me.lon)], [wLat, wLng]]);
-  toast.success(`Pedido restaurado (${job.status})`);
-}
+      if (Number.isFinite(wLat) && Number.isFinite(wLng)) {
+        setSelected(worker);
+        setProfileSheetMode('mini');
+        setRoute([[Number(me.lat), Number(me.lon)], [wLat, wLng]]);
+
+        localStorage.setItem(
+          'activeJobChat',
+          JSON.stringify({
+            jid: job.id,
+            jstatus: job.status,
+            cid: chatId || null,
+            selectedWorker: worker,
+          })
+        );
+
+        toast.success(`Pedido restaurado (${job.status})`);
+      }
     } catch (err) {
       console.warn('Sin pedido activo para restaurar:', err?.message || err);
     }
   })();
-}, [me?.id, me?.lat, me?.lon, jobId]);
+}, [me?.id, me?.lat, me?.lon, jobId, chatId]);
 
 /* === Usuario === */
 useEffect(() => {
@@ -1802,8 +1834,9 @@ useEffect(() => {
 }, [me?.id, jobId, chatId, isChatOpen, supabase]);
 /* === Interacciones mejoradas === */
 function handleMarkerClick(worker) {
-  if (jobId && jobStatus !== 'completed' && jobStatus !== 'cancelled') {
-    toast.warning('⚠️ Ya tenés un pedido activo. Finalizalo o cancelalo antes de seleccionar otro.');
+  if (jobId && jobStatus && !['completed', 'cancelled', 'worker_completed'].includes(jobStatus)) {
+    toast.warning('⚠️ Ya tenés un pedido activo. Te mostramos tu pedido en ejecución.');
+    reopenActiveJobModal();
     return;
   }
 
@@ -2565,6 +2598,44 @@ async function confirmarReseña() {
     }
     return <span className={`${base} bg-emerald-50 text-emerald-700`}>{jobStatus || 'open'}</span>;
   }
+
+  function reopenActiveJobModal() {
+  const hasActiveJob =
+    !!jobId && jobStatus && !['completed', 'cancelled', 'worker_completed'].includes(jobStatus);
+
+  if (!hasActiveJob) {
+    toast.info('No hay pedido en ejecución');
+    return;
+  }
+
+  if (!selected) {
+    toast.warning('Pedido activo encontrado, pero aún se está restaurando el profesional.');
+    return;
+  }
+
+  setShowPrice(false);
+  setServicesOpen(false);
+  setClusterOpen(false);
+  setClusterMiniOpen(false);
+  setIsChatOpen(false);
+
+  if (jobStatus === 'accepted' || jobStatus === 'assigned') {
+    verTrabajadorViniendo();
+    return;
+  }
+
+  setProfileSheetMode('full');
+
+  const wLat = Number(selected?.lat);
+  const wLng = Number(selected?.lng ?? selected?.lon ?? selected?.long);
+
+  if (mapRef.current && Number.isFinite(wLat) && Number.isFinite(wLng)) {
+    mapRef.current.flyTo([wLat, wLng], 15, { duration: 1.0 });
+    setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+  }
+
+  toast.success('Pedido en ejecución reabierto');
+}
 /* 💰 Algoritmo de cálculo de precios dinámico (versión estable y flexible) */
 function calcularPrecio(
   servicio,
@@ -2660,7 +2731,38 @@ useEffect(() => {
 
   return (
     <div className="no-pull-refresh fixed inset-0 bg-white overflow-hidden">
+{/* 🔥 BOTÓN PEDIDO ACTIVO */}
+{jobId && jobStatus && !['completed', 'cancelled', 'worker_completed'].includes(jobStatus) && (
+  <div className="fixed inset-x-0 bottom-24 z-[65] px-4">
+    <div className="mx-auto w-full max-w-md">
+      <button
+        onClick={reopenActiveJobModal}
+        className="group relative w-full overflow-hidden rounded-[24px] bg-gradient-to-r from-slate-900 via-emerald-700 to-cyan-500 px-4 py-4 text-left text-white shadow-[0_22px_46px_rgba(16,185,129,0.24)] transition-all duration-200 hover:-translate-y-[1px] active:scale-[0.99]"
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.18),transparent_38%)] opacity-80" />
 
+        <div className="relative flex items-center gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/16 backdrop-blur-md ring-1 ring-white/20">
+            <CheckCircle2 size={20} />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="text-[16px] font-extrabold tracking-tight">
+              Ver pedido en ejecución
+            </div>
+            <div className="mt-0.5 text-[12px] text-white/80">
+              Volvé a tu seguimiento, chat y estado actual
+            </div>
+          </div>
+
+          <div className="rounded-full bg-white/14 px-3 py-1.5 text-[11px] font-bold backdrop-blur">
+            {jobStatus === 'accepted' || jobStatus === 'assigned' ? 'En camino' : 'Activo'}
+          </div>
+        </div>
+      </button>
+    </div>
+  </div>
+)}
     {/* Header superior — volver atrás */}
 <div className="fixed top-4 left-4 z-[10000] pointer-events-auto">
   <button

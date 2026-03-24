@@ -340,67 +340,7 @@ export function AvailabilityCarousel({ value, onChange }) {
   );
 }
 
-/* =========================
-   PAGE
-========================= */
-function openGoogleMaps(lat, lng) {
-  if (lat == null || lng == null) {
-    toast.error('Ubicación no disponible');
-    return;
-  }
 
-  const la = Number(lat);
-  const lo = Number(lng);
-
-  if (Number.isNaN(la) || Number.isNaN(lo)) {
-    toast.error('Ubicación inválida');
-    return;
-  }
-
-  const ua = navigator.userAgent || '';
-  const isAndroid = /Android/i.test(ua);
-  const isIOS = /iPhone|iPad|iPod/i.test(ua);
-
-  const googleWebUrl = `https://www.google.com/maps/search/?api=1&query=${la},${lo}`;
-  const appleWebUrl = `https://maps.apple.com/?daddr=${la},${lo}`;
-
-  try {
-    if (isAndroid) {
-  const a = document.createElement('a');
-  a.href = `google.navigation:q=${la},${lo}`;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-
-  // 🔥 fallback nativo Android (MUY IMPORTANTE)
-  setTimeout(() => {
-    window.location.href = `geo:${la},${lo}?q=${la},${lo}`;
-  }, 400);
-
-  // 🌐 fallback web final
-  setTimeout(() => {
-    window.open(googleWebUrl, '_blank', 'noopener,noreferrer');
-  }, 1200);
-
-  return;
-}
-
-    if (isIOS) {
-      window.location.href = `comgooglemaps://?daddr=${la},${lo}&directionsmode=driving`;
-
-      setTimeout(() => {
-        window.open(appleWebUrl, '_blank', 'noopener,noreferrer');
-      }, 900);
-      return;
-    }
-
-    window.open(googleWebUrl, '_blank', 'noopener,noreferrer');
-  } catch (err) {
-    console.error('Error abriendo mapa:', err);
-    window.open(googleWebUrl, '_blank', 'noopener,noreferrer');
-  }
-}
 
 export default function WorkerPage() {
   const router = useRouter();
@@ -416,13 +356,16 @@ export default function WorkerPage() {
   const [hasUnread, setHasUnread] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [clientTyping, setClientTyping] = useState(false);
-  const [mapOpen, setMapOpen] = useState(false);
-  const [workerLocation, setWorkerLocation] = useState(null);
+ const [mapOpen, setMapOpen] = useState(false);
+const [previewMapOpen, setPreviewMapOpen] = useState(false);
+const [previewTarget, setPreviewTarget] = useState(null);
+const [workerLocation, setWorkerLocation] = useState(null);
+const [sheetSnap, setSheetSnap] = useState('mid');
 
-  const inputRef = useRef(null);
-  const chatChannelRef = useRef(null);
-  const bottomRef = useRef(null);
-  const soundRef = useRef(null);
+const inputRef = useRef(null);
+const chatChannelRef = useRef(null);
+const bottomRef = useRef(null);
+const soundRef = useRef(null);
 
   const [status, setStatus] = useState(() => {
     if (typeof window === 'undefined') return 'available';
@@ -432,8 +375,26 @@ export default function WorkerPage() {
   const [isConnected, setIsConnected] = useState(true);
 
   const meta = workerModeMeta(status);
+function openGoogleMaps(lat, lng) {
+  if (lat == null || lng == null) {
+    toast.error('Ubicación no disponible');
+    return;
+  }
 
+  const la = Number(lat);
+  const lo = Number(lng);
+
+  if (Number.isNaN(la) || Number.isNaN(lo)) {
+    toast.error('Ubicación inválida');
+    return;
+  }
+
+  setPreviewTarget({ lat: la, lng: lo });
+  setSheetSnap('mid');
+  setPreviewMapOpen(true);
+}
   const stats = useMemo(() => {
+    
     const total = jobs.length;
     const available = jobs.filter((j) => j.status === 'open').length;
     const inProgress = jobs.filter((j) => j.status === 'accepted').length;
@@ -441,7 +402,26 @@ export default function WorkerPage() {
 
     return { total, available, inProgress, completed };
   }, [jobs]);
+const sheetSnapMeta = useMemo(() => {
+  if (sheetSnap === 'full') {
+    return {
+      y: 0,
+      height: 'min(78dvh, 680px)',
+    };
+  }
 
+  if (sheetSnap === 'mini') {
+    return {
+      y: 240,
+      height: '170px',
+    };
+  }
+
+  return {
+    y: 110,
+    height: '360px',
+  };
+}, [sheetSnap]);
   useEffect(() => {
     if (typeof window !== 'undefined' && status) {
       localStorage.setItem('worker_status', status);
@@ -1472,30 +1452,77 @@ useEffect(() => {
                     </div>
                   )}
 
-                 {job.status === 'accepted' && (
-  <div className="grid gap-3 mt-4">
-    <button
-      onClick={() => openGoogleMaps(job.client_lat, job.client_lng)}
-      className="w-full rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700 py-3 font-bold hover:bg-emerald-100 transition flex items-center justify-center gap-2"
-    >
-      <Map size={16} /> Ver ubicación
-    </button>
+                {job.status === 'accepted' && (
+  <div className="mt-5">
+    <div className="overflow-hidden rounded-[28px] border border-gray-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(248,250,252,0.98)_100%)] shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+      <div className="px-4 pt-4 pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">
+              Acción principal
+            </div>
+            <div className="mt-1 text-[15px] font-extrabold text-gray-900">
+              Seguimiento del servicio
+            </div>
+          </div>
 
-    <button
-      onClick={() => openChat(job)}
-      className="w-full rounded-2xl border border-gray-200 bg-white text-gray-800 py-3 font-bold hover:bg-gray-50 transition flex items-center justify-center gap-2"
-    >
-      <MessageCircle size={16} />
-      Chat con cliente
-    </button>
+          <div className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-[11px] font-bold text-cyan-700">
+            En curso
+          </div>
+        </div>
 
-    <button
-      onClick={() => completeJob(job)}
-      className="w-full rounded-2xl bg-emerald-600 text-white py-3 font-extrabold hover:bg-emerald-700 transition flex items-center justify-center gap-2"
-    >
-      <CheckSquare size={16} />
-      Finalizar trabajo
-    </button>
+        <button
+          onClick={() => {
+            setSelectedJob(job);
+            openGoogleMaps(job.client_lat, job.client_lng);
+          }}
+          className="group mt-4 relative w-full overflow-hidden rounded-[24px] bg-gradient-to-r from-slate-900 via-emerald-700 to-cyan-500 px-4 py-4 text-left text-white shadow-[0_18px_40px_rgba(16,185,129,0.22)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_24px_46px_rgba(16,185,129,0.28)] active:scale-[0.99]"
+        >
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.18),transparent_38%)] opacity-80" />
+
+          <div className="relative flex items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/16 backdrop-blur-md ring-1 ring-white/20">
+              <Map size={20} />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="text-[16px] font-extrabold tracking-tight">
+                Ver ruta y detalles
+              </div>
+              <div className="mt-0.5 text-[12px] text-white/80">
+                Abrí la vista premium del servicio dentro de ManosYA
+              </div>
+            </div>
+
+            <div className="text-white/80 transition-transform duration-200 group-hover:translate-x-0.5">
+              <MapPin size={18} />
+            </div>
+          </div>
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 border-t border-gray-100 px-4 py-4">
+        <button
+          onClick={() => openChat(job)}
+          className="group rounded-[22px] border border-gray-200 bg-white px-4 py-3.5 text-gray-800 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:bg-emerald-50/60 active:scale-[0.99]"
+        >
+          <div className="flex items-center justify-center gap-2">
+            <MessageCircle size={17} className="text-gray-600 group-hover:text-emerald-700" />
+            <span className="text-[14px] font-extrabold">Chat</span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => completeJob(job)}
+          className="group rounded-[22px] border border-emerald-200 bg-emerald-600 px-4 py-3.5 text-white shadow-[0_14px_30px_rgba(16,185,129,0.20)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-emerald-700 hover:shadow-[0_18px_36px_rgba(16,185,129,0.24)] active:scale-[0.99]"
+        >
+          <div className="flex items-center justify-center gap-2">
+            <CheckSquare size={17} className="text-white" />
+            <span className="text-[14px] font-extrabold">Finalizar</span>
+          </div>
+        </button>
+      </div>
+    </div>
   </div>
 )}
 
@@ -1543,7 +1570,9 @@ useEffect(() => {
                     </div>
 
                     <button
-  onClick={() => openGoogleMaps(selectedJob.client_lat, selectedJob.client_lng)}
+  onClick={() => {
+    openGoogleMaps(selectedJob.client_lat, selectedJob.client_lng);
+  }}
   className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800 text-sm font-semibold"
 >
   <Map size={16} /> Mapa
@@ -1632,7 +1661,346 @@ useEffect(() => {
           )}
         </AnimatePresence>
       </div>
+            {/* PREVIEW MAP MODAL PRO */}
+      <AnimatePresence>
+        {previewMapOpen && previewTarget && (
+                   <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[2000] bg-black/70"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 1.02 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.01 }}
+              transition={{ duration: 0.2 }}
+              className="relative h-[100dvh] w-full overflow-hidden bg-black"
+            >
+              {/* MAPA FULL */}
+              <div className="absolute inset-0 z-0">
+                <MapContainer
+                  whenReady={(e) => {
+                    setTimeout(() => {
+                      e.target.invalidateSize();
+                    }, 350);
+                  }}
+                  center={[previewTarget.lat, previewTarget.lng]}
+                  zoom={16}
+                  scrollWheelZoom={true}
+                  style={{ height: '100%', width: '100%' }}
+                >
+                  <TileLayer
+                    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                    attribution="&copy; OpenStreetMap contributors &copy; CARTO"
+                  />
 
+                  <CircleMarker
+                    center={[previewTarget.lat, previewTarget.lng]}
+                    radius={13}
+                    pathOptions={{
+                      color: '#ffffff',
+                      weight: 4,
+                      fillColor: '#ef4444',
+                      fillOpacity: 1,
+                    }}
+                  >
+                    <Popup>
+                      <div className="min-w-[180px]">
+                        <div className="font-extrabold text-gray-800">Cliente</div>
+                        <div className="text-sm text-gray-500 mt-1">
+                          {selectedJob?.client?.full_name || 'Ubicación del cliente'}
+                        </div>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+
+                  {workerLocation?.lat != null && workerLocation?.lng != null && (
+                    <>
+                      <CircleMarker
+                        center={[Number(workerLocation.lat), Number(workerLocation.lng)]}
+                        radius={11}
+                        pathOptions={{
+                          color: '#ffffff',
+                          weight: 4,
+                          fillColor: '#10b981',
+                          fillOpacity: 1,
+                        }}
+                      >
+                        <Popup>
+                          <div className="min-w-[180px]">
+                            <div className="font-extrabold text-gray-800">Tu ubicación</div>
+                            <div className="text-sm text-gray-500 mt-1">
+                              Posición actual del trabajador
+                            </div>
+                          </div>
+                        </Popup>
+                      </CircleMarker>
+
+                      <Circle
+                        center={[Number(workerLocation.lat), Number(workerLocation.lng)]}
+                        radius={55}
+                        pathOptions={{
+                          color: '#10b981',
+                          weight: 1,
+                          fillColor: '#10b981',
+                          fillOpacity: 0.12,
+                        }}
+                      />
+                    </>
+                  )}
+                </MapContainer>
+              </div>
+
+                           {/* TOP ACTIONS */}
+              <div className="pointer-events-none absolute inset-x-0 top-0 z-[1200]">
+                <div className="flex items-start justify-between p-4">
+                  <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.20)] backdrop-blur">
+                    <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                    <span className="text-[13px] font-bold text-gray-800">
+                      Ubicación del cliente
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => setPreviewMapOpen(false)}
+                    className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-gray-700 shadow-[0_10px_30px_rgba(0,0,0,0.20)] backdrop-blur hover:bg-white"
+                  >
+                    <XCircle size={22} />
+                  </button>
+                </div>
+              </div>
+
+                           {/* GRADIENTE INFERIOR */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/55 via-black/20 to-transparent z-[1150]" />
+
+             {/* BOTTOM SHEET PRO */}
+<div className="absolute inset-x-0 bottom-0 z-[1300] px-3 pb-3">
+  <motion.div
+    initial={{ y: 360, opacity: 0 }}
+    animate={{ y: sheetSnapMeta.y, opacity: 1, height: sheetSnapMeta.height }}
+    exit={{ y: 320, opacity: 0 }}
+    transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+    drag="y"
+    dragConstraints={{ top: 0, bottom: 0 }}
+    dragElastic={0.08}
+    onDragEnd={(e, info) => {
+      const y = info.offset.y;
+
+      if (y > 120) {
+        setSheetSnap('mini');
+        return;
+      }
+
+      if (y < -120) {
+        setSheetSnap('full');
+        return;
+      }
+
+      setSheetSnap('mid');
+    }}
+    className="mx-auto flex w-full max-w-md flex-col overflow-hidden rounded-[32px] border border-white/40 bg-white/72 shadow-[0_30px_80px_rgba(0,0,0,0.26)] backdrop-blur-2xl"
+    style={{
+      background:
+        'linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(255,255,255,0.74) 100%)',
+    }}
+  >
+    <div className="relative shrink-0 px-4 pt-3 pb-2">
+      <div className="mx-auto mb-3 h-1.5 w-14 rounded-full bg-gray-300/90" />
+
+      <div className="flex items-start gap-3">
+        <div className="relative">
+          <div className="absolute inset-0 rounded-full bg-emerald-400/20 blur-md" />
+          <img
+            src={selectedJob?.client?.avatar_url || '/avatar-fallback.png'}
+            alt={selectedJob?.client?.full_name || 'Cliente'}
+            className="relative h-14 w-14 rounded-full border-2 border-emerald-200 object-cover shadow-[0_10px_24px_rgba(16,185,129,0.18)]"
+          />
+          <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white bg-red-500" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[18px] font-extrabold tracking-tight text-gray-900">
+            {selectedJob?.client?.full_name || 'Cliente'}
+          </div>
+          <div className="mt-0.5 text-[12px] font-medium text-gray-500">
+            {selectedJob?.service_type || 'Servicio general'}
+          </div>
+
+          <div className="mt-2 flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+              Servicio activo
+            </span>
+
+            <span className="inline-flex items-center rounded-full border border-white/60 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-gray-600 backdrop-blur">
+              Vista interna
+            </span>
+          </div>
+        </div>
+
+        <div className="rounded-[20px] border border-emerald-100 bg-emerald-50/90 px-3 py-2 text-right shadow-sm">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-600">
+            Tarifa
+          </div>
+          <div className="text-[15px] font-extrabold text-gray-900">
+            {selectedJob?.price
+              ? `₲${Number(selectedJob.price).toLocaleString('es-PY')}/h`
+              : 'A definir'}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <button
+          onClick={() => setSheetSnap('mini')}
+          className={`rounded-full px-3 py-2 text-[11px] font-bold transition ${
+            sheetSnap === 'mini'
+              ? 'bg-gray-900 text-white shadow-[0_10px_24px_rgba(15,23,42,0.24)]'
+              : 'border border-gray-200 bg-white/75 text-gray-600'
+          }`}
+        >
+          Mini
+        </button>
+
+        <button
+          onClick={() => setSheetSnap('mid')}
+          className={`rounded-full px-3 py-2 text-[11px] font-bold transition ${
+            sheetSnap === 'mid'
+              ? 'bg-emerald-600 text-white shadow-[0_10px_24px_rgba(16,185,129,0.24)]'
+              : 'border border-gray-200 bg-white/75 text-gray-600'
+          }`}
+        >
+          Medio
+        </button>
+
+        <button
+          onClick={() => setSheetSnap('full')}
+          className={`rounded-full px-3 py-2 text-[11px] font-bold transition ${
+            sheetSnap === 'full'
+              ? 'bg-cyan-600 text-white shadow-[0_10px_24px_rgba(6,182,212,0.24)]'
+              : 'border border-gray-200 bg-white/75 text-gray-600'
+          }`}
+        >
+          Full
+        </button>
+      </div>
+    </div>
+
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-[22px] border border-white/60 bg-white/62 px-3 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+            Estado
+          </div>
+          <div className="mt-1 text-sm font-extrabold text-gray-800">
+            En camino al cliente
+          </div>
+        </div>
+
+        <div className="rounded-[22px] border border-white/60 bg-white/62 px-3 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+            Vista
+          </div>
+          <div className="mt-1 text-sm font-extrabold text-gray-800">
+            Interna de ManosYA
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-[24px] border border-white/60 bg-white/60 p-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Cliente
+            </div>
+            <div className="mt-1 text-sm font-extrabold text-gray-800">
+              {selectedJob?.client?.full_name || 'Cliente'}
+            </div>
+          </div>
+
+          <div className="text-right">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Tipo
+            </div>
+            <div className="mt-1 text-sm font-extrabold text-gray-800">
+              {selectedJob?.service_type || 'General'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3">
+        <button
+          onClick={() => setSheetSnap(sheetSnap === 'full' ? 'mid' : 'full')}
+          className="w-full rounded-[22px] bg-gradient-to-r from-slate-900 via-emerald-700 to-cyan-500 py-3.5 text-white font-extrabold shadow-[0_18px_40px_rgba(16,185,129,0.22)] transition hover:scale-[1.01] active:scale-[0.99]"
+        >
+          {sheetSnap === 'full' ? 'Vista compacta' : 'Ver detalles'}
+        </button>
+
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => {
+              setPreviewMapOpen(false);
+              if (selectedJob) openChat(selectedJob);
+            }}
+            className="w-full rounded-[22px] border border-white/60 bg-white/78 py-3 text-gray-800 font-bold shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur transition hover:bg-white"
+          >
+            Chat
+          </button>
+
+          <button
+            onClick={() => setPreviewMapOpen(false)}
+            className="w-full rounded-[22px] border border-white/60 bg-white/78 py-3 text-gray-700 font-bold shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur transition hover:bg-white"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+
+      {sheetSnap === 'full' && (
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 18 }}
+          className="mt-4 space-y-3"
+        >
+          <div className="rounded-[24px] border border-white/60 bg-white/62 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Resumen del servicio
+            </div>
+            <div className="mt-2 text-[15px] font-bold text-gray-900">
+              {selectedJob?.description || 'Solicitud generada desde ManosYA.'}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-[22px] border border-white/60 bg-white/62 p-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                Modalidad
+              </div>
+              <div className="mt-1 text-sm font-extrabold text-gray-800">
+                Atención inmediata
+              </div>
+            </div>
+
+            <div className="rounded-[22px] border border-white/60 bg-white/62 p-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                Sistema
+              </div>
+              <div className="mt-1 text-sm font-extrabold text-gray-800">
+                ManosYA Live
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </div>
+  </motion.div>
+</div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* NAVBAR */}
       <div className="fixed bottom-0 left-0 right-0 z-50">
         <div className="max-w-screen-md mx-auto px-4 pb-3">
