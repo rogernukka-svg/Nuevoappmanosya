@@ -97,14 +97,20 @@ export default function AdminWorkersPage() {
       }
 
       const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle();
+  .from('profiles')
+  .select('role, admin_role, email, full_name')
+  .eq('id', user.id)
+  .maybeSingle();
 
-      if (error) throw error;
+            if (error) throw error;
 
-      const allowed = ['admin', 'superadmin'].includes(profile?.role || '');
+      if (!profile) {
+        toast.error('Perfil no encontrado');
+        window.location.href = '/';
+        return false;
+      }
+
+      const allowed = ['admin', 'superadmin'].includes(profile?.admin_role || '');
 
       if (!allowed) {
         toast.error('No tenés permiso para entrar a este panel');

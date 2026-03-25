@@ -252,7 +252,8 @@ export default function AdminAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState(30);
   const [activeTab, setActiveTab] = useState('overview');
-
+  const [accessChecked, setAccessChecked] = useState(false);
+  const [hasAccess, setHasAccess] = useState(false);
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalWorkers: 0,
@@ -330,29 +331,91 @@ export default function AdminAnalyticsPage() {
     status: 'issued',
     notes: '',
   });
+  async function checkAdminAccess() {
+    try {
+      const ALLOWED_EMAILS = [
+        'mirian@manosya.com',
+        'maria@manosya.com',
+        'roger@manosya.com',
+      ];
 
-  useEffect(() => {
-    fetchAll();
-    const channel = supabase
-      .channel('manosya-admin-analytics-jarvis')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, fetchAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_profiles' }, fetchAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, fetchAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, fetchAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_EXPENSES_TABLE }, fetchAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_INVOICES_TABLE }, fetchAll)
-      .subscribe();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        toast.error('Tenés que iniciar sesión');
+        window.location.href = '/auth/login';
+        return false;
+      }
+
+      const userEmail = (user.email || '').trim().toLowerCase();
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('role, email, full_name')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const profileEmail = (profile?.email || '').trim().toLowerCase();
+
+      const isAllowedEmail =
+        ALLOWED_EMAILS.includes(userEmail) || ALLOWED_EMAILS.includes(profileEmail);
+
+      const isAllowedRole = ['admin', 'superadmin'].includes(profile?.role || '');
+
+      if (!isAllowedEmail || !isAllowedRole) {
+        toast.error('No tenés permiso para entrar a este panel');
+        window.location.href = '/';
+        return false;
+      }
+
+      setHasAccess(true);
+      return true;
+    } catch (err) {
+      console.error(err);
+      toast.error('No se pudo validar el acceso');
+      window.location.href = '/';
+      return false;
+    } finally {
+      setAccessChecked(true);
+    }
+  }
+    useEffect(() => {
+    let alive = true;
+    let channel = null;
+
+    (async () => {
+      const allowed = await checkAdminAccess();
+      if (!alive || !allowed) return;
+
+      await fetchAll();
+
+      channel = supabase
+        .channel('manosya-admin-analytics-jarvis')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, fetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_profiles' }, fetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, fetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, fetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_EXPENSES_TABLE }, fetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_INVOICES_TABLE }, fetchAll)
+        .subscribe();
+    })();
 
     return () => {
-      supabase.removeChannel(channel);
+      alive = false;
+      if (channel) supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
+    useEffect(() => {
+    if (!hasAccess) return;
     fetchRange(range);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range]);
+  }, [range, hasAccess]);
 
   async function fetchAll() {
     try {
@@ -796,6 +859,21 @@ export default function AdminAnalyticsPage() {
 
     return out;
   }, [finance, stats, ops, healthScore]);
+
+    if (!accessChecked) {
+    return (
+      <div className="min-h-screen bg-[#06111A] text-white flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="mx-auto mb-3 h-7 w-7 animate-spin text-emerald-300" />
+          <p className="text-sm text-white/60">Validando acceso...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasAccess) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-[#06111A] text-white">
@@ -1700,7 +1778,7 @@ function JarvisCopilot({ stats, finance, ops, insights, healthScore, alerts }) {
     ]);
   }, [stats, finance, ops, insights, healthScore, alerts]);
 
-  function pushJarvis(text, delay = 900) {
+   function pushJarvis(text, delay = 900) {
     setTyping(true);
     setTimeout(() => {
       setTyping(false);
@@ -1712,7 +1790,7 @@ function JarvisCopilot({ stats, finance, ops, insights, healthScore, alerts }) {
     const q = input.trim().toLowerCase();
     if (!q) return;
 
-    setMessages((m) => [...m, { from: 'user', text: input }]);
+        setMessages((m) => [...m, { from: 'user', text: input }]);
     setInput('');
 
     if (q.includes('finanza') || q.includes('gasto') || q.includes('ingreso')) {
