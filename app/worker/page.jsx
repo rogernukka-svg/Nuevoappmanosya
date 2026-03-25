@@ -37,6 +37,7 @@ const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer)
 const Circle = dynamic(() => import('react-leaflet').then((m) => m.Circle), { ssr: false });
 const CircleMarker = dynamic(() => import('react-leaflet').then((m) => m.CircleMarker), { ssr: false });
 const Popup = dynamic(() => import('react-leaflet').then((m) => m.Popup), { ssr: false });
+const Polyline = dynamic(() => import('react-leaflet').then((m) => m.Polyline), { ssr: false });
 
 const supabase = getSupabase();
 
@@ -359,6 +360,7 @@ export default function WorkerPage() {
  const [mapOpen, setMapOpen] = useState(false);
 const [previewMapOpen, setPreviewMapOpen] = useState(false);
 const [previewTarget, setPreviewTarget] = useState(null);
+const [previewRoute, setPreviewRoute] = useState(null);
 const [workerLocation, setWorkerLocation] = useState(null);
 const [sheetSnap, setSheetSnap] = useState('mid');
 
@@ -366,6 +368,7 @@ const inputRef = useRef(null);
 const chatChannelRef = useRef(null);
 const bottomRef = useRef(null);
 const soundRef = useRef(null);
+const typingTimeoutRef = useRef(null);
 
   const [status, setStatus] = useState(() => {
     if (typeof window === 'undefined') return 'available';
@@ -375,7 +378,31 @@ const soundRef = useRef(null);
   const [isConnected, setIsConnected] = useState(true);
 
   const meta = workerModeMeta(status);
-function openGoogleMaps(lat, lng) {
+
+async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data.routes?.length) return null;
+
+    const coords = data.routes[0].geometry.coordinates;
+    const route = coords.map((c) => [c[1], c[0]]);
+
+    return {
+      route,
+      distanceKm: data.routes[0].distance / 1000,
+      durationMin: Math.round(data.routes[0].duration / 60),
+    };
+  } catch (e) {
+    console.warn('route error', e);
+    return null;
+  }
+}
+
+async function openGoogleMaps(lat, lng) {
   if (lat == null || lng == null) {
     toast.error('Ubicación no disponible');
     return;
@@ -390,8 +417,27 @@ function openGoogleMaps(lat, lng) {
   }
 
   setPreviewTarget({ lat: la, lng: lo });
+  setPreviewRoute(null);
   setSheetSnap('mid');
   setPreviewMapOpen(true);
+
+  if (workerLocation?.lat != null && workerLocation?.lng != null) {
+    const result = await fetchRoadRoute(
+      Number(workerLocation.lat),
+      Number(workerLocation.lng),
+      la,
+      lo
+    );
+
+    if (result?.route?.length) {
+      setPreviewRoute(result.route);
+    } else {
+      setPreviewRoute([
+        [Number(workerLocation.lat), Number(workerLocation.lng)],
+        [la, lo],
+      ]);
+    }
+  }
 }
   const stats = useMemo(() => {
     
@@ -685,7 +731,31 @@ useEffect(() => {
       }, 300);
     }
   }, [mapOpen]);
+useEffect(() => {
+  if (!selectedJob?.id) return;
 
+  const fresh = jobs.find((j) => String(j.id) === String(selectedJob.id));
+  if (!fresh) return;
+
+  const ended = ['cancelled', 'completed', 'worker_completed'].includes(
+    String(fresh.status || '').toLowerCase()
+  );
+
+  if (!ended) return;
+
+  setPreviewMapOpen(false);
+  setPreviewTarget(null);
+  setPreviewRoute(null);
+  setMapOpen(false);
+  setSelectedJob(null);
+  setIsChatOpen(false);
+
+  toast(
+    fresh.status === 'cancelled'
+      ? '🚫 El cliente canceló el trabajo'
+      : '✅ El cliente finalizó el trabajo'
+  );
+}, [jobs, selectedJob]);
 /* === NUEVOS TRABAJOS === */
 useEffect(() => {
   if (!user?.id) return;
@@ -1106,37 +1176,58 @@ useEffect(() => {
       if (msgErr) throw msgErr;
 
       setMessages(msgs || []);
-      setSelectedJob({ ...job, chat_id: cid });
-      setIsChatOpen(true);
+setSelectedJob({ ...job, chat_id: cid });
+setIsChatOpen(true);
+setHasUnread(false);
+setUnreadCount(0);
 
       if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
 
       const ch = supabase
-        .channel(`chat-${cid}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `chat_id=eq.${String(cid)}`,
-          },
-          (payload) => {
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === payload.new.id)) return prev;
-              return [...prev, payload.new];
-            });
-            if (payload.new.sender_id !== user.id) soundRef.current?.play?.();
-            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-          }
-        )
-        .on('broadcast', { event: 'typing' }, (payload) => {
-          if (payload?.sender_id !== user.id) {
-            setClientTyping(true);
-            setTimeout(() => setClientTyping(false), 2000);
-          }
-        })
-        .subscribe();
+  .channel(`chat-${cid}`)
+  .on(
+    'postgres_changes',
+    {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'messages',
+      filter: `chat_id=eq.${String(cid)}`,
+    },
+    (payload) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === payload.new.id)) return prev;
+        return [...prev, payload.new];
+      });
+
+      if (payload.new.sender_id !== user.id) {
+        setClientTyping(false);
+
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = null;
+        }
+
+        soundRef.current?.play?.();
+      }
+
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+    }
+  )
+  .on('broadcast', { event: 'typing' }, (payload) => {
+    if (payload?.sender_id !== user.id) {
+      setClientTyping(true);
+
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      typingTimeoutRef.current = setTimeout(() => {
+        setClientTyping(false);
+        typingTimeoutRef.current = null;
+      }, 2000);
+    }
+  })
+  .subscribe();
 
       chatChannelRef.current = ch;
     } catch (err) {
@@ -1502,15 +1593,27 @@ useEffect(() => {
       </div>
 
       <div className="grid grid-cols-2 gap-3 border-t border-gray-100 px-4 py-4">
-        <button
-          onClick={() => openChat(job)}
-          className="group rounded-[22px] border border-gray-200 bg-white px-4 py-3.5 text-gray-800 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:bg-emerald-50/60 active:scale-[0.99]"
-        >
-          <div className="flex items-center justify-center gap-2">
-            <MessageCircle size={17} className="text-gray-600 group-hover:text-emerald-700" />
-            <span className="text-[14px] font-extrabold">Chat</span>
-          </div>
-        </button>
+       <button
+  onClick={() => openChat(job)}
+  className="group relative rounded-[22px] border border-gray-200 bg-white px-4 py-3.5 text-gray-800 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:bg-emerald-50/60 active:scale-[0.99]"
+>
+  <div className="flex items-center justify-center gap-2">
+    <div className="relative">
+      <MessageCircle
+        size={17}
+        className="text-gray-600 transition-colors group-hover:text-emerald-700"
+      />
+
+      {hasUnread && unreadCount > 0 && (
+        <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-extrabold text-white shadow-[0_8px_18px_rgba(239,68,68,0.35)] ring-2 ring-white">
+          {unreadCount > 99 ? '99+' : unreadCount}
+        </span>
+      )}
+    </div>
+
+    <span className="text-[14px] font-extrabold">Chat</span>
+  </div>
+</button>
 
         <button
           onClick={() => completeJob(job)}
@@ -1580,10 +1683,15 @@ useEffect(() => {
                   </div>
 
                   {clientTyping && (
-                    <div className="mt-2 text-xs text-gray-500 italic animate-pulse text-center">
-                      {selectedJob?.client?.full_name || 'El cliente'} está escribiendo…
-                    </div>
-                  )}
+  <div className="mt-2 flex items-center justify-center gap-2 text-xs text-emerald-600 font-semibold animate-pulse">
+    <span className="inline-flex gap-1">
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+    </span>
+    <span>{selectedJob?.client?.full_name || 'El cliente'} está escribiendo…</span>
+  </div>
+)}
                 </div>
 
                 {(selectedJob?.service_type || selectedJob?.price) && (
@@ -1680,76 +1788,114 @@ useEffect(() => {
               {/* MAPA FULL */}
               <div className="absolute inset-0 z-0">
                 <MapContainer
-                  whenReady={(e) => {
-                    setTimeout(() => {
-                      e.target.invalidateSize();
-                    }, 350);
-                  }}
-                  center={[previewTarget.lat, previewTarget.lng]}
-                  zoom={16}
-                  scrollWheelZoom={true}
-                  style={{ height: '100%', width: '100%' }}
-                >
-                  <TileLayer
-                    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                    attribution="&copy; OpenStreetMap contributors &copy; CARTO"
-                  />
+  whenReady={(e) => {
+    setTimeout(() => {
+      e.target.invalidateSize();
+    }, 350);
+  }}
+  center={[previewTarget.lat, previewTarget.lng]}
+  zoom={16}
+  scrollWheelZoom={true}
+  style={{ height: '100%', width: '100%' }}
+>
+  <TileLayer
+    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+    attribution="&copy; OpenStreetMap contributors &copy; CARTO"
+  />
 
-                  <CircleMarker
-                    center={[previewTarget.lat, previewTarget.lng]}
-                    radius={13}
-                    pathOptions={{
-                      color: '#ffffff',
-                      weight: 4,
-                      fillColor: '#ef4444',
-                      fillOpacity: 1,
-                    }}
-                  >
-                    <Popup>
-                      <div className="min-w-[180px]">
-                        <div className="font-extrabold text-gray-800">Cliente</div>
-                        <div className="text-sm text-gray-500 mt-1">
-                          {selectedJob?.client?.full_name || 'Ubicación del cliente'}
-                        </div>
-                      </div>
-                    </Popup>
-                  </CircleMarker>
+  {previewRoute && (
+    <>
+      <Polyline
+        positions={previewRoute}
+        pathOptions={{
+          color: '#34d399',
+          weight: 14,
+          opacity: 0.18,
+          lineJoin: 'round',
+          lineCap: 'round',
+        }}
+      />
 
-                  {workerLocation?.lat != null && workerLocation?.lng != null && (
-                    <>
-                      <CircleMarker
-                        center={[Number(workerLocation.lat), Number(workerLocation.lng)]}
-                        radius={11}
-                        pathOptions={{
-                          color: '#ffffff',
-                          weight: 4,
-                          fillColor: '#10b981',
-                          fillOpacity: 1,
-                        }}
-                      >
-                        <Popup>
-                          <div className="min-w-[180px]">
-                            <div className="font-extrabold text-gray-800">Tu ubicación</div>
-                            <div className="text-sm text-gray-500 mt-1">
-                              Posición actual del trabajador
-                            </div>
-                          </div>
-                        </Popup>
-                      </CircleMarker>
+      <Polyline
+        positions={previewRoute}
+        pathOptions={{
+          color: '#10b981',
+          weight: 8,
+          opacity: 0.35,
+          lineJoin: 'round',
+          lineCap: 'round',
+        }}
+      />
 
-                      <Circle
-                        center={[Number(workerLocation.lat), Number(workerLocation.lng)]}
-                        radius={55}
-                        pathOptions={{
-                          color: '#10b981',
-                          weight: 1,
-                          fillColor: '#10b981',
-                          fillOpacity: 0.12,
-                        }}
-                      />
-                    </>
-                  )}
-                </MapContainer>
+      <Polyline
+        positions={previewRoute}
+        pathOptions={{
+          color: '#059669',
+          weight: 5,
+          opacity: 0.95,
+          lineJoin: 'round',
+          lineCap: 'round',
+          dashArray: '10 10',
+        }}
+      />
+    </>
+  )}
+
+  <CircleMarker
+    center={[previewTarget.lat, previewTarget.lng]}
+    radius={13}
+    pathOptions={{
+      color: '#ffffff',
+      weight: 4,
+      fillColor: '#ef4444',
+      fillOpacity: 1,
+    }}
+  >
+    <Popup>
+      <div className="min-w-[180px]">
+        <div className="font-extrabold text-gray-800">Cliente</div>
+        <div className="text-sm text-gray-500 mt-1">
+          {selectedJob?.client?.full_name || 'Ubicación del cliente'}
+        </div>
+      </div>
+    </Popup>
+  </CircleMarker>
+
+  {workerLocation?.lat != null && workerLocation?.lng != null && (
+    <>
+      <CircleMarker
+        center={[Number(workerLocation.lat), Number(workerLocation.lng)]}
+        radius={11}
+        pathOptions={{
+          color: '#ffffff',
+          weight: 4,
+          fillColor: '#10b981',
+          fillOpacity: 1,
+        }}
+      >
+        <Popup>
+          <div className="min-w-[180px]">
+            <div className="font-extrabold text-gray-800">Tu ubicación</div>
+            <div className="text-sm text-gray-500 mt-1">
+              Posición actual del trabajador
+            </div>
+          </div>
+        </Popup>
+      </CircleMarker>
+
+      <Circle
+        center={[Number(workerLocation.lat), Number(workerLocation.lng)]}
+        radius={55}
+        pathOptions={{
+          color: '#10b981',
+          weight: 1,
+          fillColor: '#10b981',
+          fillOpacity: 0.12,
+        }}
+      />
+    </>
+  )}
+</MapContainer>
               </div>
 
                            {/* TOP ACTIONS */}
@@ -1762,8 +1908,12 @@ useEffect(() => {
                     </span>
                   </div>
 
-                  <button
-                    onClick={() => setPreviewMapOpen(false)}
+                 <button
+  onClick={() => {
+    setPreviewMapOpen(false);
+    setPreviewTarget(null);
+    setPreviewRoute(null);
+  }}
                     className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-gray-700 shadow-[0_10px_30px_rgba(0,0,0,0.20)] backdrop-blur hover:bg-white"
                   >
                     <XCircle size={22} />
@@ -1943,17 +2093,36 @@ useEffect(() => {
               setPreviewMapOpen(false);
               if (selectedJob) openChat(selectedJob);
             }}
-            className="w-full rounded-[22px] border border-white/60 bg-white/78 py-3 text-gray-800 font-bold shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur transition hover:bg-white"
+            className="group relative w-full rounded-[22px] border border-white/60 bg-white/78 py-3 text-gray-800 font-bold shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur transition hover:bg-white"
           >
-            Chat
+            <div className="flex items-center justify-center gap-2">
+              <div className="relative">
+                <MessageCircle
+                  size={18}
+                  className="text-gray-700 transition-colors group-hover:text-emerald-700"
+                />
+
+                {hasUnread && unreadCount > 0 && (
+                  <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-extrabold text-white shadow-[0_8px_18px_rgba(239,68,68,0.35)] ring-2 ring-white">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </div>
+
+              <span>Chat</span>
+            </div>
           </button>
 
-          <button
-            onClick={() => setPreviewMapOpen(false)}
-            className="w-full rounded-[22px] border border-white/60 bg-white/78 py-3 text-gray-700 font-bold shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur transition hover:bg-white"
-          >
-            Cerrar
-          </button>
+         <button
+  onClick={() => {
+    setPreviewMapOpen(false);
+    setPreviewTarget(null);
+    setPreviewRoute(null);
+  }}
+  className="w-full rounded-[22px] border border-white/60 bg-white/78 py-3 text-gray-700 font-bold shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur transition hover:bg-white"
+>
+  Cerrar
+</button>
         </div>
       </div>
 

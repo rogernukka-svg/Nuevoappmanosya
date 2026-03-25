@@ -816,6 +816,7 @@ const [sending, setSending] = useState(false);
 const inputRef = useRef(null);
 const bottomRef = useRef(null);
 const chatChannelRef = useRef(null);
+const typingTimeoutRef = useRef(null);
 const [gpsStatus, setGpsStatus] = useState('init'); // init | requesting | granted | denied | error
 const [gpsError, setGpsError] = useState(null);
 // ✅ Ref para evitar problemas de "estado viejo" dentro de callbacks
@@ -2183,8 +2184,15 @@ async function sendMessage(textOverride = null) {
       return [...prev, data];
     });
 
-    if (inputRef.current) inputRef.current.value = '';
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+   inputRef.current.value = '';
+
+if (typingTimeoutRef.current) {
+  clearTimeout(typingTimeoutRef.current);
+  typingTimeoutRef.current = null;
+}
+
+setIsTyping(false);
+setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
   } catch (err) {
     console.error('❌ Error general al enviar mensaje:', err);
     toast.error('No se pudo enviar el mensaje');
@@ -4760,7 +4768,7 @@ useEffect(() => {
         className="
           w-full 
           max-w-md 
-          h-[85vh]                  /* 🔥 AGRANDADO: 85% de la pantalla */
+          h-[85vh]
           bg-white 
           rounded-t-[38px] 
           shadow-[0_-18px_60px_rgba(0,0,0,0.28)]
@@ -4773,32 +4781,38 @@ useEffect(() => {
         exit={{ y: 320 }}
         transition={{ type: 'spring', stiffness: 110, damping: 16 }}
       >
-
         {/* 🧊 HEADER ESTILO IPHONE */}
-        <div className="
-          flex items-center justify-between 
-          px-6 py-5 
-          border-b border-gray-100 
-          bg-white/70 backdrop-blur-xl
-        ">
-          
+        <div
+          className="
+            flex items-center justify-between 
+            px-6 py-5 
+            border-b border-gray-100 
+            bg-white/70 backdrop-blur-xl
+          "
+        >
           <button
-  onClick={() => {
-    setIsChatOpen(false);
-    setMessages([]);
-    setHasUnread(false);
-    setUnreadCount(0);
+            onClick={() => {
+              setIsChatOpen(false);
+              setMessages([]);
+              setHasUnread(false);
+              setUnreadCount(0);
+              setIsTyping(false);
 
-    if (chatChannelRef.current) {
-      supabase.removeChannel(chatChannelRef.current);
-      chatChannelRef.current = null;
-    }
-  }}
-  className="flex items-center gap-1 text-gray-500 hover:text-emerald-600 transition font-medium"
->
-  <ChevronLeft size={22} />
-  Volver
-</button>
+              if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+                typingTimeoutRef.current = null;
+              }
+
+              if (chatChannelRef.current) {
+                supabase.removeChannel(chatChannelRef.current);
+                chatChannelRef.current = null;
+              }
+            }}
+            className="flex items-center gap-1 text-gray-500 hover:text-emerald-600 transition font-medium"
+          >
+            <ChevronLeft size={22} />
+            Volver
+          </button>
 
           {/* NOMBRE + ESTADO */}
           <div className="flex items-center gap-3">
@@ -4824,101 +4838,121 @@ useEffect(() => {
         </div>
 
         {/* 🗨 MENSAJES — MÁS GRANDE */}
-        <div className="
-          flex-1 
-          overflow-y-auto 
-          px-5 py-5 
-          space-y-4 
-          bg-gradient-to-b from-white to-gray-50
-        ">
+        <div
+          className="
+            flex-1 
+            overflow-y-auto 
+            px-5 py-5 
+            space-y-4 
+            bg-gradient-to-b from-white to-gray-50
+          "
+        >
           {messages.length === 0 ? (
             <p className="text-center text-gray-400 mt-8 text-sm">
               Inicia la conversación ✨
             </p>
           ) : (
-           messages.map((m) => {
-  const mine = String(m.sender_id) === String(me?.id);
-  const isLocation = m?.message_type === 'location';
-  const hasCoords = Number.isFinite(Number(m?.lat)) && Number.isFinite(Number(m?.lng));
+            messages.map((m) => {
+              const mine = String(m.sender_id) === String(me?.id);
+              const isLocation = m?.message_type === 'location';
+              const hasCoords =
+                Number.isFinite(Number(m?.lat)) &&
+                Number.isFinite(Number(m?.lng));
 
-  return (
-    <div
-      key={m.id}
-      className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
-    >
-      {isLocation ? (
-        <button
-          type="button"
-          onClick={() => openLocationMessageOnMap(m)}
-          className={`
-            max-w-[82%] text-left overflow-hidden
-            rounded-2xl shadow-sm border
-            transition active:scale-[0.98]
-            ${mine
-              ? 'bg-emerald-500 text-white border-emerald-500 rounded-br-none'
-              : 'bg-white text-gray-800 border-gray-200 rounded-bl-none'
-            }
-          `}
-        >
-          <div className="px-4 pt-3 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-[18px]">📍</span>
-              <div>
-                <div className="text-[14px] font-extrabold leading-none">
-                  Ubicación compartida
+              return (
+                <div
+                  key={m.id}
+                  className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
+                >
+                  {isLocation ? (
+                    <button
+                      type="button"
+                      onClick={() => openLocationMessageOnMap(m)}
+                      className={`
+                        max-w-[82%] text-left overflow-hidden
+                        rounded-2xl shadow-sm border
+                        transition active:scale-[0.98]
+                        ${
+                          mine
+                            ? 'bg-emerald-500 text-white border-emerald-500 rounded-br-none'
+                            : 'bg-white text-gray-800 border-gray-200 rounded-bl-none'
+                        }
+                      `}
+                    >
+                      <div className="px-4 pt-3 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[18px]">📍</span>
+                          <div>
+                            <div className="text-[14px] font-extrabold leading-none">
+                              Ubicación compartida
+                            </div>
+                            <div
+                              className={`text-[11px] mt-1 ${
+                                mine ? 'text-white/80' : 'text-gray-500'
+                              }`}
+                            >
+                              Tocá para abrir en el mapa
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        className={`
+                          mx-3 mb-3 rounded-2xl px-3 py-3
+                          ${
+                            mine
+                              ? 'bg-white/12 border border-white/15'
+                              : 'bg-emerald-50 border border-emerald-100'
+                          }
+                        `}
+                      >
+                        <div className="text-[12px] font-bold">
+                          {hasCoords
+                            ? `${Number(m.lat).toFixed(6)}, ${Number(m.lng).toFixed(6)}`
+                            : 'Ubicación no disponible'}
+                        </div>
+
+                        <div
+                          className={`text-[11px] mt-1 ${
+                            mine ? 'text-white/80' : 'text-gray-500'
+                          }`}
+                        >
+                          Ver punto exacto en el mapa
+                        </div>
+                      </div>
+                    </button>
+                  ) : (
+                    <div
+                      className={`
+                        max-w-[80%] px-4 py-3
+                        rounded-2xl text-[15px]
+                        shadow-sm leading-relaxed
+                        ${
+                          mine
+                            ? 'bg-emerald-500 text-white rounded-br-none shadow-emerald-300/30'
+                            : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
+                        }
+                      `}
+                    >
+                      {m.text}
+                    </div>
+                  )}
                 </div>
-                <div className={`text-[11px] mt-1 ${mine ? 'text-white/80' : 'text-gray-500'}`}>
-                  Tocá para abrir en el mapa
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className={`
-              mx-3 mb-3 rounded-2xl px-3 py-3
-              ${mine ? 'bg-white/12 border border-white/15' : 'bg-emerald-50 border border-emerald-100'}
-            `}
-          >
-            <div className="text-[12px] font-bold">
-              {hasCoords
-                ? `${Number(m.lat).toFixed(6)}, ${Number(m.lng).toFixed(6)}`
-                : 'Ubicación no disponible'}
-            </div>
-
-            <div className={`text-[11px] mt-1 ${mine ? 'text-white/80' : 'text-gray-500'}`}>
-              Ver punto exacto en el mapa
-            </div>
-          </div>
-        </button>
-      ) : (
-        <div
-          className={`
-            max-w-[80%] px-4 py-3
-            rounded-2xl text-[15px]
-            shadow-sm leading-relaxed
-            ${mine
-              ? 'bg-emerald-500 text-white rounded-br-none shadow-emerald-300/30'
-              : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
-            }
-          `}
-        >
-          {m.text}
-        </div>
-      )}
-    </div>
-  );
-})
+              );
+            })
           )}
 
           {/* “ESCRIBIENDO...” efecto lujo */}
           {isTyping && (
             <div className="flex justify-start">
-              <div className="
-                bg-white border border-gray-200 
-                px-4 py-[7px] 
-                rounded-2xl shadow-sm flex gap-[4px]
-              ">
+              <div
+                className="
+                  bg-white border border-gray-200 
+                  px-4 py-[7px] 
+                  rounded-2xl shadow-sm flex gap-[4px]
+                "
+              >
                 <span className="animate-bounce text-gray-500">•</span>
                 <span className="animate-bounce text-gray-500 delay-100">•</span>
                 <span className="animate-bounce text-gray-500 delay-200">•</span>
@@ -4930,51 +4964,76 @@ useEffect(() => {
         </div>
 
         {/* ✨ INPUT PREMIUM — MÁS ALTO & MEJOR DISEÑO */}
-    <form
-  onSubmit={(e) => {
-    e.preventDefault();
-    const value = inputRef.current?.value?.trim() || '';
-    if (value) sendMessage(value);
-    inputRef.current.value = '';
-  }}
-  className="
-    flex items-center gap-3
-    p-5
-    bg-white/85 backdrop-blur-lg
-    border-t border-gray-200
-  "
->
-  <input
-    ref={inputRef}
-    type="text"
-    placeholder="Escribí un mensaje…"
-    className="
-      flex-1
-      px-5 py-3.5
-      rounded-2xl
-      bg-gray-100/70
-      border border-gray-200
-      focus:ring-2 focus:ring-emerald-400/40
-      text-gray-700 shadow-inner
-      text-[15px]
-    "
-  />
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const value = inputRef.current?.value?.trim() || '';
+            if (value) sendMessage(value);
 
-  <button
-    type="submit"
-    className="
-      p-4 rounded-2xl
-      bg-emerald-500 hover:bg-emerald-600
-      active:scale-95
-      text-white
-      shadow-lg shadow-emerald-300/30
-      transition
-    "
-  >
-    <SendHorizontal size={22} />
-  </button>
-</form>
+            if (typingTimeoutRef.current) {
+              clearTimeout(typingTimeoutRef.current);
+              typingTimeoutRef.current = null;
+            }
 
+            inputRef.current.value = '';
+          }}
+          className="
+            flex items-center gap-3
+            p-5
+            bg-white/85 backdrop-blur-lg
+            border-t border-gray-200
+          "
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Escribí un mensaje…"
+            onChange={() => {
+              if (!chatChannelRef.current || !me?.id || !chatId) return;
+
+              chatChannelRef.current.send({
+                type: 'broadcast',
+                event: 'typing',
+                payload: {
+                  sender_id: me.id,
+                  chat_id: chatId,
+                },
+              });
+
+              if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+              }
+
+              typingTimeoutRef.current = setTimeout(() => {
+                typingTimeoutRef.current = null;
+              }, 1200);
+            }}
+            className="
+              flex-1
+              px-5 py-3.5
+              rounded-2xl
+              bg-gray-100/70
+              border border-gray-200
+              focus:ring-2 focus:ring-emerald-400/40
+              text-gray-700 shadow-inner
+              text-[15px]
+            "
+          />
+
+          <button
+            type="submit"
+            className="
+              p-4 rounded-2xl
+              bg-emerald-500 hover:bg-emerald-600
+              active:scale-95
+              text-white
+              shadow-lg shadow-emerald-300/30
+              transition
+            "
+          >
+            <SendHorizontal size={22} />
+          </button>
+        </form>
       </motion.div>
     </motion.div>
   )}
