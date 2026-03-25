@@ -59,6 +59,8 @@ export default function AdminWorkersPage() {
   const [docsFilter, setDocsFilter] = useState('all');
   const [sortBy, setSortBy] = useState('updated_desc');
   const [activeTab, setActiveTab] = useState('summary');
+    const [accessChecked, setAccessChecked] = useState(false);
+  const [hasAccess, setHasAccess] = useState(false);
 
   async function logAdminHistory({
     workerId,
@@ -82,7 +84,45 @@ export default function AdminWorkersPage() {
       console.warn('No se pudo guardar historial admin', err);
     }
   }
+  async function checkAdminAccess() {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
+      if (!user) {
+        toast.error('Tenés que iniciar sesión');
+        window.location.href = '/auth/login';
+        return false;
+      }
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const allowed = ['admin', 'superadmin'].includes(profile?.role || '');
+
+      if (!allowed) {
+        toast.error('No tenés permiso para entrar a este panel');
+        window.location.href = '/';
+        return false;
+      }
+
+      setHasAccess(true);
+      return true;
+    } catch (err) {
+      console.error(err);
+      toast.error('No se pudo validar el acceso');
+      window.location.href = '/';
+      return false;
+    } finally {
+      setAccessChecked(true);
+    }
+  }
   async function fetchAll() {
     setLoading(true);
     try {
@@ -259,7 +299,17 @@ export default function AdminWorkersPage() {
   }
 
   useEffect(() => {
-    fetchAll();
+    let alive = true;
+
+    (async () => {
+      const allowed = await checkAdminAccess();
+      if (!alive || !allowed) return;
+      await fetchAll();
+    })();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
   async function handleVerify(userId, approve) {
@@ -486,6 +536,21 @@ export default function AdminWorkersPage() {
       avgScore,
     };
   }, [workers]);
+
+   if (!accessChecked) {
+    return (
+      <div className="min-h-screen bg-[#06111A] text-white flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="mx-auto mb-3 h-7 w-7 animate-spin text-emerald-300" />
+          <p className="text-sm text-white/60">Validando acceso...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasAccess) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-[#06111A] text-white">
