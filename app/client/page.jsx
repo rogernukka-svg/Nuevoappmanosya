@@ -615,6 +615,7 @@ useEffect(() => {
 const [selected, setSelected] = useState(null);
 const [profileSheetMode, setProfileSheetMode] = useState('full'); // 'full' | 'mini'
 const [isTrackingWorker, setIsTrackingWorker] = useState(false);
+const [cameraMode, setCameraMode] = useState('explore'); // 'explore' | 'preview' | 'tracking'
 const [busy, setBusy] = useState(false);
 
 
@@ -730,9 +731,293 @@ const selLat = Number(selected?.lat);
 const selLng = Number(selected?.lng ?? selected?.lon ?? selected?.long);
 const hasSelCoords = Number.isFinite(selLat) && Number.isFinite(selLng);
 const hasMeCoords  = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
-  const [showPrice, setShowPrice] = useState(false);
-  const [route, setRoute] = useState(null);
-  const [selectedService, setSelectedService] = useState(null);
+useEffect(() => {
+  if (!mapRef.current) return;
+
+  // ✅ si hay tracking real del trabajador, dejamos que la ruta mande
+  if (cameraMode === 'tracking') return;
+
+  // ✅ modo normal: volver al cliente
+  if (cameraMode === 'explore' && hasMeCoords) {
+    mapRef.current.flyTo([Number(me.lat), Number(me.lon)], 14, { duration: 1.1 });
+    setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+  }
+
+  // ✅ preview: no hacer zoom agresivo al worker
+  if (cameraMode === 'preview') {
+    setTimeout(() => mapRef.current?.invalidateSize?.(), 180);
+  }
+}, [cameraMode, hasMeCoords, me?.lat, me?.lon]);
+ const [showPrice, setShowPrice] = useState(false);
+const [route, setRoute] = useState(null);
+const [selectedService, setSelectedService] = useState(null);
+
+const [bookingDate, setBookingDate] = useState('');
+const [bookingTime, setBookingTime] = useState('');
+const [bookingNotes, setBookingNotes] = useState('');
+  const SERVICE_CATALOG = [
+  { slug: 'taxi', name: 'Taxi', pricing_type: 'instant', booking_mode: 'now', base_label: 'Viaje inmediato' },
+  { slug: 'chofer', name: 'Chofer', pricing_type: 'instant', booking_mode: 'now', base_label: 'Traslado inmediato' },
+  { slug: 'limpieza', name: 'Limpieza', pricing_type: 'hourly', booking_mode: 'now', base_label: 'Por hora' },
+  { slug: 'limpieza-piscinas', name: 'Limpieza de piscinas', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Presupuesto previo' },
+  { slug: 'plomeria', name: 'Plomería', pricing_type: 'quote', booking_mode: 'now', base_label: 'Diagnóstico + presupuesto' },
+  { slug: 'electricidad', name: 'Electricidad', pricing_type: 'quote', booking_mode: 'now', base_label: 'Diagnóstico + presupuesto' },
+  { slug: 'jardineria', name: 'Jardinería / Césped', pricing_type: 'hourly', booking_mode: 'schedule', base_label: 'Por hora' },
+  { slug: 'podador', name: 'Podador', pricing_type: 'hourly', booking_mode: 'schedule', base_label: 'Por hora' },
+  { slug: 'pintor', name: 'Pintor', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Visita + presupuesto' },
+  { slug: 'carpinteria', name: 'Carpintería', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Presupuesto previo' },
+  { slug: 'albanileria', name: 'Albañilería', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Presupuesto previo' },
+  { slug: 'metalurgica', name: 'Metalúrgica', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Presupuesto previo' },
+  { slug: 'auxilio-vehicular', name: 'Auxilio vehicular', pricing_type: 'instant', booking_mode: 'now', base_label: 'Asistencia inmediata' },
+  { slug: 'fletes', name: 'Fletes y mudanzas', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Cotización previa' },
+  { slug: 'delivery', name: 'Delivery', pricing_type: 'instant', booking_mode: 'now', base_label: 'Entrega inmediata' },
+  { slug: 'mecanica', name: 'Taller mecánico', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Revisión + presupuesto' },
+  { slug: 'refrigeracion', name: 'Técnico en refrigeración', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Diagnóstico + presupuesto' },
+  { slug: 'instalacion-aires', name: 'Instalación de aires acondicionados', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Instalación con presupuesto' },
+  { slug: 'electronica', name: 'Técnico en electrónica', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Diagnóstico + presupuesto' },
+  { slug: 'informatica', name: 'Informática', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Revisión + presupuesto' },
+  { slug: 'mantenimientos-electronicos', name: 'Mantenimientos electrónicos', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Presupuesto previo' },
+  { slug: 'fumigacion', name: 'Fumigación', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Cotización previa' },
+  { slug: 'cerrajeria', name: 'Cerrajería / Copia de llave', pricing_type: 'instant', booking_mode: 'now', base_label: 'Servicio rápido' },
+  { slug: 'contador', name: 'Contador', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Consulta profesional' },
+  { slug: 'abogado', name: 'Abogado', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Consulta profesional' },
+  { slug: 'gestiones-documentos', name: 'Gestiones de documentos', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Gestión a coordinar' },
+  { slug: 'diseno-grafico', name: 'Diseñador gráfico', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Brief + presupuesto' },
+  { slug: 'profesor-particular', name: 'Profesor particular', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Clase agendada' },
+  { slug: 'profesor-tenis', name: 'Profesor de tenis', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Clase agendada' },
+  { slug: 'consejero-matrimonial', name: 'Consejero matrimonial', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Sesión agendada' },
+  { slug: 'peluqueria', name: 'Peluquería masculino / femenino', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Turno agendado' },
+  { slug: 'peluquero', name: 'Peluquero', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Turno agendado' },
+  { slug: 'manicurista', name: 'Manicurista', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Turno agendado' },
+  { slug: 'extension-pestanas', name: 'Extensión de pestañas', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Turno agendado' },
+  { slug: 'masaje-estetico', name: 'Masaje estético', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Sesión agendada' },
+  { slug: 'modista', name: 'Modista', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Medida + presupuesto' },
+  { slug: 'fisioterapeuta', name: 'Fisioterapeuta', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Sesión agendada' },
+  { slug: 'enfermeria', name: 'Enfermería', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Atención coordinada' },
+  { slug: 'entrenador', name: 'Entrenador', pricing_type: 'hourly', booking_mode: 'schedule', base_label: 'Sesión por hora' },
+  { slug: 'mozo', name: 'Mozo', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
+  { slug: 'parrillero', name: 'Parrillero', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
+  { slug: 'pizzero', name: 'Pizzero', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
+  { slug: 'servicio-tragos', name: 'Servicio de tragos', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
+  { slug: 'barman', name: 'Barman', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
+  { slug: 'fotografo', name: 'Fotógrafo', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Cobertura agendada' },
+  { slug: 'musico', name: 'Músico / artista en general', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Show agendado' },
+  { slug: 'payaso', name: 'Payaso', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
+  { slug: 'escolta', name: 'Escolta', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Coordinación previa' },
+  { slug: 'escolta-privado', name: 'Escolta privado', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Coordinación previa' },
+  { slug: 'personal-shopper', name: 'Personal shopper', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Asistencia agendada' },
+];
+
+const [serviceQuery, setServiceQuery] = useState('');
+const [showAllServices, setShowAllServices] = useState(false);
+
+function normalizeServiceText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeSlug(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .trim();
+}
+function getServiceMeta(serviceSlug) {
+  const normalized = normalizeSlug(serviceSlug);
+  return (
+    SERVICE_CATALOG.find((item) => normalizeSlug(item.slug) === normalized) || null
+  );
+}
+
+function getServiceFlowMeta(serviceSlug) {
+  const meta = getServiceMeta(serviceSlug);
+
+  if (!meta) {
+    return {
+      pricing_type: 'quote',
+      booking_mode: 'schedule',
+      action_label: 'Solicitar servicio',
+      helper_text: 'Coordiná los detalles con el profesional.',
+      accent: 'from-emerald-500 via-teal-500 to-cyan-500',
+      badge: 'Servicio ManosYA',
+    };
+  }
+
+  switch (meta.pricing_type) {
+    case 'instant':
+      return {
+        ...meta,
+        action_label: 'Solicitar ahora',
+        helper_text: 'Solicitud inmediata con respuesta rápida.',
+        accent: 'from-emerald-500 via-teal-500 to-cyan-500',
+        badge: 'Respuesta rápida',
+      };
+
+    case 'hourly':
+      return {
+        ...meta,
+        action_label: 'Reservar por hora',
+        helper_text: 'Ideal para trabajos por tiempo o por jornada.',
+        accent: 'from-cyan-500 via-sky-500 to-emerald-500',
+        badge: 'Tarifa por hora',
+      };
+
+    case 'booking':
+      return {
+        ...meta,
+        action_label: 'Agendar servicio',
+        helper_text: 'Servicio pensado para fecha y hora programada.',
+        accent: 'from-fuchsia-500 via-violet-500 to-cyan-500',
+        badge: 'Con agenda',
+      };
+
+    case 'consultation':
+      return {
+        ...meta,
+        action_label: 'Agendar consulta',
+        helper_text: 'Primero coordinás la consulta o sesión.',
+        accent: 'from-amber-500 via-orange-500 to-rose-500',
+        badge: 'Consulta profesional',
+      };
+
+    case 'quote':
+    default:
+      return {
+        ...meta,
+        action_label: 'Solicitar presupuesto',
+        helper_text: 'El profesional revisa primero y luego confirma precio.',
+        accent: 'from-slate-800 via-emerald-700 to-cyan-500',
+        badge: 'Presupuesto previo',
+      };
+  }
+}
+function serviceIconFor(slug) {
+  const key = normalizeSlug(slug);
+
+  if (key.includes('plomer')) return <Droplets size={18} />;
+  if (key.includes('electric')) return <Wrench size={18} />;
+  if (key.includes('limpieza')) return <Sparkles size={18} />;
+  if (key.includes('alban') || key.includes('constru') || key.includes('pintor') || key.includes('carpinter')) return <Hammer size={18} />;
+  if (key.includes('jard') || key.includes('podador')) return <Leaf size={18} />;
+  if (key.includes('mascota')) return <PawPrint size={18} />;
+  if (key.includes('emerg')) return <Flame size={18} />;
+  if (key.includes('abogado')) return <CheckCircle2 size={18} />;
+  if (key.includes('contador')) return <Clock3 size={18} />;
+  return <Sparkles size={18} />;
+}
+
+const services = useMemo(() => {
+  return SERVICE_CATALOG.map((item) => {
+    const flow = getServiceFlowMeta(item.slug);
+
+    return {
+      id: item.slug,
+      label: item.name,
+      icon: serviceIconFor(item.slug),
+      pricing_type: item.pricing_type,
+      booking_mode: item.booking_mode,
+      base_label: item.base_label,
+      action_label: flow.action_label,
+      helper_text: flow.helper_text,
+      badge: flow.badge,
+      accent: flow.accent,
+    };
+  });
+}, []);
+
+const filteredServices = useMemo(() => {
+  const q = normalizeServiceText(serviceQuery);
+  if (!q) return services;
+
+  return services.filter((s) => {
+    return (
+      normalizeServiceText(s.label).includes(q) ||
+      normalizeServiceText(s.id).includes(q)
+    );
+  });
+}, [services, serviceQuery]);
+const SUGGESTED_SERVICE_SLUGS = [
+  'taxi',
+  'chofer',
+  'plomeria',
+  'electricidad',
+  'limpieza',
+  'jardineria',
+  'auxilio-vehicular',
+  'fletes',
+  'contador',
+  'abogado',
+  'peluquero',
+  'peluqueria',
+];
+
+const suggestedServices = useMemo(() => {
+  const map = new Map((services || []).map((s) => [s.id, s]));
+  return SUGGESTED_SERVICE_SLUGS
+    .map((id) => map.get(id))
+    .filter(Boolean);
+}, [services]);
+
+const visibleServices = useMemo(() => {
+  if (serviceQuery.trim()) {
+    return filteredServices.slice(0, showAllServices ? 12 : 6);
+  }
+
+  const base = suggestedServices.length ? suggestedServices : filteredServices;
+  return showAllServices ? filteredServices.slice(0, 16) : base.slice(0, 6);
+}, [serviceQuery, filteredServices, suggestedServices, showAllServices]);
+  const selectedWorkerServices = useMemo(() => {
+  const raw = splitWorkerServices(selected);
+
+  const unique = Array.from(
+    new Map(
+      raw
+        .map((item) => {
+          const slug = normalizeSlug(item);
+          const meta = getServiceMeta(slug);
+
+          return [
+            slug,
+            {
+              slug,
+              label: meta?.name || String(item || '').trim(),
+              pricing_type: meta?.pricing_type || 'quote',
+              booking_mode: meta?.booking_mode || 'schedule',
+            },
+          ];
+        })
+        .filter(([slug]) => !!slug)
+    ).values()
+  );
+
+  return unique;
+}, [selected]);
+
+const selectedServiceResolved = useMemo(() => {
+  if (selectedService) return normalizeSlug(selectedService);
+
+  if (selectedWorkerServices.length === 1) {
+    return selectedWorkerServices[0].slug;
+  }
+
+  return null;
+}, [selectedService, selectedWorkerServices]);
+
+const selectedServiceMeta = useMemo(() => {
+  return getServiceFlowMeta(selectedServiceResolved);
+}, [selectedServiceResolved]);
+
+const selectedServiceCatalogMeta = useMemo(() => {
+  return getServiceMeta(selectedServiceResolved);
+}, [selectedServiceResolved]);
 const distanceToSelectedKm =
   hasMeCoords && hasSelCoords
     ? haversineKm(Number(me.lat), Number(me.lon), selLat, selLng)
@@ -913,11 +1198,12 @@ useEffect(() => {
     setGpsStatus('granted');
     setGpsError(null);
 
-    if (mapRef.current && !gpsCenteredRef.current) {
-      gpsCenteredRef.current = true;
-      mapRef.current.flyTo([lat, lon], 15, { duration: 1.1 });
-      setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-    }
+  if (mapRef.current && !gpsCenteredRef.current) {
+  gpsCenteredRef.current = true;
+  setCameraMode('explore');
+  mapRef.current.flyTo([lat, lon], 14, { duration: 1.1 });
+  setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+}
 
     if (playToast) {
       toast.success('📍 Ubicación activada');
@@ -925,13 +1211,14 @@ useEffect(() => {
   };
 
   const cached = loadLastGps();
-  if (cached && !gpsCenteredRef.current && mapRef.current) {
-    setMe((prev) => ({ ...prev, lat: cached.lat, lon: cached.lon }));
-    setCenter([cached.lat, cached.lon]);
-    gpsCenteredRef.current = true;
-    mapRef.current.flyTo([cached.lat, cached.lon], 12, { duration: 0.7 });
-    setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-  }
+ if (cached && !gpsCenteredRef.current && mapRef.current) {
+  setMe((prev) => ({ ...prev, lat: cached.lat, lon: cached.lon }));
+  setCenter([cached.lat, cached.lon]);
+  gpsCenteredRef.current = true;
+  setCameraMode('explore');
+  mapRef.current.flyTo([cached.lat, cached.lon], 13, { duration: 0.7 });
+  setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+}
 
   try {
     const pos = await new Promise((resolve, reject) => {
@@ -1009,7 +1296,8 @@ useEffect(() => {
   if (!hasMeCoords) return;
 
   gpsCenteredRef.current = true;
-  mapRef.current.flyTo([Number(me.lat), Number(me.lon)], 11, { duration: 1.2 });
+  setCameraMode('explore');
+  mapRef.current.flyTo([Number(me.lat), Number(me.lon)], 14, { duration: 1.2 });
   setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
 }, [me?.lat, me?.lon, hasMeCoords]);
 
@@ -1076,21 +1364,7 @@ function playIncomingMessageSound() {
   };
 }, []); 
  
-const services = [
-  { id: 'plomería', label: 'Plomería', icon: <Droplets size={18} /> },
-  { id: 'electricidad', label: 'Electricidad', icon: <Wrench size={18} /> },
-  { id: 'limpieza', label: 'Limpieza', icon: <Sparkles size={18} /> },
-  { id: 'construcción', label: 'Construcción', icon: <Hammer size={18} /> },
-  { id: 'jardinería', label: 'Jardinería', icon: <Leaf size={18} /> },
-  { id: 'mascotas', label: 'Mascotas', icon: <PawPrint size={18} /> },
-  { id: 'emergencia', label: 'Emergencia', icon: <Flame size={18} /> },
-  { id: 'car detailing', label: 'Car Detailing', icon: <Sparkles size={18} /> },
 
-  // ✅ nuevos servicios profesionales
-  { id: 'peluquero', label: 'Peluquero/a', icon: <Sparkles size={18} /> },
-  { id: 'abogado', label: 'Abogado/a', icon: <CheckCircle2 size={18} /> },
-  { id: 'contador', label: 'Contador/a', icon: <Clock3 size={18} /> },
-];
 /* 🧠 Restaurar estado completo (pedido + chat) desde localStorage */
 useEffect(() => {
   if (typeof window === 'undefined') return;
@@ -1138,7 +1412,8 @@ useEffect(() => {
   async function loadRoute() {
 
     if (!jobId) return;
-
+if (!mapRef.current) return;
+if (cameraMode === 'preview') return;
     if (jobStatus === "completed" || jobStatus === "cancelled") return;
 
     if (!Number(me?.lat) || !Number(me?.lon)) return;
@@ -1155,12 +1430,33 @@ useEffect(() => {
       wLng
     );
 
-    if (!result) return;
+   if (!result?.route?.length) return;
 
-    setRoute(result.route);
-    setEtaMinutes(result.durationMin);
+setRoute(result.route);
+setEtaMinutes(result.durationMin);
 
-    mapRef.current?.fitBounds(result.route, { padding: [80, 80] });
+requestAnimationFrame(() => {
+  try {
+    const map = mapRef.current;
+    if (!map) return;
+
+    map.invalidateSize(false);
+
+    setTimeout(() => {
+      try {
+        if (!mapRef.current) return;
+        mapRef.current.fitBounds(result.route, {
+          padding: [80, 80],
+          animate: false,
+        });
+      } catch (err) {
+        console.warn('fitBounds error:', err);
+      }
+    }, 60);
+  } catch (err) {
+    console.warn('map sync error:', err);
+  }
+});
 
   }
 
@@ -1303,39 +1599,62 @@ useEffect(() => {
 
 
 /* === Cargar trabajadores === */
+function splitWorkerServices(worker) {
+  const raw = [];
+
+  if (Array.isArray(worker?.skills)) {
+    raw.push(...worker.skills);
+  } else if (typeof worker?.skills === 'string') {
+    raw.push(...worker.skills.split(','));
+  }
+
+  if (worker?.main_skill) raw.push(worker.main_skill);
+  if (worker?.service_type) raw.push(worker.service_type);
+
+  return raw
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+}
+
 async function fetchWorkers(serviceFilter = null) {
   setBusy(true);
+
   try {
-    let query = supabase
+    const { data, error } = await supabase
       .from('map_workers_view')
       .select('*')
       .not('lat', 'is', null);
 
-    if (serviceFilter) {
-      const normalized = serviceFilter
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase();
-
-      query = query
-        .not('skills', 'is', null)
-        .ilike('skills', `%${normalized}%`);
-    }
-
-    const { data, error } = await query;
     if (error) throw error;
 
-    // ✅ NORMALIZAR: dejá lat/lng SIEMPRE numéricos y en la misma llave
+    const normalizedFilter = normalizeSlug(serviceFilter);
+
     const cleaned = (data || [])
       .map((w) => {
         const lat = Number(w?.lat);
         const lng = Number(w?.lng ?? w?.lon ?? w?.long);
-        return { ...w, lat, lng };
+
+        const workerServices = splitWorkerServices(w).map((item) =>
+          normalizeSlug(item)
+        );
+
+        return {
+          ...w,
+          lat,
+          lng,
+          _serviceTokens: workerServices,
+        };
       })
-      .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng));
+      .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng))
+      .filter((w) => {
+        if (!normalizedFilter) return true;
+
+        return (w._serviceTokens || []).some((token) => token === normalizedFilter);
+      });
 
     console.log('🧠 Trabajadores total:', (data || []).length);
     console.log('✅ Trabajadores coords válidas:', cleaned.length);
+    console.log('🎯 Filtro servicio activo:', normalizedFilter || 'todos');
 
     setWorkers(cleaned);
   } catch (err) {
@@ -1835,33 +2154,66 @@ useEffect(() => {
 }, [me?.id, jobId, chatId, isChatOpen, supabase]);
 /* === Interacciones mejoradas === */
 function handleMarkerClick(worker) {
-  if (jobId && jobStatus && !['completed', 'cancelled', 'worker_completed'].includes(jobStatus)) {
-    toast.warning('⚠️ Ya tenés un pedido activo. Te mostramos tu pedido en ejecución.');
-    reopenActiveJobModal();
-    return;
+  if (!worker) return;
+
+  const workerServices = splitWorkerServices(worker)
+    .map((item) => normalizeSlug(item))
+    .filter(Boolean);
+
+  const uniqueWorkerServices = Array.from(new Set(workerServices));
+
+  let nextSelectedService = null;
+
+  // 1) Si ya venías con un servicio elegido y este trabajador lo ofrece, lo conservamos
+  if (selectedService) {
+    const currentWanted = normalizeSlug(selectedService);
+    if (uniqueWorkerServices.includes(currentWanted)) {
+      nextSelectedService = currentWanted;
+    }
   }
 
-  setWorkerSearchOpen(false);
+  // 2) Si no había servicio previo y el trabajador solo tiene uno, lo auto-seleccionamos
+  if (!nextSelectedService && uniqueWorkerServices.length === 1) {
+    nextSelectedService = uniqueWorkerServices[0];
+  }
 
-  setWorkers((prev) =>
-    prev.map((w) => ({
-      ...w,
-      _selected: w.user_id === worker.user_id,
-    }))
-  );
+  // 3) Si no hubo match pero tiene main_skill, usarlo solo si existe entre sus servicios
+  if (!nextSelectedService && worker?.main_skill) {
+    const mainSkillSlug = normalizeSlug(worker.main_skill);
+    if (uniqueWorkerServices.includes(mainSkillSlug)) {
+      nextSelectedService = mainSkillSlug;
+    }
+  }
+
+  // 4) Si tiene exactamente 2 servicios y uno coincide con el service_type, priorizarlo
+  if (!nextSelectedService && worker?.service_type) {
+    const serviceTypeSlug = normalizeSlug(worker.service_type);
+    if (uniqueWorkerServices.includes(serviceTypeSlug)) {
+      nextSelectedService = serviceTypeSlug;
+    }
+  }
 
   setSelected(worker);
+  setSelectedService(nextSelectedService);
   setProfileSheetMode('full');
   setRoute(null);
+  setShowPrice(false);
 
-  const wLat = Number(worker?.lat);
-  const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
-
-  if (mapRef.current && Number.isFinite(wLat) && Number.isFinite(wLng)) {
-    mapRef.current.flyTo([wLat, wLng], 15, { duration: 1.2 });
+  // ✅ IMPORTANTE:
+  // al seleccionar worker solo entramos en preview
+  // NO hacemos flyTo al worker porque eso secuestra el mapa
+  if (!isTrackingWorker) {
+    setCameraMode('preview');
   }
 
-  setShowPrice(false);
+  if (nextSelectedService) {
+    const flow = getServiceFlowMeta(nextSelectedService);
+    toast.success(
+      `${worker.full_name || 'Trabajador'} • ${flow?.action_label || 'Servicio listo'}`,
+      { duration: 1700 }
+    );
+    return;
+  }
 
   toast.success(`👷 ${worker.full_name || 'Trabajador'} seleccionado`, {
     duration: 1500,
@@ -1879,8 +2231,27 @@ function focusWorkerFromSearch(worker) {
   const wLat = Number(worker?.lat);
   const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
 
-  if (mapRef.current && Number.isFinite(wLat) && Number.isFinite(wLng)) {
-    mapRef.current.flyTo([wLat, wLng], 16, { duration: 1.2 });
+  // ✅ si NO estamos en tracking real, mostrar zona general:
+  // cliente + worker visibles, sin zoom exagerado
+  if (
+    mapRef.current &&
+    hasMeCoords &&
+    Number.isFinite(wLat) &&
+    Number.isFinite(wLng) &&
+    !isTrackingWorker
+  ) {
+    mapRef.current.fitBounds(
+      [
+        [Number(me.lat), Number(me.lon)],
+        [wLat, wLng],
+      ],
+      {
+        padding: [70, 70],
+        maxZoom: 14,
+      }
+    );
+
+    setCameraMode('preview');
   }
 
   const onlineText = isOnlineRecent(worker) ? '🟢 En línea' : '⚪ No reciente';
@@ -1906,7 +2277,53 @@ function solicitar() {
     return;
   }
 
-  // 🎬 Mostrar el modal de precio
+  const workerServices = splitWorkerServices(selected)
+    .map((item) => normalizeSlug(item))
+    .filter(Boolean);
+
+  const uniqueWorkerServices = Array.from(new Set(workerServices));
+
+  let serviceToUse = selectedServiceResolved;
+
+  if (!serviceToUse && uniqueWorkerServices.length === 1) {
+    serviceToUse = uniqueWorkerServices[0];
+    setSelectedService(uniqueWorkerServices[0]);
+  }
+
+  if (!serviceToUse && uniqueWorkerServices.length > 1) {
+    toast.error('Elegí una especialidad del perfil antes de solicitar');
+    return;
+  }
+
+  if (!serviceToUse && selected?.main_skill) {
+    serviceToUse = normalizeSlug(selected.main_skill);
+    setSelectedService(serviceToUse);
+  }
+
+  if (!serviceToUse) {
+    toast.error('No pudimos identificar el servicio a solicitar');
+    return;
+  }
+
+  const flow = getServiceFlowMeta(serviceToUse);
+
+  if (flow?.pricing_type === 'booking') {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+
+    if (!bookingDate) setBookingDate(`${yyyy}-${mm}-${dd}`);
+    if (!bookingTime) setBookingTime('09:00');
+  } else {
+    setBookingDate('');
+    setBookingTime('');
+  }
+
+  toast.success(flow?.action_label || 'Solicitud preparada', {
+    duration: 1600,
+  });
+
   setShowPrice(true);
 }
 
@@ -1960,26 +2377,47 @@ setRoute([
   [selLat, selLng],
 ]);
 
+const flowMeta = getServiceFlowMeta(selectedServiceResolved);
 
-    // 4️⃣ Insertar el pedido con servicio y precio
+if (flowMeta?.pricing_type === 'booking') {
+  if (!bookingDate || !bookingTime) {
+    toast.error('Elegí fecha y hora para agendar este servicio');
+    return;
+  }
+}
+    // 4️⃣ Insertar el pedido con servicio y agenda si aplica
 const { data: inserted, error: insertError } = await supabase
   .from('jobs')
   .insert([
     {
-      title: `Trabajo con ${selected.full_name || 'Trabajador'}`,
-      description: `Pedido generado desde el mapa (${selectedService || 'servicio general'})`,
+      title:
+        selectedServiceMeta?.pricing_type === 'booking'
+          ? `Agendamiento con ${selected.full_name || 'Trabajador'}`
+          : `Trabajo con ${selected.full_name || 'Trabajador'}`,
+
+      description: [
+        `Pedido generado desde el mapa`,
+        `Servicio: ${selectedServiceCatalogMeta?.name || selectedServiceResolved || selected?.main_skill || 'servicio general'}`,
+        selectedServiceMeta?.pricing_type === 'booking'
+          ? `Fecha solicitada: ${bookingDate || '-'}`
+          : null,
+        selectedServiceMeta?.pricing_type === 'booking'
+          ? `Hora solicitada: ${bookingTime || '-'}`
+          : null,
+        bookingNotes?.trim() ? `Notas: ${bookingNotes.trim()}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+
       status: 'open',
-      client_id: user.id, // ← FK a profiles.user_id (asegurado arriba)
+      client_id: user.id,
       worker_id: selected.user_id,
       client_lat: me.lat,
       client_lng: me.lon,
       worker_lat: selLat,
       worker_lng: selLng,
       created_at: new Date().toISOString(),
-
-      // 🧩 Nuevos campos agregados
-      service_type: selectedService || selected?.main_skill || 'servicio general',
-      price: precioEstimado || 0,
+      service_type: selectedServiceResolved || selected?.main_skill || 'servicio general',
     },
   ])
   .select('id, status')
@@ -2384,7 +2822,8 @@ async function verTrabajadorViniendo() {
   setServicesOpen(false);
 
   setIsTrackingWorker(true);
-  setProfileSheetMode('mini');
+setCameraMode('tracking');
+setProfileSheetMode('mini');
 
   const map = mapRef.current;
   console.log('🧪 mapRef.current en verTrabajadorViniendo:', map);
@@ -2572,11 +3011,15 @@ async function confirmarReseña() {
   }
 }
 
- function toggleService(id) {
-  const next = selectedService === id ? null : id; // id puede ser null
+function toggleService(id) {
+  const next = selectedService === id ? null : id;
+
   setSelectedService(next);
   setSelected(null);
   setRoute(null);
+  setServiceQuery('');
+  setShowAllServices(false);
+
   fetchWorkers(next);
 }
 
@@ -3433,6 +3876,20 @@ useEffect(() => {
 
 
 </MapContainer>
+<button
+  type="button"
+  onClick={() => {
+    setSelected(null);
+    setRoute(null);
+    setShowPrice(false);
+    setProfileSheetMode('mini');
+    setIsTrackingWorker(false);
+    setCameraMode('explore');
+  }}
+  className="absolute right-4 bottom-44 z-[70] flex h-12 w-12 items-center justify-center rounded-full bg-white text-emerald-600 shadow-[0_16px_34px_rgba(0,0,0,0.18)] active:scale-[0.98]"
+>
+  📍
+</button>
 {/* ✅ MODAL CLUSTER (PORTAL + estrellas) */}
 {mounted && createPortal(
   <AnimatePresence>
@@ -3952,86 +4409,200 @@ useEffect(() => {
   </div>
 </div>
 
-  {/* MODAL SERVICIOS */}
-  <AnimatePresence>
-    {servicesOpen && (
-      <motion.div
-        className="fixed inset-0 z-[20000] bg-black/55 backdrop-blur-sm flex items-end justify-center"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={() => setServicesOpen(false)}
-      >
-        <motion.div
-          className="
-            w-full max-w-md
-            bg-white rounded-t-3xl
-            p-5 shadow-2xl
-            border border-gray-200
-          "
-          style={{
-            paddingBottom: "calc(16px + env(safe-area-inset-bottom))",
-          }}
-          initial={{ y: 380 }}
-          animate={{ y: 0 }}
-          exit={{ y: 380 }}
-          transition={{ type: 'spring', stiffness: 120, damping: 18 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-extrabold text-gray-800">Seleccionar servicio</h3>
-            <button
-              onClick={() => setServicesOpen(false)}
-              className="text-gray-500 hover:text-red-500 transition"
-            >
-              <XCircle size={22} />
-            </button>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            {/* Opción: ver todos */}
+</motion.div>
+
+{/* MODAL SERVICIOS */}
+<AnimatePresence>
+  {servicesOpen && (
+    <motion.div
+      className="fixed inset-0 z-[20000] bg-slate-900/34 backdrop-blur-[6px] flex items-end justify-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={() => {
+        setServicesOpen(false);
+        setServiceQuery('');
+        setShowAllServices(false);
+      }}
+    >
+      <motion.div
+        className="w-full max-w-md overflow-hidden rounded-t-[32px] border border-emerald-100 bg-[#f8fffc] shadow-[0_30px_80px_rgba(16,185,129,0.18)]"
+        style={{
+          paddingBottom: 'calc(14px + env(safe-area-inset-bottom))',
+          maxHeight: '76vh',
+        }}
+        initial={{ y: 380 }}
+        animate={{ y: 0 }}
+        exit={{ y: 380 }}
+        transition={{ type: 'spring', stiffness: 125, damping: 18 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-[#ecfff7] via-[#dffaf0] to-[#c8f3e4] px-4 pb-4 pt-4">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_42%)]" />
+          <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-300/20 blur-2xl" />
+
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-700/80">
+                Smart filter
+              </div>
+              <h3 className="mt-1 text-[20px] font-black leading-tight text-slate-900">
+                Elegí un servicio
+              </h3>
+              <p className="mt-1 text-xs font-medium text-slate-600">
+                Simple, claro y alineado con ManosYA.
+              </p>
+            </div>
+
             <button
               onClick={() => {
-                toggleService(null);
                 setServicesOpen(false);
+                setServiceQuery('');
+                setShowAllServices(false);
               }}
-              className={`
-                p-3 rounded-2xl border font-semibold text-sm
-                ${!selectedService ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-50 text-gray-700 border-gray-200'}
-                active:scale-95 transition
-              `}
+              className="shrink-0 rounded-2xl border border-emerald-200 bg-white/85 p-2 text-emerald-700 shadow-sm transition hover:bg-white active:scale-95"
             >
-              🌍 Todos
+              <XCircle size={20} />
             </button>
-
-            {services.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => {
-                  toggleService(s.id);
-                  setServicesOpen(false);
-                }}
-                className={`
-                  p-3 rounded-2xl border font-semibold text-sm
-                  flex items-center justify-center gap-2
-                  ${selectedService === s.id ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-50 text-gray-700 border-gray-200'}
-                  active:scale-95 transition
-                `}
-              >
-                {s.icon}
-                <span>{s.label}</span>
-              </button>
-            ))}
           </div>
 
-          <p className="text-xs text-gray-500 mt-4">
-            Tip: elegí un servicio para filtrar el mapa.
+          <div className="relative mt-4">
+            <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-3 shadow-[0_8px_20px_rgba(16,185,129,0.08)]">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                <Sparkles size={16} />
+              </div>
+
+              <input
+                value={serviceQuery}
+                onChange={(e) => {
+                  setServiceQuery(e.target.value);
+                  setShowAllServices(true);
+                }}
+                placeholder="Buscar servicio..."
+                className="h-12 w-full bg-transparent text-sm font-semibold text-slate-800 placeholder:text-slate-400 outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="px-4 pt-4">
+          <button
+            onClick={() => {
+              toggleService(null);
+              setServicesOpen(false);
+            }}
+            className={`
+              mb-3 flex w-full items-center justify-center rounded-[20px] border px-4 py-3 text-sm font-black transition active:scale-[0.98]
+              ${!selectedService
+                ? 'border-emerald-500 bg-gradient-to-r from-emerald-500 to-emerald-400 text-white shadow-[0_14px_30px_rgba(16,185,129,0.24)]'
+                : 'border-emerald-100 bg-white text-slate-700 shadow-sm'}
+            `}
+          >
+            🌍 Mostrar todos
+          </button>
+
+          {!serviceQuery.trim() && suggestedServices.length > 0 && (
+            <div className="mb-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+                  Sugeridos
+                </span>
+                <span className="text-[11px] font-bold text-emerald-600">
+                  más usados
+                </span>
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {suggestedServices.slice(0, 8).map((s) => (
+                  <button
+                    key={`suggested-${s.id}`}
+                    onClick={() => {
+                      toggleService(s.id);
+                      setServicesOpen(false);
+                    }}
+                    className={`
+                      shrink-0 rounded-full border px-3 py-2 text-xs font-extrabold transition active:scale-[0.98]
+                      ${selectedService === s.id
+                        ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                        : 'border-emerald-100 bg-white text-slate-700'}
+                    `}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="max-h-[42vh] overflow-y-auto px-4 pb-4">
+          {visibleServices.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2.5">
+              {visibleServices.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => {
+                    toggleService(s.id);
+                    setServicesOpen(false);
+                  }}
+                  className={`
+                    rounded-[20px] border px-3 py-3 text-left transition active:scale-[0.98]
+                    ${selectedService === s.id
+                      ? 'border-emerald-500 bg-gradient-to-br from-emerald-500 to-emerald-400 text-white shadow-[0_14px_28px_rgba(16,185,129,0.22)]'
+                      : 'border-emerald-100 bg-white text-slate-800 shadow-sm hover:border-emerald-200'}
+                  `}
+                >
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`
+                        flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl
+                        ${selectedService === s.id
+                          ? 'bg-white/15 text-white'
+                          : 'bg-emerald-50 text-emerald-700'}
+                      `}
+                    >
+                      {s.icon}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="line-clamp-2 text-[12px] font-black leading-tight">
+                        {s.label}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[22px] border border-dashed border-emerald-200 bg-white px-4 py-7 text-center">
+              <div className="text-sm font-black text-slate-700">
+                No encontramos ese servicio
+              </div>
+              <div className="mt-1 text-xs font-medium text-slate-500">
+                Probá con otra palabra.
+              </div>
+            </div>
+          )}
+
+          {filteredServices.length > visibleServices.length && (
+            <button
+              onClick={() => setShowAllServices((prev) => !prev)}
+              className="mt-3 w-full rounded-[20px] border border-emerald-100 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-emerald-200 hover:text-emerald-700 active:scale-[0.98]"
+            >
+              {showAllServices ? 'Ver menos' : 'Ver más'}
+            </button>
+          )}
+
+          <p className="mt-3 text-center text-[11px] font-semibold text-slate-400">
+            Filtro simple y coherente con trabajador.
           </p>
-        </motion.div>
+        </div>
       </motion.div>
-    )}
-  </AnimatePresence>
-</motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
+
 {/* PERFIL DEL TRABAJADOR / CHOFER */}
 <AnimatePresence>
   {selected && !showPrice && jobStatus !== 'completed' && jobStatus !== 'cancelled' && (() => {
@@ -4040,176 +4611,144 @@ useEffect(() => {
         ? Math.round(haversineKm(Number(me.lat), Number(me.lon), selLat, selLng) * 10) / 10
         : null;
 
-    const skillsList = Array.isArray(selected?.skills)
-      ? selected.skills
-      : typeof selected?.skills === 'string'
-      ? selected.skills.split(',')
-      : ['Limpieza', 'Plomería', 'Jardinería'];
-
     const renderActionButtons = () => {
       if (!jobId) {
         return (
           <div className="flex justify-center gap-3 mt-5">
             <button
-              onClick={() => {
-                setSelected(null);
-                setProfileSheetMode('full');
-              }}
-              className="px-5 py-3 rounded-xl border text-gray-700"
-            >
-              Cerrar
-            </button>
+  onClick={() => {
+    setSelected(null);
+    setSelectedService(null);
+    setProfileSheetMode('full');
+  }}
+  className="px-5 py-3 rounded-xl border text-gray-700"
+>
+  Cerrar
+</button>
 
             <button
               onClick={solicitar}
               className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
             >
-              🚀 Solicitar
+              <>
+                {selectedServiceMeta?.pricing_type === 'booking' ? '📅 ' : '🚀 '}
+                {selectedServiceMeta?.action_label || 'Solicitar'}
+              </>
             </button>
           </div>
         );
       }
 
-     if (jobStatus === 'open') {
-  return (
-    <div className="flex flex-col gap-3 w-full mt-5">
-      <button
-        onClick={() => {
-          openChat();
-          setHasUnread(false);
-          setUnreadCount(0);
-        }}
-        className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
-      >
-        <MessageCircle size={18} className="text-emerald-600" />
-        Chatear
+      if (jobStatus === 'open') {
+        return (
+          <div className="flex flex-col gap-3 w-full mt-5">
+            <button
+              onClick={() => {
+                openChat();
+                setHasUnread(false);
+                setUnreadCount(0);
+              }}
+              className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
+            >
+              <MessageCircle size={18} className="text-emerald-600" />
+              Chatear
 
-        {unreadCount > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
-        )}
-      </button>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
 
-      <button
-        onClick={cancelarPedido}
-        className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center justify-center gap-1"
-      >
-        <XCircle size={16} /> Cancelar pedido
-      </button>
-    </div>
-  );
-}
+            <button
+              onClick={cancelarPedido}
+              className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center justify-center gap-1"
+            >
+              <XCircle size={16} /> Cancelar pedido
+            </button>
+          </div>
+        );
+      }
 
       if (jobStatus === 'accepted' || jobStatus === 'assigned') {
-  return (
-    <div className="flex flex-col gap-3 w-full mt-5">
-      {/* Estado principal ultra claro */}
-      <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white px-4 py-4 text-center shadow-sm">
-        <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-600">
-          En camino
-        </div>
+        return (
+          <div className="flex flex-col gap-3 w-full mt-5">
+            <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white px-4 py-4 text-center shadow-sm">
+              <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-600">
+                En camino
+              </div>
 
-        <div className="mt-1 text-lg font-black text-gray-800">
-          {selected?.full_name || 'Tu profesional'} ya viene hacia vos
-        </div>
+              <div className="mt-1 text-lg font-black text-gray-800">
+                {selected?.full_name || 'Tu profesional'} ya viene hacia vos
+              </div>
 
-        <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
-          {Number.isFinite(km) && (
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[12px] font-extrabold">
-              📍 {formatKm(km)}
-            </span>
-          )}
+              <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
+                {Number.isFinite(km) && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[12px] font-extrabold">
+                    📍 {formatKm(km)}
+                  </span>
+                )}
 
-          {etaMinutes != null && (
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-700 text-[12px] font-extrabold">
-              ⏱ {etaMinutes} min aprox
-            </span>
-          )}
-        </div>
+                {etaMinutes != null && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-700 text-[12px] font-extrabold">
+                    ⏱ {etaMinutes} min aprox
+                  </span>
+                )}
+              </div>
 
-        <p className="mt-2 text-xs text-gray-500">
-          Mirá el mapa para seguir su llegada en tiempo real.
-        </p>
-      </div>
+              <p className="mt-2 text-xs text-gray-500">
+                Mirá el mapa para seguir su llegada en tiempo real.
+              </p>
+            </div>
 
-      {/* Acción principal */}
-      <button
-        onClick={verTrabajadorViniendo}
-        className="
-          relative overflow-hidden
-          px-6 py-4 rounded-2xl
-          bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600
-          text-white font-extrabold text-[15px]
-          flex items-center justify-center gap-2
-          shadow-[0_18px_35px_rgba(16,185,129,0.28)]
-          active:scale-[0.98] transition
-        "
-      >
-        <span className="absolute inset-0 opacity-60">
-          <span className="absolute -left-10 top-0 h-full w-10 rotate-12 bg-white/25 blur-md animate-[ctaShine_2.6s_ease-in-out_infinite]" />
-        </span>
-        <span className="relative z-10">📍 Ver llegada en el mapa</span>
-      </button>
+            <button
+              onClick={verTrabajadorViniendo}
+              className="relative overflow-hidden px-6 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white font-extrabold text-[15px] flex items-center justify-center gap-2 shadow-[0_18px_35px_rgba(16,185,129,0.28)] active:scale-[0.98] transition"
+            >
+              <span className="absolute inset-0 opacity-60">
+                <span className="absolute -left-10 top-0 h-full w-10 rotate-12 bg-white/25 blur-md animate-[ctaShine_2.6s_ease-in-out_infinite]" />
+              </span>
+              <span className="relative z-10">📍 Ver llegada en el mapa</span>
+            </button>
 
-      {/* Acciones secundarias simplificadas */}
-      <div className="grid grid-cols-2 gap-3">
-       <button
-  onClick={() => {
-    openChat();
-    setHasUnread(false);
-    setUnreadCount(0);
-  }}
-  className="
-    relative px-4 py-3 rounded-2xl
-    border-2 border-emerald-300 bg-white
-    text-emerald-700 font-bold
-    flex items-center justify-center gap-2
-    shadow-sm active:scale-[0.98] transition
-  "
->
-  <MessageCircle size={18} className="text-emerald-600" />
-  Chatear
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  openChat();
+                  setHasUnread(false);
+                  setUnreadCount(0);
+                }}
+                className="relative px-4 py-3 rounded-2xl border-2 border-emerald-300 bg-white text-emerald-700 font-bold flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition"
+              >
+                <MessageCircle size={18} className="text-emerald-600" />
+                Chatear
 
-  {unreadCount > 0 && (
-    <>
-      <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
-        {unreadCount > 99 ? '99+' : unreadCount}
-      </span>
-    </>
-  )}
-</button>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
 
-        <button
-          onClick={cancelarPedido}
-          className="
-            px-4 py-3 rounded-2xl
-            bg-red-500 text-white font-bold
-            flex items-center justify-center gap-2
-            shadow-sm active:scale-[0.98] transition
-          "
-        >
-          <XCircle size={16} />
-          Cancelar
-        </button>
-      </div>
+              <button
+                onClick={cancelarPedido}
+                className="px-4 py-3 rounded-2xl bg-red-500 text-white font-bold flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition"
+              >
+                <XCircle size={16} />
+                Cancelar
+              </button>
+            </div>
 
-      <button
-        onClick={finalizarPedido}
-        className="
-          px-6 py-3 rounded-2xl
-          bg-gray-900 text-white font-bold
-          flex items-center justify-center gap-2
-          shadow-[0_12px_26px_rgba(17,24,39,0.18)]
-          active:scale-[0.98] transition
-        "
-      >
-        <CheckCircle2 size={16} />
-        Finalizar trabajo
-      </button>
-    </div>
-  );
-}
+            <button
+              onClick={finalizarPedido}
+              className="px-6 py-3 rounded-2xl bg-gray-900 text-white font-bold flex items-center justify-center gap-2 shadow-[0_12px_26px_rgba(17,24,39,0.18)] active:scale-[0.98] transition"
+            >
+              <CheckCircle2 size={16} />
+              Finalizar trabajo
+            </button>
+          </div>
+        );
+      }
 
       return null;
     };
@@ -4281,28 +4820,28 @@ useEffect(() => {
 
             <div className="grid grid-cols-2 gap-2 mt-4">
               <button
-  onClick={() => {
-    openChat();
-    setHasUnread(false);
-    setUnreadCount(0);
-  }}
-  className="relative px-4 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
->
-  <MessageCircle size={18} className="text-emerald-600" />
-  Chatear
-  {unreadCount > 0 && (
-    <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
-      {unreadCount > 99 ? '99+' : unreadCount}
-    </span>
-  )}
-</button>
+                onClick={() => {
+                  openChat();
+                  setHasUnread(false);
+                  setUnreadCount(0);
+                }}
+                className="relative px-4 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
+              >
+                <MessageCircle size={18} className="text-emerald-600" />
+                Chatear
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
 
               <button
-  onClick={() => setProfileSheetMode('full')}
-  className="px-4 py-3 rounded-2xl bg-gray-100 text-gray-700 font-semibold"
->
-  Ver detalles
-</button>
+                onClick={() => setProfileSheetMode('full')}
+                className="px-4 py-3 rounded-2xl bg-gray-100 text-gray-700 font-semibold"
+              >
+                Ver detalles
+              </button>
 
               <button
                 onClick={cancelarPedido}
@@ -4352,27 +4891,29 @@ useEffect(() => {
               </div>
 
               <h2 className="font-bold text-lg">{selected.full_name}</h2>
-              <div className="flex flex-wrap justify-center gap-2 mt-3">
-  <span
-    className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border ${
-      isOnlineRecent(selected)
-        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-        : 'bg-slate-50 text-slate-600 border-slate-200'
-    }`}
-  >
-    {isOnlineRecent(selected) ? '🟢 En línea' : '🕘 No reciente'}
-  </span>
 
-  {distanceToSelectedKm != null ? (
-    <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-cyan-50 text-cyan-700 border-cyan-200">
-      📍 {formatKm(distanceToSelectedKm)}
-    </span>
-  ) : (
-    <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-slate-50 text-slate-500 border-slate-200">
-      📍 Sin distancia
-    </span>
-  )}
-</div>
+              <div className="flex flex-wrap justify-center gap-2 mt-3">
+                <span
+                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border ${
+                    isOnlineRecent(selected)
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-slate-50 text-slate-600 border-slate-200'
+                  }`}
+                >
+                  {isOnlineRecent(selected) ? '🟢 En línea' : '🕘 No reciente'}
+                </span>
+
+                {distanceToSelectedKm != null ? (
+                  <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-cyan-50 text-cyan-700 border-cyan-200">
+                    📍 {formatKm(distanceToSelectedKm)}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-slate-50 text-slate-500 border-slate-200">
+                    📍 Sin distancia
+                  </span>
+                )}
+              </div>
+
               <p className="text-sm italic text-gray-500 mb-2">
                 “{selected.bio || 'Sin descripción'}”
               </p>
@@ -4441,21 +4982,73 @@ useEffect(() => {
                 </div>
               )}
 
-              <div className="mt-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Especialidades</h3>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {skillsList.map((skill, i) => (
-                    <span
-                      key={i}
-                      className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium text-sm shadow-sm border border-emerald-200"
-                    >
-                      {String(skill).trim()}
-                    </span>
-                  ))}
+              <div className="mt-5">
+                <p className="text-center text-[15px] font-semibold text-slate-700">
+                  Especialidades
+                </p>
+
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  {selectedWorkerServices.map((item) => {
+                    const active = selectedServiceResolved === item.slug;
+
+                    return (
+                      <button
+                        key={item.slug}
+                        type="button"
+                        onClick={() => setSelectedService(item.slug)}
+                        className={[
+                          'rounded-full px-4 py-2 text-[14px] font-semibold transition-all duration-200',
+                          active
+                            ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-[0_10px_22px_rgba(16,185,129,0.22)]'
+                            : 'border border-emerald-200 bg-[#dff8ee] text-emerald-700 hover:-translate-y-[1px] hover:border-emerald-300 hover:bg-[#d7f5e9]',
+                        ].join(' ')}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
                 </div>
+
+                {selectedWorkerServices.length > 1 && !selectedServiceResolved && (
+                  <p className="mt-3 text-center text-[12px] font-medium text-slate-500">
+                    Elegí una especialidad para continuar
+                  </p>
+                )}
               </div>
 
               <div className="mt-3">{jobId && <StatusBadge />}</div>
+
+              {selectedServiceResolved && (
+                <div className="mt-4 rounded-[22px] border border-emerald-200/70 bg-gradient-to-br from-white via-[#f7fffc] to-[#eefcf6] px-4 py-4 shadow-[0_12px_30px_rgba(16,185,129,0.10)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700/70">
+                        Servicio elegido
+                      </p>
+                      <h3 className="mt-1 text-[17px] font-extrabold text-slate-900">
+                        {selectedServiceCatalogMeta?.name || selectedServiceResolved}
+                      </h3>
+                      <p className="mt-1 text-[13px] leading-5 text-slate-600">
+                        {selectedServiceMeta?.helper_text || 'Coordiná los detalles con el profesional.'}
+                      </p>
+                    </div>
+
+                    <span className="shrink-0 rounded-full bg-emerald-500/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-emerald-700">
+                      {selectedServiceMeta?.badge || 'Servicio'}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
+                      {selectedServiceCatalogMeta?.base_label || 'Servicio'}
+                    </span>
+
+                    <span className="rounded-full bg-[#dff8ee] px-3 py-1 text-[11px] font-bold text-emerald-700">
+                      {selectedServiceMeta?.action_label || 'Solicitar servicio'}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {renderActionButtons()}
             </div>
@@ -4466,70 +5059,140 @@ useEffect(() => {
   })()}
 </AnimatePresence>
 {/* 💵 MODAL INFORMACIÓN DE SOLICITUD — SIN PRECIOS FIJOS AÚN */}
+{/* 💵 MODAL SOLICITUD / AGENDAMIENTO */}
 <AnimatePresence>
   {showPrice && (
     <motion.div
       key="modal-precio"
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[10010]"
+      className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <motion.div
-        className="bg-gradient-to-br from-white to-emerald-50 rounded-3xl w-[85%] max-w-md p-7 shadow-2xl text-center border border-emerald-100"
-        initial={{ scale: 0.9, y: 50 }}
+        className="w-full max-w-md rounded-[28px] border border-emerald-100 bg-gradient-to-br from-white via-[#fbfffd] to-emerald-50 p-6 shadow-2xl"
+        initial={{ scale: 0.94, y: 40 }}
         animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.9, y: 50 }}
-        transition={{ type: 'spring', stiffness: 120, damping: 18 }}
+        exit={{ scale: 0.94, y: 40 }}
+        transition={{ type: 'spring', stiffness: 140, damping: 20 }}
       >
-        {/* 🧠 Encabezado */}
-        <h3 className="text-lg font-bold text-emerald-700 mb-1">
-          Estás a un paso de tu solución ✨
-        </h3>
-
-        <p className="text-sm text-gray-500 mb-5">
-          Enviá tu solicitud ahora y conectate con un profesional cerca tuyo.
-        </p>
-
-        {/* 📢 Estado actual de precios */}
-        <div className="rounded-2xl border border-emerald-200 bg-white p-4 mb-5 shadow-sm">
-          <p className="text-2xl font-extrabold text-emerald-600 mb-1">
-            Solicitud sin costo
+        <div className="text-center">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-emerald-700/70">
+            ManosYA
           </p>
-          <p className="text-xs text-gray-500">
-            Todavía estamos en etapa de reclutamiento y activación de profesionales.
+
+          <h3 className="mt-1 text-xl font-extrabold text-slate-900">
+            {selectedServiceMeta?.pricing_type === 'booking'
+              ? 'Agendar servicio'
+              : 'Confirmar solicitud'}
+          </h3>
+
+          <p className="mt-2 text-sm leading-5 text-slate-600">
+            {selectedServiceMeta?.helper_text || 'Revisá los detalles antes de enviar tu solicitud.'}
           </p>
         </div>
 
-        {/* 🧩 Explicación clara para clientes */}
-        <div className="text-sm text-gray-600 space-y-2 mb-6 text-left">
-          <p>✅ Ya podés explorar profesionales y enviar tu solicitud.</p>
-          <p>🛠️ Las tarifas oficiales se activarán después del reclutamiento.</p>
-          <p>📲 Muy pronto vas a ver precios claros antes de confirmar cada servicio.</p>
-          <p>🚀 Estamos preparando una experiencia más rápida, transparente y profesional para vos.</p>
+        <div className="mt-5 rounded-2xl border border-emerald-100 bg-white/90 p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                Profesional
+              </p>
+              <p className="mt-1 text-base font-extrabold text-slate-900">
+                {selected?.full_name || 'Trabajador'}
+              </p>
+              <p className="mt-1 text-sm text-emerald-700 font-semibold">
+                {selectedServiceCatalogMeta?.name || selectedServiceResolved || 'Servicio'}
+              </p>
+            </div>
+
+            <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-emerald-700">
+              {selectedServiceMeta?.badge || 'Servicio'}
+            </span>
+          </div>
         </div>
 
-        {/* 🔘 Botones CTA */}
-        <div className="flex justify-center gap-3">
+        {selectedServiceMeta?.pricing_type === 'booking' ? (
+          <div className="mt-5 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1.5 block text-[12px] font-bold text-slate-700">
+                  Fecha
+                </span>
+                <input
+                  type="date"
+                  value={bookingDate}
+                  min={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setBookingDate(e.target.value)}
+                  className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-[12px] font-bold text-slate-700">
+                  Hora
+                </span>
+                <input
+                  type="time"
+                  value={bookingTime}
+                  onChange={(e) => setBookingTime(e.target.value)}
+                  className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                />
+              </label>
+            </div>
+
+            <label className="block">
+              <span className="mb-1.5 block text-[12px] font-bold text-slate-700">
+                Detalles para el trabajador
+              </span>
+              <textarea
+                value={bookingNotes}
+                onChange={(e) => setBookingNotes(e.target.value)}
+                rows={3}
+                placeholder="Ej.: cumpleaños, reunión, cantidad de personas, dirección exacta o detalles importantes."
+                className="w-full resize-none rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+              />
+            </label>
+
+            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-4 py-3 text-left">
+              <p className="text-[12px] font-bold text-cyan-800">
+                El trabajador recibirá tu fecha y hora solicitada.
+              </p>
+              <p className="mt-1 text-[12px] leading-5 text-cyan-700">
+                Luego podrá aceptar o rechazar según su disponibilidad y agenda.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-emerald-200 bg-white px-4 py-4 text-center shadow-sm">
+            <p className="text-2xl font-extrabold text-emerald-600">
+              Solicitud sin costo
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Enviás la solicitud y el profesional recibe tu pedido para responder.
+            </p>
+          </div>
+        )}
+
+        <div className="mt-6 flex items-center gap-3">
           <button
-            onClick={() => setShowPrice(false)}
-            className="py-3 w-1/2 rounded-xl bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition"
+            onClick={() => {
+              setShowPrice(false);
+            }}
+            className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700"
           >
-            Volver
+            Cerrar
           </button>
 
           <button
             onClick={confirmarSolicitud}
-            className="py-3 w-1/2 rounded-xl bg-emerald-500 text-white font-semibold shadow-md hover:bg-emerald-600 active:scale-[0.98] transition"
+            className="flex-1 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-4 py-3 text-sm font-extrabold text-white shadow-[0_14px_30px_rgba(16,185,129,0.24)]"
           >
-            Enviar solicitud
+            {selectedServiceMeta?.pricing_type === 'booking'
+              ? '📅 Confirmar agenda'
+              : '🚀 Enviar solicitud'}
           </button>
         </div>
-
-        {/* 💚 Refuerzo final */}
-        <p className="text-[11px] text-gray-400 mt-5 italic">
-          ManosYA se está preparando para ofrecerte una nueva forma de pedir servicios.
-        </p>
       </motion.div>
     </motion.div>
   )}

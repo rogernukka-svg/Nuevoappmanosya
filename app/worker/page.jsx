@@ -74,7 +74,60 @@ function jobStatusPill(status) {
 
   return 'bg-gray-50 text-gray-700 border border-gray-200';
 }
+function parseJobRequestDetails(description) {
+  const text = String(description || '');
 
+  const parts = text
+    .split(' · ')
+    .map((p) => String(p || '').trim())
+    .filter(Boolean);
+
+  const result = {
+    raw: text,
+    summary: [],
+    serviceLabel: null,
+    requestedDate: null,
+    requestedTime: null,
+    notes: null,
+    requestKind: 'standard',
+  };
+
+  for (const part of parts) {
+    if (part.startsWith('Servicio:')) {
+      result.serviceLabel = part.replace('Servicio:', '').trim();
+      continue;
+    }
+
+    if (part.startsWith('Fecha solicitada:')) {
+      result.requestedDate = part.replace('Fecha solicitada:', '').trim();
+      result.requestKind = 'booking';
+      continue;
+    }
+
+    if (part.startsWith('Hora solicitada:')) {
+      result.requestedTime = part.replace('Hora solicitada:', '').trim();
+      result.requestKind = 'booking';
+      continue;
+    }
+
+    if (part.startsWith('Notas:')) {
+      result.notes = part.replace('Notas:', '').trim();
+      continue;
+    }
+
+    result.summary.push(part);
+  }
+
+  if (
+    !result.requestedDate &&
+    !result.requestedTime &&
+    /presupuesto|cotización|cotizacion|diagnóstico|diagnostico/i.test(text)
+  ) {
+    result.requestKind = 'quote';
+  }
+
+  return result;
+}
 function workerModeMeta(status) {
   if (status === 'available') {
     return {
@@ -618,22 +671,21 @@ const sheetSnapMeta = useMemo(() => {
       setLoading(true);
 
       const { data: jobsData, error: jobsErr } = await supabase
-        .from('jobs')
-        .select(`
-          id,
-          title,
-          description,
-          status,
-          client_id,
-          worker_id,
-          client_lat,
-          client_lng,
-          created_at,
-          service_type,
-          price
-        `)
-        .or(`status.eq.open,worker_id.eq.${workerId}`)
-        .order('created_at', { ascending: false });
+  .from('jobs')
+  .select(`
+    id,
+    title,
+    description,
+    status,
+    client_id,
+    worker_id,
+    client_lat,
+    client_lng,
+    created_at,
+    service_type
+  `)
+  .or(`status.eq.open,worker_id.eq.${workerId}`)
+  .order('created_at', { ascending: false });
 
       if (jobsErr) throw jobsErr;
 
@@ -1458,185 +1510,253 @@ setUnreadCount(0);
           </div>
         ) : (
           <section className="grid gap-4 mt-5">
-            {jobs.map((job, index) => (
-              <motion.div
-                key={job.id}
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.04 }}
-                whileHover={{ y: -2 }}
-                className="relative overflow-hidden rounded-[28px] border border-gray-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.06)]"
-              >
-                <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
+            {jobs.map((job, index) => {
+  const details = parseJobRequestDetails(job.description);
 
-                <div className="relative z-10">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                        <span className="text-[12px] font-semibold text-gray-400 uppercase tracking-wide">
-                          {prettyStatus(job.status)}
-                        </span>
-                      </div>
+  return (
+    <motion.div
+      key={job.id}
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.04 }}
+      whileHover={{ y: -2 }}
+      className="relative overflow-hidden rounded-[28px] border border-gray-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.06)]"
+    >
+      <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
 
-                      <h3 className="text-lg font-extrabold text-gray-800 leading-tight">
-                        {job?.client?.full_name ? `Trabajo con ${job.client.full_name}` : job.title || 'Trabajo de servicio'}
-                      </h3>
+      <div className="relative z-10">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              <span className="text-[12px] font-semibold text-gray-400 uppercase tracking-wide">
+                {prettyStatus(job.status)}
+              </span>
 
-                      <p className="mt-2 text-sm text-gray-500 leading-relaxed">
-                        {job.description || 'Pedido generado desde el mapa'}
-                      </p>
-                    </div>
+              {details.requestKind === 'booking' && (
+                <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-cyan-700 border border-cyan-200">
+                  Con agenda
+                </span>
+              )}
 
-                    <span className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-bold ${jobStatusPill(job.status)}`}>
-                      {prettyStatus(job.status)}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-                    <MiniInfo
-                      icon={<BadgeCheck size={14} />}
-                      label="Servicio"
-                      value={job.service_type || 'Servicio general'}
-                    />
-                    <MiniInfo
-                      icon={<Clock3 size={14} />}
-                      label="Tarifa"
-                      value={job.price ? `₲${Number(job.price).toLocaleString('es-PY')} / hora` : 'A definir'}
-                    />
-                  </div>
-
-                  {job.client && (
-                    <div className="mt-4 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-cyan-50/50 p-3">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={job.client?.avatar_url || '/avatar-fallback.png'}
-                          alt={job.client?.full_name || 'Cliente'}
-                          className="w-12 h-12 rounded-full border-2 border-emerald-400 object-cover"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="font-bold text-gray-800 truncate">
-                            {job.client?.full_name || 'Cliente'}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            Cliente asignado al servicio
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {job.status === 'open' && (
-                    <div className="grid grid-cols-2 gap-3 mt-4">
-                      <button
-                        onClick={() => acceptJob(job)}
-                        className="rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-400 text-white py-3 font-extrabold shadow-[0_16px_34px_rgba(16,185,129,0.20)] hover:from-emerald-600 hover:to-cyan-500 transition"
-                      >
-                        Aceptar
-                      </button>
-                      <button
-                        onClick={() => rejectJob(job)}
-                        className="rounded-2xl bg-gray-100 text-gray-700 py-3 font-bold hover:bg-gray-200 transition"
-                      >
-                        Rechazar
-                      </button>
-                    </div>
-                  )}
-
-                {job.status === 'accepted' && (
-  <div className="mt-5">
-    <div className="overflow-hidden rounded-[28px] border border-gray-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(248,250,252,0.98)_100%)] shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-      <div className="px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">
-              Acción principal
+              {details.requestKind === 'quote' && (
+                <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-amber-700 border border-amber-200">
+                  Presupuesto
+                </span>
+              )}
             </div>
-            <div className="mt-1 text-[15px] font-extrabold text-gray-900">
-              Seguimiento del servicio
-            </div>
+
+            <h3 className="text-lg font-extrabold text-gray-800 leading-tight">
+              {job?.client?.full_name
+                ? `Trabajo con ${job.client.full_name}`
+                : job.title || 'Trabajo de servicio'}
+            </h3>
+
+            <p className="mt-1 text-sm font-semibold text-emerald-700">
+              {details.serviceLabel || job.service_type || 'Servicio general'}
+            </p>
+
+            {details.summary.length > 0 && (
+              <p className="mt-2 text-sm text-gray-500 leading-relaxed">
+                {details.summary.join(' · ')}
+              </p>
+            )}
           </div>
 
-          <div className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-[11px] font-bold text-cyan-700">
-            En curso
-          </div>
+          <span className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-bold ${jobStatusPill(job.status)}`}>
+            {prettyStatus(job.status)}
+          </span>
         </div>
 
-        <button
-          onClick={() => {
-            setSelectedJob(job);
-            openGoogleMaps(job.client_lat, job.client_lng);
-          }}
-          className="group mt-4 relative w-full overflow-hidden rounded-[24px] bg-gradient-to-r from-slate-900 via-emerald-700 to-cyan-500 px-4 py-4 text-left text-white shadow-[0_18px_40px_rgba(16,185,129,0.22)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_24px_46px_rgba(16,185,129,0.28)] active:scale-[0.99]"
-        >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.18),transparent_38%)] opacity-80" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+          <MiniInfo
+            icon={<BadgeCheck size={14} />}
+            label="Servicio"
+            value={details.serviceLabel || job.service_type || 'Servicio general'}
+          />
+          <MiniInfo
+  icon={<Clock3 size={14} />}
+  label="Tarifa"
+  value={
+    details.requestKind === 'quote'
+      ? 'A presupuestar'
+      : details.requestKind === 'booking'
+      ? 'Agendado por cliente'
+      : 'A definir'
+  }
+/>
+        </div>
 
-          <div className="relative flex items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/16 backdrop-blur-md ring-1 ring-white/20">
-              <Map size={20} />
+        {(details.requestedDate || details.requestedTime) && (
+          <div className="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4">
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-cyan-700">
+              Agenda solicitada
             </div>
 
-            <div className="min-w-0 flex-1">
-              <div className="text-[16px] font-extrabold tracking-tight">
-                Ver ruta y detalles
-              </div>
-              <div className="mt-0.5 text-[12px] text-white/80">
-                Abrí la vista premium del servicio dentro de ManosYA
-              </div>
-            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {details.requestedDate && (
+                <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-[12px] font-bold text-cyan-700">
+                  📅 {details.requestedDate}
+                </span>
+              )}
 
-            <div className="text-white/80 transition-transform duration-200 group-hover:translate-x-0.5">
-              <MapPin size={18} />
+              {details.requestedTime && (
+                <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-[12px] font-bold text-cyan-700">
+                  ⏰ {details.requestedTime}
+                </span>
+              )}
             </div>
           </div>
-        </button>
-      </div>
+        )}
 
-      <div className="grid grid-cols-2 gap-3 border-t border-gray-100 px-4 py-4">
-       <button
-  onClick={() => openChat(job)}
-  className="group relative rounded-[22px] border border-gray-200 bg-white px-4 py-3.5 text-gray-800 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:bg-emerald-50/60 active:scale-[0.99]"
->
-  <div className="flex items-center justify-center gap-2">
-    <div className="relative">
-      <MessageCircle
-        size={17}
-        className="text-gray-600 transition-colors group-hover:text-emerald-700"
-      />
-
-      {hasUnread && unreadCount > 0 && (
-        <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-extrabold text-white shadow-[0_8px_18px_rgba(239,68,68,0.35)] ring-2 ring-white">
-          {unreadCount > 99 ? '99+' : unreadCount}
-        </span>
-      )}
-    </div>
-
-    <span className="text-[14px] font-extrabold">Chat</span>
-  </div>
-</button>
-
-        <button
-          onClick={() => completeJob(job)}
-          className="group rounded-[22px] border border-emerald-200 bg-emerald-600 px-4 py-3.5 text-white shadow-[0_14px_30px_rgba(16,185,129,0.20)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-emerald-700 hover:shadow-[0_18px_36px_rgba(16,185,129,0.24)] active:scale-[0.99]"
-        >
-          <div className="flex items-center justify-center gap-2">
-            <CheckSquare size={17} className="text-white" />
-            <span className="text-[14px] font-extrabold">Finalizar</span>
+        {details.notes && (
+          <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-emerald-700">
+              Detalles del cliente
+            </div>
+            <p className="mt-2 text-sm leading-6 text-gray-700">
+              {details.notes}
+            </p>
           </div>
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+        )}
 
-                  {job.status === 'completed' && (
-                    <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 py-3 text-center text-emerald-700 font-bold">
-                      ✅ Trabajo finalizado
-                    </div>
-                  )}
+        {job.client && (
+          <div className="mt-4 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-cyan-50/50 p-3">
+            <div className="flex items-center gap-3">
+              <img
+                src={job.client?.avatar_url || '/avatar-fallback.png'}
+                onError={(e) => {
+                  e.currentTarget.src = '/avatar-fallback.png';
+                }}
+                alt={job.client?.full_name || 'Cliente'}
+                className="w-12 h-12 rounded-full border-2 border-emerald-400 object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="font-bold text-gray-800 truncate">
+                  {job.client?.full_name || 'Cliente'}
                 </div>
-              </motion.div>
-            ))}
+                <div className="text-xs text-gray-500 mt-0.5">
+                  Cliente asignado al servicio
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {job.status === 'open' && (
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <button
+              onClick={() => acceptJob(job)}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-400 text-white py-3 font-extrabold shadow-[0_16px_34px_rgba(16,185,129,0.20)] hover:from-emerald-600 hover:to-cyan-500 transition"
+            >
+              {details.requestKind === 'booking'
+                ? '📅 Aceptar agenda'
+                : '✅ Aceptar'}
+            </button>
+            <button
+              onClick={() => rejectJob(job)}
+              className="rounded-2xl bg-gray-100 text-gray-700 py-3 font-bold hover:bg-gray-200 transition"
+            >
+              Rechazar
+            </button>
+          </div>
+        )}
+
+        {job.status === 'accepted' && (
+          <div className="mt-5">
+            <div className="overflow-hidden rounded-[28px] border border-gray-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(248,250,252,0.98)_100%)] shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+              <div className="px-4 pt-4 pb-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">
+                      Acción principal
+                    </div>
+                    <div className="mt-1 text-[15px] font-extrabold text-gray-900">
+                      Seguimiento del servicio
+                    </div>
+                  </div>
+
+                  <div className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-[11px] font-bold text-cyan-700">
+                    En curso
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setSelectedJob(job);
+                    openGoogleMaps(job.client_lat, job.client_lng);
+                  }}
+                  className="group mt-4 relative w-full overflow-hidden rounded-[24px] bg-gradient-to-r from-slate-900 via-emerald-700 to-cyan-500 px-4 py-4 text-left text-white shadow-[0_18px_40px_rgba(16,185,129,0.22)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_24px_46px_rgba(16,185,129,0.28)] active:scale-[0.99]"
+                >
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.18),transparent_38%)] opacity-80" />
+
+                  <div className="relative flex items-center gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/16 backdrop-blur-md ring-1 ring-white/20">
+                      <Map size={20} />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[16px] font-extrabold tracking-tight">
+                        Ver ruta y detalles
+                      </div>
+                      <div className="mt-0.5 text-[12px] text-white/80">
+                        Abrí la vista premium del servicio dentro de ManosYA
+                      </div>
+                    </div>
+
+                    <div className="text-white/80 transition-transform duration-200 group-hover:translate-x-0.5">
+                      <MapPin size={18} />
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 border-t border-gray-100 px-4 py-4">
+                <button
+                  onClick={() => openChat(job)}
+                  className="group relative rounded-[22px] border border-gray-200 bg-white px-4 py-3.5 text-gray-800 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:bg-emerald-50/60 active:scale-[0.99]"
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="relative">
+                      <MessageCircle
+                        size={17}
+                        className="text-gray-600 transition-colors group-hover:text-emerald-700"
+                      />
+
+                      {hasUnread && unreadCount > 0 && (
+                        <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-extrabold text-white shadow-[0_8px_18px_rgba(239,68,68,0.35)] ring-2 ring-white">
+                          {unreadCount > 99 ? '99+' : unreadCount}
+                        </span>
+                      )}
+                    </div>
+
+                    <span className="text-[14px] font-extrabold">Chat</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => completeJob(job)}
+                  className="group rounded-[22px] border border-emerald-200 bg-emerald-600 px-4 py-3.5 text-white shadow-[0_14px_30px_rgba(16,185,129,0.20)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-emerald-700 hover:shadow-[0_18px_36px_rgba(16,185,129,0.24)] active:scale-[0.99]"
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <CheckSquare size={17} className="text-white" />
+                    <span className="text-[14px] font-extrabold">Finalizar</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {job.status === 'completed' && (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 py-3 text-center text-emerald-700 font-bold">
+            ✅ Trabajo finalizado
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+})}
           </section>
         )}
 
@@ -1693,24 +1813,38 @@ setUnreadCount(0);
   </div>
 )}
                 </div>
+{selectedJob && (() => {
+  const details = parseJobRequestDetails(selectedJob.description);
 
-                {(selectedJob?.service_type || selectedJob?.price) && (
-                  <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-emerald-50 to-cyan-50 text-sm font-semibold text-gray-700 flex items-center justify-between gap-3">
-                    <span className="truncate">
-                      {selectedJob?.service_type
-                        ? `Servicio: ${
-                            selectedJob.service_type.charAt(0).toUpperCase() +
-                            selectedJob.service_type.slice(1)
-                          }`
-                        : 'Servicio'}
-                    </span>
-                    {selectedJob?.price && (
-                      <span className="text-emerald-700 font-extrabold whitespace-nowrap">
-                        ₲{Number(selectedJob.price).toLocaleString('es-PY')} / hora
-                      </span>
-                    )}
-                  </div>
-                )}
+  return (
+    <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-emerald-50 to-cyan-50 text-sm text-gray-700">
+      <div className="font-extrabold text-emerald-700">
+        {details.serviceLabel || selectedJob?.service_type || 'Servicio'}
+      </div>
+
+      {(details.requestedDate || details.requestedTime) && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {details.requestedDate && (
+            <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-[11px] font-bold text-cyan-700">
+              📅 {details.requestedDate}
+            </span>
+          )}
+          {details.requestedTime && (
+            <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-[11px] font-bold text-cyan-700">
+              ⏰ {details.requestedTime}
+            </span>
+          )}
+        </div>
+      )}
+
+      {details.notes && (
+        <p className="mt-2 text-[12px] leading-5 text-gray-600">
+          {details.notes}
+        </p>
+      )}
+    </div>
+  );
+})()}
 
                 <div className="flex flex-col h-[70vh] bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]">
                   <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
