@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import {
   Search,
   Sparkles,
@@ -47,7 +48,7 @@ function highlightText(text, query) {
     part.toLowerCase() === q.toLowerCase() ? (
       <mark
         key={idx}
-        className="rounded-md bg-emerald-400/20 px-1 py-0.5 text-emerald-200"
+        className="rounded-md bg-[#E8E250]/25 px-1 py-0.5 text-[#F8F38A]"
       >
         {part}
       </mark>
@@ -217,13 +218,13 @@ export default function PadronSociosPage() {
   const quickTips = ['2627', 'noguera', 'rojas', 'ramon', 'maria elena', '158'];
 
   return (
-    <div className="min-h-screen bg-[#06111A] text-white">
+    <div className="min-h-screen bg-[#0b1109] text-white">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.10),transparent_30%),radial-gradient(circle_at_right,rgba(6,182,212,0.10),transparent_28%),linear-gradient(180deg,#06111A_0%,#07131D_45%,#06111A_100%)]" />
-        <div className="absolute left-[-10%] top-[-8%] h-72 w-72 rounded-full bg-emerald-500/20 blur-3xl md:h-96 md:w-96" />
-        <div className="absolute right-[-15%] top-[8%] h-72 w-72 rounded-full bg-cyan-500/20 blur-3xl md:h-[28rem] md:w-[28rem]" />
-        <div className="absolute bottom-[-12%] left-[18%] h-72 w-72 rounded-full bg-teal-500/10 blur-3xl md:h-96 md:w-96" />
-        <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,0.16)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.16)_1px,transparent_1px)] [background-size:26px_26px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(232,226,80,0.10),transparent_24%),radial-gradient(circle_at_right,rgba(92,168,78,0.16),transparent_30%),linear-gradient(180deg,#0b1109_0%,#11180f_45%,#0a0f09_100%)]" />
+        <div className="absolute left-[-10%] top-[-8%] h-72 w-72 rounded-full bg-[#E8E250]/10 blur-3xl md:h-96 md:w-96" />
+        <div className="absolute right-[-15%] top-[8%] h-72 w-72 rounded-full bg-[#5DA74D]/20 blur-3xl md:h-[28rem] md:w-[28rem]" />
+        <div className="absolute bottom-[-12%] left-[18%] h-72 w-72 rounded-full bg-[#7AB85C]/10 blur-3xl md:h-96 md:w-96" />
+        <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(rgba(232,226,80,0.22)_1px,transparent_1px),linear-gradient(90deg,rgba(93,167,77,0.18)_1px,transparent_1px)] [background-size:26px_26px]" />
       </div>
 
       <main className="relative z-10 mx-auto w-full max-w-7xl px-3 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 lg:px-8">
@@ -231,30 +232,66 @@ export default function PadronSociosPage() {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.42 }}
-          className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.05] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.34)] backdrop-blur-xl sm:p-5 md:rounded-[32px] md:p-6"
+          className="overflow-hidden rounded-[28px] border border-[#E8E250]/10 bg-white/[0.04] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.38)] backdrop-blur-xl sm:p-5 md:rounded-[32px] md:p-6"
         >
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold text-emerald-300 sm:text-xs">
-              <Sparkles className="h-3.5 w-3.5" />
-              Padrón inteligente · ManosYA
-            </div>
+          <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
+              <motion.div
+                animate={{
+                  rotate: [0, 2, -2, 0],
+                  scale: [1, 1.035, 1],
+                  filter: [
+                    'drop-shadow(0 0 0px rgba(232,226,80,0.00))',
+                    'drop-shadow(0 0 20px rgba(232,226,80,0.22))',
+                    'drop-shadow(0 0 0px rgba(232,226,80,0.00))',
+                  ],
+                }}
+                transition={{
+                  duration: 4.5,
+                  repeat: Infinity,
+                  ease: 'easeInOut',
+                }}
+                className="relative"
+              >
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
+                  className="absolute inset-[-10px] rounded-full border border-dashed border-[#E8E250]/20"
+                />
+                <div className="relative rounded-[24px] border border-[#E8E250]/15 bg-gradient-to-br from-[#E8E250]/10 to-[#5DA74D]/10 p-2 shadow-[0_0_30px_rgba(93,167,77,0.18)]">
+                  <Image
+                    src="/cooplea-1.webp"
+                    alt="Logo Cooplea"
+                    width={120}
+                    height={120}
+                    priority
+                    className="h-16 w-auto sm:h-20 md:h-24"
+                  />
+                </div>
+              </motion.div>
 
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold text-cyan-200 sm:text-xs">
-              <Cpu className="h-3.5 w-3.5" />
-              Búsqueda predictiva
-            </div>
-          </div>
+              <div>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-[#E8E250]/20 bg-[#E8E250]/10 px-3 py-1 text-[11px] font-semibold text-[#F3EE8A] sm:text-xs">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Padrón inteligente
+                  </div>
 
-          <div className="grid gap-5 xl:grid-cols-[1.35fr_0.85fr] xl:items-end">
-            <div>
-              <h1 className="max-w-4xl text-2xl font-black tracking-tight text-white sm:text-3xl md:text-4xl xl:text-5xl">
-                Padrón tecnológico de socios habilitados
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65 md:text-base">
-                Buscá por nombre, apellido, número de socio o número de orden.
-                Diseño optimizado para móvil, tablet y escritorio, con lectura rápida,
-                sugerencias inteligentes y ficha dinámica.
-              </p>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-[#5DA74D]/20 bg-[#5DA74D]/10 px-3 py-1 text-[11px] font-semibold text-[#B9EA89] sm:text-xs">
+                    <Cpu className="h-3.5 w-3.5" />
+                    Cooplea · búsqueda predictiva
+                  </div>
+                </div>
+
+                <h1 className="max-w-4xl text-2xl font-black tracking-tight text-white sm:text-3xl md:text-4xl xl:text-5xl">
+                  Padrón tecnológico de socios habilitados
+                </h1>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-white/65 md:text-base">
+                  Buscá por nombre, apellido, número de socio o número de orden.
+                  Diseño optimizado para móvil, tablet y escritorio, con lectura rápida,
+                  sugerencias inteligentes y ficha dinámica.
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
@@ -265,15 +302,15 @@ export default function PadronSociosPage() {
           </div>
 
           <div className="mt-5 grid gap-4 xl:grid-cols-[1.35fr_0.85fr]">
-            <div className="rounded-[24px] border border-white/10 bg-black/20 p-3 sm:p-4">
+            <div className="rounded-[24px] border border-[#E8E250]/10 bg-black/20 p-3 sm:p-4">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-emerald-300/70" />
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#E8E250]/70" />
                 <input
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Buscar por nombre, apellido, socio o número..."
-                  className="h-14 w-full rounded-2xl border border-white/10 bg-[#08141F] pl-12 pr-12 text-sm text-white outline-none placeholder:text-white/35 focus:border-emerald-400/40"
+                  className="h-14 w-full rounded-2xl border border-[#E8E250]/10 bg-[#121910] pl-12 pr-12 text-sm text-white outline-none placeholder:text-white/35 focus:border-[#E8E250]/35"
                 />
                 {query && (
                   <button
@@ -290,7 +327,7 @@ export default function PadronSociosPage() {
                   <button
                     key={tip}
                     onClick={() => setQuery(tip)}
-                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-white/70 transition hover:bg-white/10 sm:text-xs"
+                    className="rounded-full border border-[#5DA74D]/15 bg-[#5DA74D]/10 px-3 py-1.5 text-[11px] text-[#DDF5B6] transition hover:bg-[#5DA74D]/18 sm:text-xs"
                   >
                     {tip}
                   </button>
@@ -302,10 +339,10 @@ export default function PadronSociosPage() {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   onClick={() => openItem(exactMatch)}
-                  className="mt-4 flex w-full items-center justify-between rounded-[20px] border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-left"
+                  className="mt-4 flex w-full items-center justify-between rounded-[20px] border border-[#E8E250]/20 bg-[#E8E250]/10 px-4 py-3 text-left"
                 >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-emerald-200/90">
+                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-[#F3EE8A]">
                       <CheckCircle2 className="h-4 w-4" />
                       Coincidencia exacta
                     </div>
@@ -313,14 +350,14 @@ export default function PadronSociosPage() {
                       {exactMatch.nombre_completo}
                     </div>
                   </div>
-                  <ChevronRight className="h-5 w-5 shrink-0 text-emerald-200" />
+                  <ChevronRight className="h-5 w-5 shrink-0 text-[#F3EE8A]" />
                 </motion.button>
               )}
             </div>
 
-            <div className="rounded-[24px] border border-white/10 bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 p-3 sm:p-4">
+            <div className="rounded-[24px] border border-[#5DA74D]/15 bg-gradient-to-br from-[#E8E250]/10 to-[#5DA74D]/12 p-3 sm:p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-bold text-white">
-                <Orbit className="h-4 w-4 text-cyan-300" />
+                <Orbit className="h-4 w-4 text-[#E8E250]" />
                 Predicción rápida
               </div>
 
@@ -333,7 +370,7 @@ export default function PadronSociosPage() {
                         setQuery(item.nombre_completo);
                         openItem(item);
                       }}
-                      className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-left transition hover:bg-white/[0.06]"
+                      className="flex w-full items-center justify-between rounded-2xl border border-[#E8E250]/10 bg-black/20 px-3 py-3 text-left transition hover:bg-white/[0.06]"
                     >
                       <div className="min-w-0">
                         <div className="truncate text-sm font-semibold text-white">
@@ -361,7 +398,7 @@ export default function PadronSociosPage() {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: ready ? 1 : 0, y: ready ? 0 : 18 }}
             transition={{ duration: 0.42, delay: 0.05 }}
-            className="rounded-[28px] border border-white/10 bg-white/[0.05] p-3 shadow-[0_24px_90px_rgba(0,0,0,0.28)] backdrop-blur-xl sm:p-4 md:p-5"
+            className="rounded-[28px] border border-[#E8E250]/10 bg-white/[0.04] p-3 shadow-[0_24px_90px_rgba(0,0,0,0.28)] backdrop-blur-xl sm:p-4 md:p-5"
           >
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -373,7 +410,7 @@ export default function PadronSociosPage() {
                 </p>
               </div>
 
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold text-emerald-200 sm:text-xs">
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[#E8E250]/10 bg-[#E8E250]/10 px-3 py-1 text-[11px] font-bold text-[#F3EE8A] sm:text-xs">
                 <Binary className="h-3.5 w-3.5" />
                 {cleanQuery ? `${ranked.length} detectados` : 'Modo exploración'}
               </div>
@@ -392,14 +429,14 @@ export default function PadronSociosPage() {
                     onClick={() => openItem(item)}
                     className={`group w-full rounded-[22px] border p-4 text-left transition ${
                       selected?.nro === item.nro && selected?.numero_socio === item.numero_socio
-                        ? 'border-emerald-400/30 bg-emerald-500/10'
-                        : 'border-white/10 bg-black/20 hover:-translate-y-[1px] hover:bg-white/[0.06]'
+                        ? 'border-[#E8E250]/30 bg-[#E8E250]/10'
+                        : 'border-[#5DA74D]/10 bg-black/20 hover:-translate-y-[1px] hover:bg-white/[0.06]'
                     }`}
                   >
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div className="min-w-0">
                         <div className="mb-2 flex items-start gap-2">
-                          <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-xl bg-emerald-500/15 px-2 text-xs font-black text-emerald-200">
+                          <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-xl bg-[#5DA74D]/18 px-2 text-xs font-black text-[#E8E250]">
                             {item.nro}
                           </span>
 
@@ -408,10 +445,10 @@ export default function PadronSociosPage() {
                               {highlightText(item.nombre_completo, query)}
                             </h3>
                             <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-white/55 sm:text-xs">
-                              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
+                              <span className="rounded-full border border-[#E8E250]/10 bg-white/5 px-2.5 py-1">
                                 Socio #{highlightText(item.numero_socio, query)}
                               </span>
-                              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
+                              <span className="rounded-full border border-[#5DA74D]/10 bg-white/5 px-2.5 py-1">
                                 Apellido: {highlightText(item.apellido, query)}
                               </span>
                             </div>
@@ -419,7 +456,7 @@ export default function PadronSociosPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 text-emerald-300">
+                      <div className="flex items-center gap-2 text-[#B9EA89]">
                         <ShieldCheck className="h-4 w-4" />
                         <span className="text-xs font-bold">Habilitado</span>
                       </div>
@@ -432,9 +469,9 @@ export default function PadronSociosPage() {
             {!cleanQuery && visibleCount < data.length && (
               <button
                 onClick={() => setVisibleCount((prev) => prev + 24)}
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[#E8E250]/10 bg-[#5DA74D]/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#5DA74D]/16"
               >
-                <Zap className="h-4 w-4" />
+                <Zap className="h-4 w-4 text-[#E8E250]" />
                 Ver más registros
               </button>
             )}
@@ -450,11 +487,11 @@ export default function PadronSociosPage() {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: ready ? 1 : 0, y: ready ? 0 : 18 }}
             transition={{ duration: 0.42, delay: 0.08 }}
-            className="rounded-[28px] border border-white/10 bg-white/[0.05] p-3 shadow-[0_24px_90px_rgba(0,0,0,0.28)] backdrop-blur-xl sm:p-4 md:p-5"
+            className="rounded-[28px] border border-[#E8E250]/10 bg-white/[0.04] p-3 shadow-[0_24px_90px_rgba(0,0,0,0.28)] backdrop-blur-xl sm:p-4 md:p-5"
           >
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold text-cyan-200 sm:text-xs">
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[#5DA74D]/20 bg-[#5DA74D]/10 px-3 py-1 text-[11px] font-semibold text-[#D7F1AE] sm:text-xs">
                   <Hash className="h-3.5 w-3.5" />
                   Ficha inteligente
                 </div>
@@ -475,16 +512,16 @@ export default function PadronSociosPage() {
 
             {selected ? (
               <div className="space-y-4">
-                <div className="rounded-[24px] border border-white/10 bg-gradient-to-br from-emerald-500/15 to-cyan-500/10 p-4 sm:p-5">
-                  <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10">
-                    <UserRound className="h-6 w-6 text-white" />
+                <div className="rounded-[24px] border border-[#E8E250]/12 bg-gradient-to-br from-[#E8E250]/10 to-[#5DA74D]/14 p-4 sm:p-5">
+                  <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-[#E8E250]/10 bg-white/10">
+                    <UserRound className="h-6 w-6 text-[#F3EE8A]" />
                   </div>
 
                   <div className="text-xl font-black leading-tight text-white sm:text-2xl">
                     {selected.nombre_completo}
                   </div>
 
-                  <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-bold text-emerald-200 sm:text-xs">
+                  <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-[#E8E250]/20 bg-[#E8E250]/10 px-3 py-1 text-[11px] font-bold text-[#F3EE8A] sm:text-xs">
                     <ShieldCheck className="h-3.5 w-3.5" />
                     Registro habilitado
                   </div>
@@ -497,7 +534,7 @@ export default function PadronSociosPage() {
 
                 <button
                   onClick={handleCopy}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-600"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5DA74D] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#6AB858]"
                 >
                   {copied ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                   {copied ? 'Copiado' : 'Copiar ficha'}
@@ -517,10 +554,10 @@ export default function PadronSociosPage() {
 
 function StatCard({ icon: Icon, label, value }) {
   return (
-    <div className="rounded-[22px] border border-white/10 bg-black/20 p-3 sm:p-4">
+    <div className="rounded-[22px] border border-[#E8E250]/10 bg-black/20 p-3 sm:p-4">
       <div className="mb-2 flex items-center justify-between">
-        <div className="rounded-xl bg-white/10 p-2">
-          <Icon className="h-4 w-4 text-emerald-300" />
+        <div className="rounded-xl bg-[#5DA74D]/14 p-2">
+          <Icon className="h-4 w-4 text-[#F3EE8A]" />
         </div>
       </div>
       <div className="text-xl font-black text-white sm:text-2xl">{value}</div>
@@ -531,7 +568,7 @@ function StatCard({ icon: Icon, label, value }) {
 
 function DetailCard({ label, value }) {
   return (
-    <div className="rounded-[20px] border border-white/10 bg-black/20 p-4">
+    <div className="rounded-[20px] border border-[#E8E250]/10 bg-black/20 p-4">
       <div className="text-[11px] uppercase tracking-[0.18em] text-white/40 sm:text-xs">
         {label}
       </div>

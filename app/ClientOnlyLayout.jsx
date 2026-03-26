@@ -28,7 +28,9 @@ export default function ClientOnlyLayout({ children }) {
 
   // 🔹 Rutas especiales (worker o business aisladas)
   const isIsolated =
-    pathname.startsWith('/worker') || pathname.startsWith('/business');
+  pathname.startsWith('/worker') ||
+  pathname.startsWith('/business') ||
+  pathname.startsWith('/padron');
 
   // 🔹 LOGIN / ROLE SELECTOR → sin fondo global
   if (isAuthRoute) {
