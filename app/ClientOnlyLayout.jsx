@@ -26,11 +26,12 @@ export default function ClientOnlyLayout({ children }) {
     pathname === '/role-selector' ||
     pathname === '/registro';
 
-  // 🔹 Rutas especiales (worker o business aisladas)
+  // 🔹 Rutas especiales (worker, business, padrón y admin aisladas)
   const isIsolated =
-  pathname.startsWith('/worker') ||
-  pathname.startsWith('/business') ||
-  pathname.startsWith('/padron');
+    pathname.startsWith('/worker') ||
+    pathname.startsWith('/business') ||
+    pathname.startsWith('/padron') ||
+    pathname.startsWith('/admin');
 
   // 🔹 LOGIN / ROLE SELECTOR → sin fondo global
   if (isAuthRoute) {
@@ -41,7 +42,7 @@ export default function ClientOnlyLayout({ children }) {
     );
   }
 
-  // 🔹 Worker o Business → render directo (sin layout global)
+  // 🔹 Worker / Business / Admin → render directo (sin layout global)
   if (isIsolated) {
     return <>{children}</>;
   }

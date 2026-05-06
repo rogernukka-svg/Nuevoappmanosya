@@ -1,344 +1,231 @@
 'use client';
 
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  XCircle,
-  Star,
-  Clock3,
-  Wrench,
-  Droplets,
+  Search,
+  X,
   Sparkles,
-  Hammer,
-  Leaf,
-  PawPrint,
-  Flame,
+    MapPin,
+  MapPinned,
+  Star,
   MessageCircle,
   SendHorizontal,
-  ChevronLeft,
-  CheckCircle2,
+  Compass,
+  Clock3,
+  Users,
+  Briefcase,
+  ShieldCheck,
+  Heart,
+  Share2,
+  Plus,
+PanelTop,
+Bell,
 } from 'lucide-react';
-import { getSupabase } from '@/lib/supabase';
-import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
-
-
 import { toast } from 'sonner';
-// ✅ Cluster (react-leaflet-cluster)
-import 'leaflet.markercluster/dist/MarkerCluster.css';
-import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+import { getSupabase } from '@/lib/supabase';
 
-const MarkerClusterGroup = dynamic(
-  () => import('react-leaflet-cluster').then((m) => m.default),
-  { ssr: false }
-);
-const Circle = dynamic(() => import('react-leaflet').then(m => m.Circle), { ssr: false });
-const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
-const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
-const MapEffectBinder = dynamic(
-  async () => {
-    const React = await import('react');
-    const { useMap } = await import('react-leaflet');
+const supabase = getSupabase();
 
-    return function MapEffectBinderInner({ onReady }) {
+const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer), { ssr: false });
+const Marker = dynamic(() => import('react-leaflet').then((m) => m.Marker), { ssr: false });
+const Polyline = dynamic(() => import('react-leaflet').then((m) => m.Polyline), { ssr: false });
+const Circle = dynamic(() => import('react-leaflet').then((m) => m.Circle), { ssr: false });
+const FitBounds = dynamic(
+  () =>
+    Promise.resolve(function FitBoundsInner({ points }) {
+      const { useMap } = require('react-leaflet');
       const map = useMap();
 
-      React.useEffect(() => {
-        if (!map) return;
-        onReady?.(map);
-      }, [map, onReady]);
+      useEffect(() => {
+        if (!map || !Array.isArray(points) || points.length < 2) return;
+
+        const L = require('leaflet');
+        const bounds = L.latLngBounds(points);
+
+        setTimeout(() => {
+          map.fitBounds(bounds, {
+            paddingTopLeft: [36, 90],
+            paddingBottomRight: [36, 190],
+            maxZoom: 14,
+            animate: true,
+          });
+        }, 250);
+      }, [map, points]);
 
       return null;
-    };
-  },
+    }),
   { ssr: false }
 );
-// 📍 Radio máximo visible y de filtrado (coherente en TODO el archivo)
-const MAX_RADIUS_KM = 999;
-const MAX_RADIUS_M = MAX_RADIUS_KM * 1000;
+const LS_APP_ROLE = 'app_role';
+const LAST_GPS_KEY = 'manosya_last_gps';
+const LOGIN_BG = '#62bfb9';
 
-// ✅ “Más cerca” solo mostrará gente dentro de este rango
-const NEAREST_MAX_KM = 5; // 👈 ajustá: 3, 5, 8, 10... (yo recomiendo 5)
-function mapAccentColor(worker) {
-  // 🔒 Si está desactivado manualmente → gris siempre
-  if (worker?.is_active === false) {
-    return '#9ca3af';
+const HOME_VIEW = {
+  center: [-25.5097, -54.6111],
+  zoom: 12,
+};
+
+const SERVICE_CATALOG = [
+  { slug: 'taxi', name: 'Taxi', badge: 'Inmediato' },
+  { slug: 'chofer', name: 'Chofer', badge: 'Inmediato' },
+  { slug: 'plomeria', name: 'Plomería', badge: 'Urgente' },
+  { slug: 'electricidad', name: 'Electricidad', badge: 'Urgente' },
+  { slug: 'limpieza', name: 'Limpieza', badge: 'Por hora' },
+  { slug: 'jardineria', name: 'Jardinería', badge: 'Agenda' },
+  { slug: 'auxilio-vehicular', name: 'Auxilio vehicular', badge: 'Urgente' },
+  { slug: 'fletes', name: 'Fletes y mudanzas', badge: 'Cotización' },
+  { slug: 'contador', name: 'Contador', badge: 'Consulta' },
+  { slug: 'abogado', name: 'Abogado', badge: 'Consulta' },
+  { slug: 'peluqueria', name: 'Peluquería', badge: 'Turnos' },
+  { slug: 'parrillero', name: 'Parrillero', badge: 'Evento' },
+];
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function normalizeSlug(value) {
+  return normalizeText(value)
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
+const SEARCH_KEYWORDS = {
+  plomeria: [
+    'plomero', 'plomeria', 'caño', 'cano', 'caneria', 'tuberia', 'tubo', 'agua',
+    'perdida', 'pierde agua', 'gotea', 'gotera', 'lavamanos', 'pileta', 'baño', 'bano',
+    'inodoro', 'cisterna', 'ducha', 'grifo', 'canilla', 'destape', 'desague'
+  ],
+  electricidad: [
+    'electricista', 'electricidad', 'luz', 'cable', 'enchufe', 'tomacorriente',
+    'llave', 'termica', 'disyuntor', 'corto', 'cortocircuito', 'instalacion',
+    'ventilador', 'foco', 'lampara', 'tablero'
+  ],
+  limpieza: [
+    'limpieza', 'limpiadora', 'limpiar', 'casa', 'departamento', 'oficina',
+    'aseo', 'profunda', 'mucama', 'servicio domestico'
+  ],
+  refrigeracion: [
+    'refrigeracion', 'aire', 'split', 'ac', 'acondicionado', 'heladera',
+    'freezer', 'congelador', 'carga gas', 'gas', 'mantenimiento aire'
+  ],
+  jardineria: [
+    'jardinero', 'jardineria', 'pasto', 'cesped', 'yuyal', 'maleza', 'podar',
+    'poda', 'arbol', 'jardin'
+  ],
+  fletes: [
+    'flete', 'mudanza', 'mudanzas', 'camioneta', 'camion', 'traslado',
+    'llevar', 'muebles', 'carga'
+  ],
+  taxi: [
+    'taxi', 'movil', 'viaje', 'llevarme', 'traslado', 'chofer', 'conductor'
+  ],
+  chofer: [
+    'chofer', 'conductor', 'manejar', 'traslado', 'viaje', 'driver'
+  ],
+  contador: [
+    'contador', 'contabilidad', 'factura', 'iva', 'set', 'ruc', 'declaracion',
+    'impuesto', 'tributario'
+  ],
+  abogado: [
+    'abogado', 'legal', 'demanda', 'contrato', 'documento', 'juicio',
+    'asesoria legal'
+  ],
+  parrillero: [
+    'parrillero', 'asado', 'parrilla', 'evento', 'cumple', 'fiesta'
+  ],
+};
+
+function levenshtein(a, b) {
+  const s = normalizeText(a);
+  const t = normalizeText(b);
+  if (!s) return t.length;
+  if (!t) return s.length;
+
+  const dp = Array.from({ length: s.length + 1 }, (_, i) => [i]);
+
+  for (let j = 1; j <= t.length; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= s.length; i++) {
+    for (let j = 1; j <= t.length; j++) {
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (s[i - 1] === t[j - 1] ? 0 : 1)
+      );
+    }
   }
 
-  const updatedAt = worker?.updated_at
-    ? new Date(worker.updated_at).getTime()
-    : Date.now();
-
-  const diffMin = (Date.now() - updatedAt) / 60000;
-
-  // 🟢 Activo y reciente
-  if (diffMin <= 30) {
-    return '#10b981';
-  }
-
-  // ⚪ Activo pero sin actividad reciente
-  return '#9ca3af';
+  return dp[s.length][t.length];
 }
-// 🎯 2 capas de cluster (evita 10 taps)
-const CLUSTER_STAGE_ZOOM = 11; // 1er salto (macro -> ciudad/barrio)
-const CLUSTER_LIST_ZOOM  = 13; // desde aquí, ya mostramos lista (barrio)
-// ✅ Icono del clúster (iconCreateFunction)
-function clusterIconCreateFunction(cluster) {
-  if (typeof window === 'undefined') return null;
 
-  const L = require('leaflet');
-  const count = cluster.getChildCount?.() ?? 0;
+function fuzzyIncludes(text, query) {
+  const cleanText = normalizeText(text);
+  const cleanQuery = normalizeText(query);
 
-  const size =
-    count < 10 ? 44 :
-    count < 50 ? 52 :
-    count < 100 ? 60 : 68;
+  if (!cleanQuery) return true;
+  if (cleanText.includes(cleanQuery)) return true;
 
-  const html = `
-    <div
-      class="cluster-pulse"
-      style="
-        width:${size}px;height:${size}px;
-        border-radius:999px;
-        display:flex;align-items:center;justify-content:center;
-        background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.45), rgba(16,185,129,.92) 60%, rgba(4,120,87,1) 100%);
-        border: 3px solid rgba(255,255,255,.92);
-        box-shadow: 0 18px 45px rgba(16,185,129,.35);
-        font-weight: 900;
-        color: #fff;
-        letter-spacing: -0.5px;
-      "
-    >
-      <span style="font-size:${Math.max(12, Math.floor(size / 3.2))}px;">
-        ${count}
-      </span>
-    </div>
-  `;
+  const words = cleanText.split(/\s+/).filter(Boolean);
+  const queryWords = cleanQuery.split(/\s+/).filter(Boolean);
 
-  return L.divIcon({
-    html,
-    className: '',
-    iconSize: [size, size],
+  return queryWords.some((q) =>
+    words.some((w) => {
+      if (w.includes(q) || q.includes(w)) return true;
+      if (q.length >= 4 && levenshtein(w, q) <= 2) return true;
+      return false;
+    })
+  );
+}
+
+function workerSearchScore(worker, query) {
+  const q = normalizeText(query);
+  if (!q) return 0;
+
+  const name = normalizeText(worker?.full_name || worker?.username || '');
+  const services = splitWorkerServices(worker).join(' ');
+  const serviceText = normalizeText(`${services} ${serviceLabelForWorker(worker)} ${worker?.service_type || ''} ${worker?.main_skill || ''}`);
+  const bio = normalizeText(worker?.bio || '');
+  const city = normalizeText(worker?.city || worker?.address || '');
+  const all = `${name} ${serviceText} ${bio} ${city}`;
+
+  let score = 0;
+
+  if (name.includes(q)) score += 120;
+  if (serviceText.includes(q)) score += 100;
+  if (bio.includes(q)) score += 55;
+  if (city.includes(q)) score += 25;
+  if (fuzzyIncludes(all, q)) score += 35;
+
+  Object.entries(SEARCH_KEYWORDS).forEach(([slug, keywords]) => {
+    const serviceMatch = serviceText.includes(normalizeText(slug));
+    const keywordMatch = keywords.some((kw) => fuzzyIncludes(kw, q) || fuzzyIncludes(q, kw));
+
+    if (keywordMatch && serviceMatch) score += 120;
+    else if (keywordMatch) score += 80;
   });
+
+  if (isOnlineRecent(worker)) score += 15;
+  if (Number.isFinite(Number(worker?._distKm))) score += Math.max(0, 20 - Number(worker._distKm));
+  score += Number(worker?.avg_rating || 0) * 3;
+
+  return score;
 }
-
-// ✅ CSS GLOBAL ROBUSTO (1 sola vez, 1 solo <style>, Fast Refresh safe)
-function ensureManosyaGlobalStyles() {
-  if (typeof window === 'undefined') return;
-
-  const ID = 'manosya-global-styles-v1';
-  if (document.getElementById(ID)) return;
-
-  const s = document.createElement('style');
-  s.id = ID;
-  s.innerHTML = `
-    @keyframes bounceMarker {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-8px); }
-    }
-
-    @keyframes ctaShine {
-      0%   { transform: translateX(-120%) rotate(12deg); opacity: 0; }
-      15%  { opacity: .65; }
-      60%  { opacity: .65; }
-      100% { transform: translateX(160%) rotate(12deg); opacity: 0; }
-    }
-
-    @keyframes ctaGlow {
-      0%,100% { filter: drop-shadow(0 10px 18px rgba(16,185,129,.30)); transform: translateY(0); }
-      50%     { filter: drop-shadow(0 18px 28px rgba(16,185,129,.55)); transform: translateY(-1px); }
-    }
-
-    .cta-glow { animation: ctaGlow 1.8s ease-in-out infinite; }
-    .cta-shine::after{
-      content:"";
-      position:absolute;
-      inset:-40%;
-      background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.55) 50%, transparent 65%);
-      animation: ctaShine 2.6s ease-in-out infinite;
-      pointer-events:none;
-    }
-
-    .cluster-pulse { animation: pulse 2s infinite; }
-    @keyframes pulse {
-      0%   { transform: scale(1); box-shadow: 0 0 0 rgba(16,185,129,0.35); }
-      50%  { transform: scale(1.08); box-shadow: 0 0 25px rgba(16,185,129,0.55); }
-      100% { transform: scale(1); box-shadow: 0 0 0 rgba(16,185,129,0.35); }
-    }
-
-    @keyframes pulseGreen {
-      0%   { transform: scale(0.6); opacity: 0.7; }
-      50%  { transform: scale(1.3); opacity: 0.3; }
-      100% { transform: scale(0.6); opacity: 0; }
-    }
-
-       @keyframes onlinePulse {
-      0%   { transform: scale(0.6); opacity: .7; }
-      70%  { transform: scale(1.25); opacity: 0; }
-      100% { transform: scale(1.25); opacity: 0; }
-    }
-
-    @keyframes clientGpsPulse {
-      0%   { transform: scale(0.75); opacity: 0.55; }
-      70%  { transform: scale(1.9); opacity: 0; }
-      100% { transform: scale(1.9); opacity: 0; }
-    }
-
-    @keyframes clientGpsGlow {
-      0%, 100% { transform: scale(1); box-shadow: 0 0 0 rgba(14,165,233,0.0); }
-      50%      { transform: scale(1.06); box-shadow: 0 0 26px rgba(37,99,235,0.35); }
-    }
-  `;
-  document.head.appendChild(s);
+function formatKm(km) {
+  if (!Number.isFinite(km)) return '—';
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
 }
-
-
-function avatarIcon(url, worker) {
-  if (typeof window === 'undefined') return null;
-  const L = require('leaflet');
-  const size = 52;
-  const color = mapAccentColor(worker);
-
-  // ✨ Nuevo: animación de rebote si el marcador está seleccionado
-  const bounce = worker._selected
-    ? 'animation:bounceMarker 0.8s ease-in-out infinite alternate;'
-    : '';
-
-
-  // 💫 Si acaba de actualizar su posición, mostrar efecto "ping"
-  const pulse =
-    worker._justUpdated
-      ? `<div class="ping" style="
-            position:absolute;
-            inset:-10px;
-            border-radius:50%;
-            background:rgba(16,185,129,0.35);
-            animation:pulseGreen 1s ease-out infinite;
-         "></div>`
-      : '';
-
-    const online = isOnlineRecent(worker);
-
-const onlineBadge = online
-  ? `<div style="
-      position:absolute;
-      right:-2px;
-      bottom:-2px;
-      width:14px;height:14px;
-      border-radius:999px;
-      background:#10b981;
-      border:2px solid rgba(255,255,255,.95);
-      box-shadow:0 6px 14px rgba(16,185,129,.35);
-      z-index:6;
-    ">
-      <div style="
-        position:absolute; inset:-6px;
-        border-radius:999px;
-        background:rgba(16,185,129,.12);
-        animation:onlinePulse 1.4s ease-out infinite;
-      "></div>
-    </div>`
-  : '';
-
-  const html = `
-    <div style="width:${size}px;height:${size}px;border-radius:50%;
-      position:relative;background:#fff;overflow:visible;
-      box-shadow:0 10px 26px rgba(0,0,0,.14);
-      ${bounce}">
-      ${onlineBadge}
-      ${pulse}
-      <div style="position:absolute;inset:-4px;border-radius:50%;
-        border:3px solid ${color};
-        filter:drop-shadow(0 0 10px ${color}50);"></div>
-
-      <div style="
-        position:absolute;
-        inset:-10px;
-        border-radius:50%;
-        background:radial-gradient(circle, rgba(16,185,129,.12) 0%, rgba(16,185,129,0) 70%);
-        pointer-events:none;
-      "></div>
-
-      <img src="${url || '/avatar-fallback.png'}"
-        onerror="this.src='/avatar-fallback.png'"
-        style="
-          position:absolute;
-          top:0; left:0;
-          width:100%; height:100%;
-          object-fit:cover;
-          object-position:center;
-          border-radius:50%;
-          aspect-ratio:1/1;
-        "
-      />
-    </div>`;
-
-  return L.divIcon({ html, iconSize: [size, size], className: '' });
-}
-
-function clientLocationIcon() {
-  if (typeof window === 'undefined') return null;
-  const L = require('leaflet');
-
-  const size = 54;
-
-  const html = `
-    <div style="
-      width:${size}px;
-      height:${size}px;
-      position:relative;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      pointer-events:none;
-    ">
-      <div style="
-        position:absolute;
-        width:54px;
-        height:54px;
-        border-radius:999px;
-        background:rgba(14,165,233,0.18);
-        animation:clientGpsPulse 1.8s ease-out infinite;
-      "></div>
-
-      <div style="
-        position:absolute;
-        width:34px;
-        height:34px;
-        border-radius:999px;
-        background:rgba(59,130,246,0.18);
-        border:2px solid rgba(14,165,233,0.35);
-        animation:clientGpsGlow 1.8s ease-in-out infinite;
-      "></div>
-
-      <div style="
-        position:absolute;
-        width:18px;
-        height:18px;
-        border-radius:999px;
-        background:linear-gradient(180deg,#38bdf8 0%, #2563eb 100%);
-        border:3px solid #ffffff;
-        box-shadow:
-          0 0 0 4px rgba(14,165,233,0.20),
-          0 10px 22px rgba(37,99,235,0.35);
-      "></div>
-    </div>
-  `;
-
-  return L.divIcon({
-    html,
-    className: '',
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  });
-}
-
-
 
 function minutesSince(dateString) {
   if (!dateString) return null;
@@ -346,22 +233,20 @@ function minutesSince(dateString) {
   return Math.floor(diffMs / 60000);
 }
 
-// ✅ ONLINE si se conectó / actualizó entre 1 y 30 minutos
 function isOnlineRecent(worker) {
   const stamp =
-    worker?.last_seen ||            // ✅ si lo guardás explícito
-    worker?.location_updated_at ||  // ✅ si tu view lo trae
-    worker?.loc_updated_at ||       // ✅ por si le pusiste otro nombre
-    worker?.updated_at;             // fallback
+    worker?.last_seen ||
+    worker?.location_updated_at ||
+    worker?.loc_updated_at ||
+    worker?.updated_at;
 
   const mins = minutesSince(stamp);
-  if (mins == null) return false;
-  return mins >= 0 && mins <= 30;
+  return mins != null && mins >= 0 && mins <= 30;
 }
 
 function haversineKm(lat1, lon1, lat2, lon2) {
   const toRad = (v) => (v * Math.PI) / 180;
-  const R = 6371; // km
+  const R = 6371;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
   const a =
@@ -369,1244 +254,27 @@ function haversineKm(lat1, lon1, lat2, lon2) {
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
+function shuffleBySeed(list, seed = 1) {
+  const arr = [...(list || [])];
 
-function getDriverTier(selected) {
-  // Ajustá estos campos según tu DB/view:
-  // plan_tier | tier | membership | driver_tier
-  const t = (selected?.plan_tier || selected?.tier || selected?.membership || selected?.driver_tier || 'normal')
-    .toString()
-    .toLowerCase();
-
-  if (t.includes('prem')) return 'premium';
-  if (t.includes('eco')) return 'eco';
-  return 'normal';
-}
-
-function avatarRingClassForTier(tier) {
-  if (tier === 'premium') return 'border-yellow-400';  // dorado
-  if (tier === 'eco') return 'border-emerald-500';     // verde
-  return 'border-gray-300';                            // plateado
-}
-
-function formatKm(km) {
-  if (!Number.isFinite(km)) return '—';
-  if (km < 1) return `${Math.round(km * 1000)} m`;
-  return `${km.toFixed(1)} km`;
-}
-function animateMarkerMove(marker, fromLat, fromLng, toLat, toLng, duration = 900) {
-  try {
-    if (!marker || typeof marker.setLatLng !== 'function') return;
-
-    const start = performance.now();
-
-    const step = (now) => {
-      const t = Math.min(1, (now - start) / duration);
-      const lat = fromLat + (toLat - fromLat) * t;
-      const lng = fromLng + (toLng - fromLng) * t;
-      marker.setLatLng([lat, lng]);
-      if (t < 1) requestAnimationFrame(step);
-    };
-
-    requestAnimationFrame(step);
-  } catch (e) {
-    console.warn('animateMarkerMove error:', e);
-  }
-}
-const LAST_GPS_KEY = 'manosya_last_gps';
-
-function saveLastGps(lat, lon) {
-  try { localStorage.setItem(LAST_GPS_KEY, JSON.stringify({ lat, lon, t: Date.now() })); } catch {}
-}
-
-function loadLastGps(maxAgeMs = 1000 * 60 * 60 * 24) { // 24h
-  try {
-    const v = JSON.parse(localStorage.getItem(LAST_GPS_KEY) || 'null');
-    if (!v) return null;
-    if (Date.now() - v.t > maxAgeMs) return null;
-    if (!Number.isFinite(Number(v.lat)) || !Number.isFinite(Number(v.lon))) return null;
-    return { lat: Number(v.lat), lon: Number(v.lon) };
-  } catch { return null; }
-}
-
-function offsetLatLng(lat, lng, meters, angleRad) {
-  const dLat = (meters * Math.cos(angleRad)) / 111320;
-  const dLng =
-    (meters * Math.sin(angleRad)) /
-    (111320 * Math.cos((lat * Math.PI) / 180));
-  return [lat + dLat, lng + dLng];
-}
-function metersPerPixel(lat, zoom) {
-  // Leaflet / WebMercator aproximación estándar
-  return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoom);
-}
-
-// ✅ Anti-overlap “zoom-aware”: separa según tamaño del icono en píxeles
-function addAntiOverlapZoomAware(workers, zoom, iconPx = 52, padPx = 10) {
-  if (!workers?.length) return [];
-
-  // si no sabemos zoom, fallback a tu versión fija
-  if (!Number.isFinite(zoom)) return addAntiOverlap(workers, 120, 90);
-
-  // usamos lat promedio para m/px
-  const lat0 =
-    workers.reduce((acc, w) => acc + Number(w?.lat || 0), 0) / Math.max(1, workers.length);
-
-  const mpp = metersPerPixel(lat0 || 0, zoom);
-
-  // “cuánto hay que mover” para que 52px no se pise
-const gridMeters = Math.max(80, (iconPx + padPx) * mpp * 1.25);
-const stepMeters = Math.max(60, (iconPx + padPx) * mpp * 1.05);
-
-  return addAntiOverlap(workers, gridMeters, stepMeters);
-}
-// ✅ Anti-overlap por "grid" en metros (no por decimales)
-function addAntiOverlap(workers, gridMeters = 60, stepMeters = 40) {
-  if (!workers?.length) return [];
-
-  const toCell = (lat, lng) => {
-    const dLat = gridMeters / 111320;
-    const dLng = gridMeters / (111320 * Math.cos((lat * Math.PI) / 180));
-    const cy = Math.round(lat / dLat);
-    const cx = Math.round(lng / dLng);
-    return `${cy}|${cx}`;
+  const seededRandom = (index) => {
+    const x = Math.sin(index + seed * 9999) * 10000;
+    return x - Math.floor(x);
   };
 
-  const groups = new Map();
-  for (const w of workers) {
-    const lat = Number(w?.lat);
-    const lng = Number(w?.lng ?? w?.lon ?? w?.long);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-
-    const key = toCell(lat, lng);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(w);
-  }
-
-  const out = [];
-  for (const [, arr] of groups) {
-    arr.sort((a, b) => String(a.user_id).localeCompare(String(b.user_id)));
-    const n = arr.length;
-
-    for (let i = 0; i < n; i++) {
-      const w = arr[i];
-
-      if (n === 1) {
-        out.push({ ...w, _dlat: w.lat, _dlng: w.lng });
-        continue;
-      }
-
-      const perRing = 10;
-      const ring = Math.floor(i / perRing) + 1;
-      const pos = i % perRing;
-      const angle = (2 * Math.PI * pos) / perRing;
-      const meters = stepMeters * ring;
-
-      const [dlat, dlng] = offsetLatLng(Number(w.lat), Number(w.lng), meters, angle);
-      out.push({ ...w, _dlat: dlat, _dlng: dlng, _stack: n, _stackIndex: i });
-    }
-  }
-
-  return out;
+  return arr
+    .map((item, index) => ({
+      item,
+      sort: seededRandom(index),
+    }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(({ item }) => item);
 }
-async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
-  try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`;
-
-    const res = await fetch(url);
-    const data = await res.json();
-
-    if (!data.routes?.length) return null;
-
-    const coords = data.routes[0].geometry.coordinates;
-
-    const route = coords.map(c => [c[1], c[0]]);
-
-    return {
-      route,
-      distanceKm: data.routes[0].distance / 1000,
-      durationMin: Math.round(data.routes[0].duration / 60)
-    };
-
-  } catch (e) {
-    console.warn("route error", e);
-    return null;
-  }
-}
-export default function MapPage() {
-  const supabase = getSupabase();
-  const router = useRouter();
-  const mapRef = useRef(null);
-  const markerIdToUserIdRef = useRef(new Map());
-  const [mapZoom, setMapZoom] = useState(11);
-  const [etaMinutes, setEtaMinutes] = useState(null);
-  // 🔥 NECESARIO para createPortal (evita error SSR)
- const [mounted, setMounted] = useState(false);
-
- useEffect(() => {
-  setMounted(true);
-
-  if (typeof window === 'undefined') return;
-
-  // ✅ CSS global 1 sola vez
-  ensureManosyaGlobalStyles();
-
-  const setRealVH = () => {
-    // ✅ visualViewport es lo más confiable en Android/PWA
-    const h = window.visualViewport?.height ?? window.innerHeight;
-    document.documentElement.style.setProperty('--real-vh', `${Math.round(h)}px`);
-  };
-
-  // ✅ set inicial
-  setRealVH();
-
-  // ✅ listeners robustos
-  const vv = window.visualViewport;
-  window.addEventListener('resize', setRealVH);
-  window.addEventListener('orientationchange', setRealVH);
-
-  // 🔥 cuando abrís/cerrás modales, Android suele cambiar visualViewport sin “resize” clásico
-  vv?.addEventListener('resize', setRealVH);
-  vv?.addEventListener('scroll', setRealVH); // en algunos devices cambia al scrollear UI
-
-  // ✅ “micro-recalc” luego de animaciones de framer (cierre modal)
-  const t1 = setTimeout(setRealVH, 50);
-  const t2 = setTimeout(setRealVH, 250);
-
-  return () => {
-    clearTimeout(t1);
-    clearTimeout(t2);
-    window.removeEventListener('resize', setRealVH);
-    window.removeEventListener('orientationchange', setRealVH);
-    vv?.removeEventListener('resize', setRealVH);
-    vv?.removeEventListener('scroll', setRealVH);
-  };
-}, []);
-  // ✅ Refs GPS (evitan duplicar watch + centrar una sola vez)
-  const gpsWatchFastRef = useRef(null);
-  const gpsWatchPreciseRef = useRef(null);
-  const gpsCenteredRef = useRef(false);
-
-  // ✅ Refs para animación de marcadores
-  const markersRef = useRef({});
-
-  // ✅ Si usás "isTyping" en el chat
-  const [isTyping, setIsTyping] = useState(false);
-
-
-// ✅ Refs
-const markerMetaRef = useRef(new Map());
-const workersByIdRef = useRef(new Map());
-// ✅ Workers state (mover aquí arriba)
-const [workers, setWorkers] = useState([]);
-const [workerSearch, setWorkerSearch] = useState('');
-const [workerSearchOpen, setWorkerSearchOpen] = useState(false);
-
-useEffect(() => {
-  workersByIdRef.current = new Map(
-    (workers || []).map(w => [String(w.user_id), w])
-  );
-}, [workers]);
-
-  const DEFAULT_CENTER = [-23.4437, -58.4400]; // Centro real del país
-  const [center, setCenter] = useState(DEFAULT_CENTER);
-  const [me, setMe] = useState({ id: null, lat: null, lon: null });
-  
-
-const [selected, setSelected] = useState(null);
-const [profileSheetMode, setProfileSheetMode] = useState('full'); // 'full' | 'mini'
-const [isTrackingWorker, setIsTrackingWorker] = useState(false);
-const [cameraMode, setCameraMode] = useState('explore'); // 'explore' | 'preview' | 'tracking'
-const [busy, setBusy] = useState(false);
-
-
-// ✅ MODAL GRANDE (Más cerca) — si no está, revienta "clusterOpen is not defined"
-const [clusterOpen, setClusterOpen] = useState(false);
-const [clusterList, setClusterList] = useState([]);
-const [clusterMode, setClusterMode] = useState(null);
-useEffect(() => {
-  if (typeof window === 'undefined') return;
-
-  const h = window.visualViewport?.height ?? window.innerHeight;
-  document.documentElement.style.setProperty('--real-vh', `${Math.round(h)}px`);
-
-  setTimeout(() => mapRef.current?.invalidateSize?.(), 200);
-}, [clusterOpen]);
-
-// ✅ Mini modal flotante SOLO para click en CLUSTER (separado de "Más cerca")
-const [clusterMiniOpen, setClusterMiniOpen] = useState(false);
-const [clusterMiniList, setClusterMiniList] = useState([]);
-const [clusterMiniPos, setClusterMiniPos] = useState({ left: 16, top: 120 });
-
-// ✅ Punto de referencia para “Más cerca” (GPS o centro del mapa)
-function getRefPoint() {
-  // 1) GPS real si existe
-  if (hasMeCoords) return { lat: Number(me.lat), lng: Number(me.lon), mode: 'gps' };
-
-  // 2) Centro actual del mapa si existe (sirve en móvil aunque GPS falle)
-  try {
-    const c = mapRef.current?.getCenter?.();
-    const lat = Number(c?.lat);
-    const lng = Number(c?.lng);
-    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng, mode: 'map' };
-  } catch {}
-
-  // 3) Fallback: HOME_VIEW
-  return { lat: Number(HOME_VIEW.center[0]), lng: Number(HOME_VIEW.center[1]), mode: 'home' };
-}
-
-// ✅ Construye lista “más cerca” (con GPS o con centro del mapa)
-function buildNearestList(srcWorkers, limit = 30) {
-  const ref = getRefPoint();
-  const refOk = Number.isFinite(ref?.lat) && Number.isFinite(ref?.lng);
-
-  // ✅ Si no hay punto de referencia (sin GPS y sin mapa), devolvemos vacío
-  if (!refOk) return [];
-
-  const list = (srcWorkers || [])
-    .map((w) => {
-      const wLat = Number(w?.lat);
-      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-
-      const dist =
-        Number.isFinite(wLat) && Number.isFinite(wLng)
-          ? haversineKm(Number(ref.lat), Number(ref.lng), wLat, wLng)
-          : null;
-
-      return {
-        ...w,
-        _distKm: Number.isFinite(dist) ? dist : null,
-        _dist: Number.isFinite(dist) ? dist : null,
-        _online: isOnlineRecent(w),
-        _rating: Number(w?.avg_rating || 0),
-      };
-    })
-    // ✅ coords válidas
-    .filter((w) => {
-      const wLat = Number(w?.lat);
-      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-      return Number.isFinite(wLat) && Number.isFinite(wLng);
-    })
-    // ✅ FILTRO CLAVE: solo los que están realmente cerca
-    .filter((w) => w._distKm != null && w._distKm <= NEAREST_MAX_KM);
-
-  // ✅ Orden: distancia primero, luego online, luego rating
-  list.sort((a, b) => {
-    if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
-    if (a._distKm != null) return -1;
-    if (b._distKm != null) return 1;
-
-    if (a._online !== b._online) return a._online ? -1 : 1;
-    if (a._rating !== b._rating) return b._rating - a._rating;
-    return String(a.user_id).localeCompare(String(b.user_id));
-  });
-
-  return list.slice(0, limit);
-}
-
-// ✅ Abrir modal “Más cerca”
-function openNearestModal() {
-  if (!workers?.length) {
-    toast.warning('Primero cargá los trabajadores');
-    return;
-  }
-
-  const ref = getRefPoint();
- const ranked = buildNearestList(workers, 30);
-
-if (!ranked.length) {
-  toast(`No hay profesionales dentro de ${NEAREST_MAX_KM} km`, { duration: 1600 });
-  return;
-}
-
-setClusterMode('nearest');
-setClusterList(ranked);
-setClusterOpen(true);
-
-  // ✅ Mensaje claro según si hay GPS o no
-  if (ref.mode === 'gps') toast.success('📍 Ordenado por tu ubicación', { duration: 1200 });
-  else toast('📍 Sin GPS: ordenado por la zona del mapa', { duration: 1400 });
-}
- // ✅ Coordenadas seguras (selected puede traer lng o lon)
-const selLat = Number(selected?.lat);
-const selLng = Number(selected?.lng ?? selected?.lon ?? selected?.long);
-const hasSelCoords = Number.isFinite(selLat) && Number.isFinite(selLng);
-const hasMeCoords  = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
-useEffect(() => {
-  if (!mapRef.current) return;
-
-  // ✅ si hay tracking real del trabajador, dejamos que la ruta mande
-  if (cameraMode === 'tracking') return;
-
-  // ✅ modo normal: volver al cliente
-  if (cameraMode === 'explore' && hasMeCoords) {
-    mapRef.current.flyTo([Number(me.lat), Number(me.lon)], 14, { duration: 1.1 });
-    setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-  }
-
-  // ✅ preview: no hacer zoom agresivo al worker
-  if (cameraMode === 'preview') {
-    setTimeout(() => mapRef.current?.invalidateSize?.(), 180);
-  }
-}, [cameraMode, hasMeCoords, me?.lat, me?.lon]);
- const [showPrice, setShowPrice] = useState(false);
-const [route, setRoute] = useState(null);
-const [selectedService, setSelectedService] = useState(null);
-
-const [bookingDate, setBookingDate] = useState('');
-const [bookingTime, setBookingTime] = useState('');
-const [bookingNotes, setBookingNotes] = useState('');
-  const SERVICE_CATALOG = [
-  { slug: 'taxi', name: 'Taxi', pricing_type: 'instant', booking_mode: 'now', base_label: 'Viaje inmediato' },
-  { slug: 'chofer', name: 'Chofer', pricing_type: 'instant', booking_mode: 'now', base_label: 'Traslado inmediato' },
-  { slug: 'limpieza', name: 'Limpieza', pricing_type: 'hourly', booking_mode: 'now', base_label: 'Por hora' },
-  { slug: 'limpieza-piscinas', name: 'Limpieza de piscinas', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Presupuesto previo' },
-  { slug: 'plomeria', name: 'Plomería', pricing_type: 'quote', booking_mode: 'now', base_label: 'Diagnóstico + presupuesto' },
-  { slug: 'electricidad', name: 'Electricidad', pricing_type: 'quote', booking_mode: 'now', base_label: 'Diagnóstico + presupuesto' },
-  { slug: 'jardineria', name: 'Jardinería / Césped', pricing_type: 'hourly', booking_mode: 'schedule', base_label: 'Por hora' },
-  { slug: 'podador', name: 'Podador', pricing_type: 'hourly', booking_mode: 'schedule', base_label: 'Por hora' },
-  { slug: 'pintor', name: 'Pintor', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Visita + presupuesto' },
-  { slug: 'carpinteria', name: 'Carpintería', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Presupuesto previo' },
-  { slug: 'albanileria', name: 'Albañilería', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Presupuesto previo' },
-  { slug: 'metalurgica', name: 'Metalúrgica', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Presupuesto previo' },
-  { slug: 'auxilio-vehicular', name: 'Auxilio vehicular', pricing_type: 'instant', booking_mode: 'now', base_label: 'Asistencia inmediata' },
-  { slug: 'fletes', name: 'Fletes y mudanzas', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Cotización previa' },
-  { slug: 'delivery', name: 'Delivery', pricing_type: 'instant', booking_mode: 'now', base_label: 'Entrega inmediata' },
-  { slug: 'mecanica', name: 'Taller mecánico', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Revisión + presupuesto' },
-  { slug: 'refrigeracion', name: 'Técnico en refrigeración', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Diagnóstico + presupuesto' },
-  { slug: 'instalacion-aires', name: 'Instalación de aires acondicionados', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Instalación con presupuesto' },
-  { slug: 'electronica', name: 'Técnico en electrónica', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Diagnóstico + presupuesto' },
-  { slug: 'informatica', name: 'Informática', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Revisión + presupuesto' },
-  { slug: 'mantenimientos-electronicos', name: 'Mantenimientos electrónicos', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Presupuesto previo' },
-  { slug: 'fumigacion', name: 'Fumigación', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Cotización previa' },
-  { slug: 'cerrajeria', name: 'Cerrajería / Copia de llave', pricing_type: 'instant', booking_mode: 'now', base_label: 'Servicio rápido' },
-  { slug: 'contador', name: 'Contador', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Consulta profesional' },
-  { slug: 'abogado', name: 'Abogado', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Consulta profesional' },
-  { slug: 'gestiones-documentos', name: 'Gestiones de documentos', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Gestión a coordinar' },
-  { slug: 'diseno-grafico', name: 'Diseñador gráfico', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Brief + presupuesto' },
-  { slug: 'profesor-particular', name: 'Profesor particular', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Clase agendada' },
-  { slug: 'profesor-tenis', name: 'Profesor de tenis', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Clase agendada' },
-  { slug: 'consejero-matrimonial', name: 'Consejero matrimonial', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Sesión agendada' },
-  { slug: 'peluqueria', name: 'Peluquería masculino / femenino', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Turno agendado' },
-  { slug: 'peluquero', name: 'Peluquero', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Turno agendado' },
-  { slug: 'manicurista', name: 'Manicurista', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Turno agendado' },
-  { slug: 'extension-pestanas', name: 'Extensión de pestañas', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Turno agendado' },
-  { slug: 'masaje-estetico', name: 'Masaje estético', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Sesión agendada' },
-  { slug: 'modista', name: 'Modista', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Medida + presupuesto' },
-  { slug: 'fisioterapeuta', name: 'Fisioterapeuta', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Sesión agendada' },
-  { slug: 'enfermeria', name: 'Enfermería', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Atención coordinada' },
-  { slug: 'entrenador', name: 'Entrenador', pricing_type: 'hourly', booking_mode: 'schedule', base_label: 'Sesión por hora' },
-  { slug: 'mozo', name: 'Mozo', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
-  { slug: 'parrillero', name: 'Parrillero', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
-  { slug: 'pizzero', name: 'Pizzero', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
-  { slug: 'servicio-tragos', name: 'Servicio de tragos', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
-  { slug: 'barman', name: 'Barman', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
-  { slug: 'fotografo', name: 'Fotógrafo', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Cobertura agendada' },
-  { slug: 'musico', name: 'Músico / artista en general', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Show agendado' },
-  { slug: 'payaso', name: 'Payaso', pricing_type: 'booking', booking_mode: 'schedule', base_label: 'Evento agendado' },
-  { slug: 'escolta', name: 'Escolta', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Coordinación previa' },
-  { slug: 'escolta-privado', name: 'Escolta privado', pricing_type: 'quote', booking_mode: 'schedule', base_label: 'Coordinación previa' },
-  { slug: 'personal-shopper', name: 'Personal shopper', pricing_type: 'consultation', booking_mode: 'schedule', base_label: 'Asistencia agendada' },
-];
-
-const [serviceQuery, setServiceQuery] = useState('');
-const [showAllServices, setShowAllServices] = useState(false);
-
-function normalizeServiceText(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeSlug(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .trim();
-}
-function getServiceMeta(serviceSlug) {
-  const normalized = normalizeSlug(serviceSlug);
-  return (
-    SERVICE_CATALOG.find((item) => normalizeSlug(item.slug) === normalized) || null
-  );
-}
-
-function getServiceFlowMeta(serviceSlug) {
-  const meta = getServiceMeta(serviceSlug);
-
-  if (!meta) {
-    return {
-      pricing_type: 'quote',
-      booking_mode: 'schedule',
-      action_label: 'Solicitar servicio',
-      helper_text: 'Coordiná los detalles con el profesional.',
-      accent: 'from-emerald-500 via-teal-500 to-cyan-500',
-      badge: 'Servicio ManosYA',
-    };
-  }
-
-  switch (meta.pricing_type) {
-    case 'instant':
-      return {
-        ...meta,
-        action_label: 'Solicitar ahora',
-        helper_text: 'Solicitud inmediata con respuesta rápida.',
-        accent: 'from-emerald-500 via-teal-500 to-cyan-500',
-        badge: 'Respuesta rápida',
-      };
-
-    case 'hourly':
-      return {
-        ...meta,
-        action_label: 'Reservar por hora',
-        helper_text: 'Ideal para trabajos por tiempo o por jornada.',
-        accent: 'from-cyan-500 via-sky-500 to-emerald-500',
-        badge: 'Tarifa por hora',
-      };
-
-    case 'booking':
-      return {
-        ...meta,
-        action_label: 'Agendar servicio',
-        helper_text: 'Servicio pensado para fecha y hora programada.',
-        accent: 'from-fuchsia-500 via-violet-500 to-cyan-500',
-        badge: 'Con agenda',
-      };
-
-    case 'consultation':
-      return {
-        ...meta,
-        action_label: 'Agendar consulta',
-        helper_text: 'Primero coordinás la consulta o sesión.',
-        accent: 'from-amber-500 via-orange-500 to-rose-500',
-        badge: 'Consulta profesional',
-      };
-
-    case 'quote':
-    default:
-      return {
-        ...meta,
-        action_label: 'Solicitar presupuesto',
-        helper_text: 'El profesional revisa primero y luego confirma precio.',
-        accent: 'from-slate-800 via-emerald-700 to-cyan-500',
-        badge: 'Presupuesto previo',
-      };
-  }
-}
-function serviceIconFor(slug) {
-  const key = normalizeSlug(slug);
-
-  if (key.includes('plomer')) return <Droplets size={18} />;
-  if (key.includes('electric')) return <Wrench size={18} />;
-  if (key.includes('limpieza')) return <Sparkles size={18} />;
-  if (key.includes('alban') || key.includes('constru') || key.includes('pintor') || key.includes('carpinter')) return <Hammer size={18} />;
-  if (key.includes('jard') || key.includes('podador')) return <Leaf size={18} />;
-  if (key.includes('mascota')) return <PawPrint size={18} />;
-  if (key.includes('emerg')) return <Flame size={18} />;
-  if (key.includes('abogado')) return <CheckCircle2 size={18} />;
-  if (key.includes('contador')) return <Clock3 size={18} />;
-  return <Sparkles size={18} />;
-}
-
-const services = useMemo(() => {
-  return SERVICE_CATALOG.map((item) => {
-    const flow = getServiceFlowMeta(item.slug);
-
-    return {
-      id: item.slug,
-      label: item.name,
-      icon: serviceIconFor(item.slug),
-      pricing_type: item.pricing_type,
-      booking_mode: item.booking_mode,
-      base_label: item.base_label,
-      action_label: flow.action_label,
-      helper_text: flow.helper_text,
-      badge: flow.badge,
-      accent: flow.accent,
-    };
-  });
-}, []);
-
-const filteredServices = useMemo(() => {
-  const q = normalizeServiceText(serviceQuery);
-  if (!q) return services;
-
-  return services.filter((s) => {
-    return (
-      normalizeServiceText(s.label).includes(q) ||
-      normalizeServiceText(s.id).includes(q)
-    );
-  });
-}, [services, serviceQuery]);
-const SUGGESTED_SERVICE_SLUGS = [
-  'taxi',
-  'chofer',
-  'plomeria',
-  'electricidad',
-  'limpieza',
-  'jardineria',
-  'auxilio-vehicular',
-  'fletes',
-  'contador',
-  'abogado',
-  'peluquero',
-  'peluqueria',
-];
-
-const suggestedServices = useMemo(() => {
-  const map = new Map((services || []).map((s) => [s.id, s]));
-  return SUGGESTED_SERVICE_SLUGS
-    .map((id) => map.get(id))
-    .filter(Boolean);
-}, [services]);
-
-const visibleServices = useMemo(() => {
-  if (serviceQuery.trim()) {
-    return filteredServices.slice(0, showAllServices ? 12 : 6);
-  }
-
-  const base = suggestedServices.length ? suggestedServices : filteredServices;
-  return showAllServices ? filteredServices.slice(0, 16) : base.slice(0, 6);
-}, [serviceQuery, filteredServices, suggestedServices, showAllServices]);
-  const selectedWorkerServices = useMemo(() => {
-  const raw = splitWorkerServices(selected);
-
-  const unique = Array.from(
-    new Map(
-      raw
-        .map((item) => {
-          const slug = normalizeSlug(item);
-          const meta = getServiceMeta(slug);
-
-          return [
-            slug,
-            {
-              slug,
-              label: meta?.name || String(item || '').trim(),
-              pricing_type: meta?.pricing_type || 'quote',
-              booking_mode: meta?.booking_mode || 'schedule',
-            },
-          ];
-        })
-        .filter(([slug]) => !!slug)
-    ).values()
-  );
-
-  return unique;
-}, [selected]);
-
-const selectedServiceResolved = useMemo(() => {
-  if (selectedService) return normalizeSlug(selectedService);
-
-  if (selectedWorkerServices.length === 1) {
-    return selectedWorkerServices[0].slug;
-  }
-
-  return null;
-}, [selectedService, selectedWorkerServices]);
-
-const selectedServiceMeta = useMemo(() => {
-  return getServiceFlowMeta(selectedServiceResolved);
-}, [selectedServiceResolved]);
-
-const selectedServiceCatalogMeta = useMemo(() => {
-  return getServiceMeta(selectedServiceResolved);
-}, [selectedServiceResolved]);
-const distanceToSelectedKm =
-  hasMeCoords && hasSelCoords
-    ? haversineKm(Number(me.lat), Number(me.lon), selLat, selLng)
-    : null;
-
-const normalizedWorkerSearch = workerSearch
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .toLowerCase()
-  .trim();
-
-const searchedWorkers = useMemo(() => {
-  if (!normalizedWorkerSearch) return [];
-
-  return (workers || [])
-    .filter((w) => {
-      const fullName = (w?.full_name || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase();
-
-      const skillsText = Array.isArray(w?.skills)
-        ? w.skills.join(' ')
-        : String(w?.skills || '');
-
-      const normalizedSkills = skillsText
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase();
-
-      const cityText = String(w?.city || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase();
-
-      return (
-        fullName.includes(normalizedWorkerSearch) ||
-        normalizedSkills.includes(normalizedWorkerSearch) ||
-        cityText.includes(normalizedWorkerSearch)
-      );
-    })
-    .map((w) => {
-      const wLat = Number(w?.lat);
-      const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-
-      const distKm =
-        hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
-          ? haversineKm(Number(me.lat), Number(me.lon), wLat, wLng)
-          : null;
-
-      return {
-        ...w,
-        _distKm: distKm,
-        _onlineNow: isOnlineRecent(w),
-      };
-    })
-    .sort((a, b) => {
-      if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
-      if (a._distKm != null) return -1;
-      if (b._distKm != null) return 1;
-      return String(a?.full_name || '').localeCompare(String(b?.full_name || ''));
-    })
-    .slice(0, 12);
-}, [workers, normalizedWorkerSearch, hasMeCoords, me?.lat, me?.lon]);
-  // 🟢 Panel estilo Uber (3 niveles)
-const [panelLevel, setPanelLevel] = useState("hidden"); 
-// niveles: "mini" | "mid" | "full"
-const [servicesOpen, setServicesOpen] = useState(false);
-const togglePanel = (level) => {
-  setPanelLevel(level);
-};
-
-
- // ✨ Nuevo: estado del job + chat
-const [jobId, setJobId] = useState(null);
-const [jobStatus, setJobStatus] = useState(null); // open | accepted | completed | cancelled | assigned ...
-const [isChatOpen, setIsChatOpen] = useState(false);
-const [chatId, setChatId] = useState(null);
-const [messages, setMessages] = useState([]);
-const [sending, setSending] = useState(false);
-const inputRef = useRef(null);
-const bottomRef = useRef(null);
-const chatChannelRef = useRef(null);
-const typingTimeoutRef = useRef(null);
-const [gpsStatus, setGpsStatus] = useState('init'); // init | requesting | granted | denied | error
-const [gpsError, setGpsError] = useState(null);
-// ✅ Ref para evitar problemas de "estado viejo" dentro de callbacks
-const gpsStatusRef = useRef('init');
-useEffect(() => { gpsStatusRef.current = gpsStatus; }, [gpsStatus]);
-useEffect(() => {
-  let alive = true;
-
-  async function bootGeo() {
-    if (typeof window === 'undefined') return;
-
-    if (!navigator?.geolocation) {
-      if (!alive) return;
-      setGpsStatus('error');
-      setGpsError('Este dispositivo no soporta GPS (geolocation).');
-      return;
-    }
-
-    // ✅ No depender de navigator.permissions.query() para iniciar GPS.
-    // Dejamos la UI lista y el permiso se pide desde el botón.
-    if (!alive) return;
-    setGpsStatus('init');
-    setGpsError(null);
-  }
-
-  bootGeo();
-
-  return () => {
-    alive = false;
-    try {
-      if (navigator?.geolocation) {
-        if (gpsWatchFastRef.current != null) {
-          navigator.geolocation.clearWatch(gpsWatchFastRef.current);
-        }
-        if (gpsWatchPreciseRef.current != null) {
-          navigator.geolocation.clearWatch(gpsWatchPreciseRef.current);
-        }
-      }
-    } catch {}
-
-    gpsWatchFastRef.current = null;
-    gpsWatchPreciseRef.current = null;
-  };
-}, []);
- async function requestGPS() {
-  if (typeof window === 'undefined') return;
-
-  if (!window.isSecureContext) {
-    setGpsStatus('error');
-    setGpsError('GPS requiere HTTPS o abrir la app desde el dominio seguro.');
-    toast.error('GPS requiere HTTPS');
-    return;
-  }
-
-  if (!navigator?.geolocation) {
-    setGpsStatus('error');
-    setGpsError('Este dispositivo no soporta ubicación (geolocation).');
-    toast.error('Tu dispositivo no soporta GPS.');
-    return;
-  }
-
-  setGpsStatus('requesting');
-  setGpsError(null);
-
-  try {
-    if (gpsWatchFastRef.current != null) {
-      navigator.geolocation.clearWatch(gpsWatchFastRef.current);
-    }
-    if (gpsWatchPreciseRef.current != null) {
-      navigator.geolocation.clearWatch(gpsWatchPreciseRef.current);
-    }
-  } catch {}
-
-  gpsWatchFastRef.current = null;
-  gpsWatchPreciseRef.current = null;
-
-  const msgDenied = 'Permiso denegado. Activá Ubicación precisa para ver “Más cerca”.';
-  const msgUnavailable = 'Ubicación no disponible.';
-  const msgTimeout = 'No se pudo obtener tu ubicación a tiempo.';
-
-  const onFix = (pos, playToast = false) => {
-    const lat = Number(pos?.coords?.latitude);
-    const lon = Number(pos?.coords?.longitude);
-
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      setGpsStatus('error');
-      setGpsError('Ubicación no disponible.');
-      return;
-    }
-
-    saveLastGps(lat, lon);
-    setMe((prev) => ({ ...prev, lat, lon }));
-    setCenter([lat, lon]);
-    setGpsStatus('granted');
-    setGpsError(null);
-
-  if (mapRef.current && !gpsCenteredRef.current) {
-  gpsCenteredRef.current = true;
-  setCameraMode('explore');
-  mapRef.current.flyTo([lat, lon], 14, { duration: 1.1 });
-  setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-}
-
-    if (playToast) {
-      toast.success('📍 Ubicación activada');
-    }
-  };
-
-  const cached = loadLastGps();
- if (cached && !gpsCenteredRef.current && mapRef.current) {
-  setMe((prev) => ({ ...prev, lat: cached.lat, lon: cached.lon }));
-  setCenter([cached.lat, cached.lon]);
-  gpsCenteredRef.current = true;
-  setCameraMode('explore');
-  mapRef.current.flyTo([cached.lat, cached.lon], 13, { duration: 0.7 });
-  setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-}
-
-  try {
-    const pos = await new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0,
-      });
-    });
-
-    onFix(pos, true);
-
-    gpsWatchPreciseRef.current = navigator.geolocation.watchPosition(
-      (watchPos) => onFix(watchPos, false),
-      (err) => {
-        if (err?.code === 1) {
-          setGpsStatus('denied');
-          setGpsError(msgDenied);
-          return;
-        }
-
-        if (err?.code === 2) {
-          setGpsStatus('error');
-          setGpsError(msgUnavailable);
-          return;
-        }
-
-        if (err?.code === 3) {
-          setGpsStatus('error');
-          setGpsError(msgTimeout);
-          return;
-        }
-
-        setGpsStatus('error');
-        setGpsError(msgUnavailable);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 5000,
-      }
-    );
-  } catch (err) {
-    if (err?.code === 1) {
-      setGpsStatus('denied');
-      setGpsError(msgDenied);
-      toast.error(`📍 ${msgDenied}`);
-      return;
-    }
-
-    if (err?.code === 2) {
-      setGpsStatus('error');
-      setGpsError(msgUnavailable);
-      toast.error(`📍 ${msgUnavailable}`);
-      return;
-    }
-
-    if (err?.code === 3) {
-      setGpsStatus('error');
-      setGpsError(msgTimeout);
-      toast.error(`📍 ${msgTimeout}`);
-      return;
-    }
-
-    setGpsStatus('error');
-    setGpsError(msgUnavailable);
-    toast.error(`📍 ${msgUnavailable}`);
-  }
-}
-
-// ✅ Reintento de centrado: cuando el mapa ya existe y el GPS ya llegó
-useEffect(() => {
-  if (gpsCenteredRef.current) return;
-  if (!mapRef.current) return;
-  if (!hasMeCoords) return;
-
-  gpsCenteredRef.current = true;
-  setCameraMode('explore');
-  mapRef.current.flyTo([Number(me.lat), Number(me.lon)], 14, { duration: 1.2 });
-  setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-}, [me?.lat, me?.lon, hasMeCoords]);
-
-const [rating, setRating] = useState(0);
-const [comment, setComment] = useState('') 
-
-// 🧩 Nuevo: indicador de mensajes sin leer
-const [hasUnread, setHasUnread] = useState(false);
-const [unreadCount, setUnreadCount] = useState(0);
-const [statusBanner, setStatusBanner] = useState(null);
-
-// 🔊 sonido de notificación
-const notificationAudioRef = useRef(null);
-
-useEffect(() => {
-  if (typeof window === 'undefined') return;
-
-  notificationAudioRef.current = new Audio('/notify.mp3'); // 👈 cambiá extensión si no es mp3
-  notificationAudioRef.current.preload = 'auto';
-  notificationAudioRef.current.volume = 0.9;
-
-  return () => {
-    if (notificationAudioRef.current) {
-      notificationAudioRef.current.pause();
-      notificationAudioRef.current = null;
-    }
-  };
-}, []);
-
-function playIncomingMessageSound() {
-  try {
-    if (!notificationAudioRef.current) return;
-
-    notificationAudioRef.current.currentTime = 0;
-    notificationAudioRef.current.play().catch((err) => {
-      console.warn('No se pudo reproducir sonido:', err);
-    });
-  } catch (err) {
-    console.warn('Error reproduciendo sonido:', err);
-  }
-}
- const bindMapInstance = useMemo(() => {
-  return (map) => {
-    if (!map) return;
-
-    mapRef.current = map;
-
-    setMapZoom(map.getZoom());
-
-    map.off('zoomend');
-    map.on('zoomend', () => setMapZoom(map.getZoom()));
-
-    map.setView(HOME_VIEW.center, HOME_VIEW.zoom, { animate: false });
-
-    const el = map.getContainer?.();
-    if (el) {
-      el.style.touchAction = 'pan-x pan-y';
-      el.style.overscrollBehavior = 'none';
-    }
-
-    setTimeout(() => map.invalidateSize(), 200);
-
-    console.log('✅ mapRef enlazado correctamente', map);
-  };
-}, []); 
- 
-
-/* 🧠 Restaurar estado completo (pedido + chat) desde localStorage */
-useEffect(() => {
-  if (typeof window === 'undefined') return;
-
-  const saved = localStorage.getItem('activeJobChat');
-  if (!saved) return;
-
-  let parsed = null;
-  try {
-    parsed = JSON.parse(saved);
-  } catch {
-    localStorage.removeItem('activeJobChat');
-    return;
-  }
-
-  const { jid, jstatus, cid, selectedWorker } = parsed || {};
-  const active =
-    jid && jstatus && !['completed', 'cancelled', 'worker_completed'].includes(jstatus);
-
-  if (!active) {
-    localStorage.removeItem('activeJobChat');
-    return;
-  }
-
-  if (jid) setJobId(jid);
-  if (jstatus) setJobStatus(jstatus);
-  if (selectedWorker) setSelected(selectedWorker);
-
-  setIsTrackingWorker(jstatus === 'accepted' || jstatus === 'assigned');
-  setProfileSheetMode('mini');
-  setShowPrice(false);
-  setServicesOpen(false);
-  setClusterOpen(false);
-  setClusterMiniOpen(false);
-
-  setTimeout(() => {
-    if (cid) {
-      setChatId(cid);
-    }
-  }, 150);
-}, []);
-// ✅ Ruta SOLO si hay pedido activo (y no está finalizado/cancelado)
-useEffect(() => {
-
-  async function loadRoute() {
-
-    if (!jobId) return;
-if (!mapRef.current) return;
-if (cameraMode === 'preview') return;
-    if (jobStatus === "completed" || jobStatus === "cancelled") return;
-
-    if (!Number(me?.lat) || !Number(me?.lon)) return;
-
-    if (!hasMeCoords || !hasSelCoords) return;
-
-    const wLat = Number(selLat);
-    const wLng = Number(selLng);
-
-    const result = await fetchRoadRoute(
-      Number(me.lat),
-      Number(me.lon),
-      wLat,
-      wLng
-    );
-
-   if (!result?.route?.length) return;
-
-setRoute(result.route);
-setEtaMinutes(result.durationMin);
-
-requestAnimationFrame(() => {
-  try {
-    const map = mapRef.current;
-    if (!map) return;
-
-    map.invalidateSize(false);
-
-    setTimeout(() => {
-      try {
-        if (!mapRef.current) return;
-        mapRef.current.fitBounds(result.route, {
-          padding: [80, 80],
-          animate: false,
-        });
-      } catch (err) {
-        console.warn('fitBounds error:', err);
-      }
-    }, 60);
-  } catch (err) {
-    console.warn('map sync error:', err);
-  }
-});
-
-  }
-
-  loadRoute();
-
-}, [jobId, jobStatus, me?.lat, me?.lon, selLat, selLng]);
-/* 💬 Banner elegante de estado */
-useEffect(() => {
-  if (jobStatus === 'completed') {
-    setStatusBanner({
-      text: '✅ Trabajo finalizado con éxito',
-      color: 'bg-emerald-500',
-    });
-    setTimeout(() => setStatusBanner(null), 3000);
-  } else if (jobStatus === 'cancelled') {
-    setStatusBanner({
-      text: '🚫 Pedido cancelado',
-      color: 'bg-red-500',
-    });
-    setTimeout(() => setStatusBanner(null), 3000);
-  }
-}, [jobStatus]);
-
-
-/* 💾 Guardar estado actual del pedido y chat */
-useEffect(() => {
-  if (typeof window === 'undefined') return;
-
-  const hasActiveJob =
-    !!jobId && jobStatus && !['completed', 'cancelled', 'worker_completed'].includes(jobStatus);
-
-  if (hasActiveJob && selected) {
-    localStorage.setItem(
-      'activeJobChat',
-      JSON.stringify({
-        jid: jobId,
-        jstatus: jobStatus,
-        cid: chatId || null,
-        selectedWorker: selected,
-      })
-    );
-    return;
-  }
-
-  localStorage.removeItem('activeJobChat');
-}, [chatId, selected, jobId, jobStatus]);
-
-
-/* 🔴 Estado: indicador de mensaje no leído
-   ---------------------------------------------------
-   Activa una alerta visual y sonora cuando llega un
-   mensaje nuevo y el chat está cerrado.
-   Se limpia automáticamente al abrir el chat.
-*/
-
-
-
-
-// 🧩 Recuperar pedido activo desde Supabase si no hay nada en localStorage
-useEffect(() => {
-  if (jobId || !me?.id) return;
-  if (!Number(me?.lat) || !Number(me?.lon)) return;
-
-  (async () => {
-    try {
-      const { data: job } = await supabase
-        .from('jobs')
-        .select('id, status, worker_id')
-        .eq('client_id', me.id)
-        .in('status', ['open', 'accepted', 'assigned'])
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (!job) return;
-
-      setJobId(job.id);
-      setJobStatus(job.status);
-      setIsTrackingWorker(job.status === 'accepted' || job.status === 'assigned');
-      setShowPrice(false);
-      setServicesOpen(false);
-      setClusterOpen(false);
-      setClusterMiniOpen(false);
-
-      const { data: worker } = await supabase
-        .from('map_workers_view')
-        .select('*')
-        .eq('user_id', job.worker_id)
-        .maybeSingle();
-
-      const wLat = Number(worker?.lat);
-      const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
-
-      if (Number.isFinite(wLat) && Number.isFinite(wLng)) {
-        setSelected(worker);
-        setProfileSheetMode('mini');
-        setRoute([[Number(me.lat), Number(me.lon)], [wLat, wLng]]);
-
-        localStorage.setItem(
-          'activeJobChat',
-          JSON.stringify({
-            jid: job.id,
-            jstatus: job.status,
-            cid: chatId || null,
-            selectedWorker: worker,
-          })
-        );
-
-        toast.success(`Pedido restaurado (${job.status})`);
-      }
-    } catch (err) {
-      console.warn('Sin pedido activo para restaurar:', err?.message || err);
-    }
-  })();
-}, [me?.id, me?.lat, me?.lon, jobId, chatId]);
-
-/* === Usuario === */
-useEffect(() => {
-  let alive = true;
-
-  (async () => {
-    const { data } = await supabase.auth.getUser();
-    const uid = data?.user?.id;
-
-    if (!uid) {
-      router.replace('/login');
-      return;
-    }
-
-    if (alive) setMe((prev) => ({ ...prev, id: uid }));
-
-
-  })();
-
-  return () => {
-    alive = false;
-  };
-}, [router, supabase]);
-
-
-
-/* === Cargar trabajadores === */
 function splitWorkerServices(worker) {
   const raw = [];
 
-  if (Array.isArray(worker?.skills)) {
-    raw.push(...worker.skills);
-  } else if (typeof worker?.skills === 'string') {
-    raw.push(...worker.skills.split(','));
-  }
+  if (Array.isArray(worker?.skills)) raw.push(...worker.skills);
+  else if (typeof worker?.skills === 'string') raw.push(...worker.skills.split(','));
 
   if (worker?.main_skill) raw.push(worker.main_skill);
   if (worker?.service_type) raw.push(worker.service_type);
@@ -1616,4091 +284,2227 @@ function splitWorkerServices(worker) {
     .filter(Boolean);
 }
 
-async function fetchWorkers(serviceFilter = null) {
+function serviceMetaBySlug(slug) {
+  const normalized = normalizeSlug(slug);
+  return SERVICE_CATALOG.find((item) => normalizeSlug(item.slug) === normalized) || null;
+}
+
+function serviceLabelForWorker(worker) {
+  const first = splitWorkerServices(worker)[0];
+  if (!first) return 'Servicio general';
+  const meta = serviceMetaBySlug(first);
+  return meta?.name || first;
+}
+
+function mapAccentColor(worker) {
+  if (worker?.is_active === false) return '#9ca3af';
+  return isOnlineRecent(worker) ? '#16a3a8' : '#94a3b8';
+}
+
+function avatarIcon(url, worker) {
+  if (typeof window === 'undefined') return null;
+  const L = require('leaflet');
+  const size = 56;
+  const color = mapAccentColor(worker);
+  const html = `
+    <div style="width:${size}px;height:${size}px;border-radius:999px;position:relative;background:#fff;box-shadow:0 14px 28px rgba(0,0,0,.18);overflow:visible;">
+      <div style="position:absolute;inset:-4px;border-radius:999px;border:3px solid ${color};"></div>
+      <img src="${url || '/avatar-fallback.png'}" onerror="this.src='/avatar-fallback.png'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:999px;" />
+      ${isOnlineRecent(worker) ? '<div style="position:absolute;right:-2px;bottom:-2px;width:14px;height:14px;border-radius:999px;background:#10b981;border:2px solid #fff;"></div>' : ''}
+    </div>
+  `;
+  return L.divIcon({
+    html,
+    className: '',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+function clientLocationIcon() {
+  if (typeof window === 'undefined') return null;
+  const L = require('leaflet');
+  const size = 24;
+  const html = `
+    <div style="width:${size}px;height:${size}px;border-radius:999px;background:linear-gradient(180deg,#16a3a8 0%, #0c6b70 100%);border:3px solid #fff;box-shadow:0 10px 22px rgba(37,99,235,.35);"></div>
+  `;
+  return L.divIcon({
+    html,
+    className: '',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data?.routes?.length) return null;
+
+    return {
+      route: data.routes[0].geometry.coordinates.map((c) => [c[1], c[0]]),
+      distanceKm: data.routes[0].distance / 1000,
+      durationMin: Math.round(data.routes[0].duration / 60),
+    };
+  } catch (error) {
+    console.warn('route error', error);
+    return null;
+  }
+}
+
+function FeedCard({ worker, onOpen, onMessage, onRequest, onNearbyMap, onComments, onLike }) {
+  const [bioOpen, setBioOpen] = useState(false);
+
+  const primaryService = serviceLabelForWorker(worker);
+  const mediaUrl = worker?.media_url || worker?.cover_url || worker?.video_thumb_url || worker?.avatar_url || '/avatar-fallback.png';
+  const isVideo = worker?.media_type === 'video';
+  const likes = worker?.likes_count || worker?.like_count || 0;
+  const reviews = worker?.comments_count || worker?.total_reviews || 0;
+  const isOnline = isOnlineRecent(worker);
+
+  const workerName = worker?.full_name || 'trabajador';
+  const postText = worker?.post_description || worker?.caption || worker?.bio || 'Mirá trabajos reales, consultá por chat y solicitá directo desde ManosYA.';
+  const isLongBio = postText.length > 95;
+  const shortBio = isLongBio ? `${postText.slice(0, 95).trim()}...` : postText;
+
+  const shareWorker = async () => {
+    const text = `Mirá este trabajo en ManosYA: ${workerName} · ${primaryService}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `${workerName} en ManosYA`, text, url: window.location.href });
+        return;
+      }
+
+      await navigator.clipboard.writeText(`${text}\n${window.location.href}`);
+      toast.success('Link copiado para compartir');
+    } catch (error) {
+      if (error?.name !== 'AbortError') toast.error('No pudimos compartir ahora');
+    }
+  };
+
+  return (
+    <motion.div
+      layout
+      className="relative h-[calc(var(--real-vh,100dvh)-74px)] w-full snap-start overflow-hidden bg-black"
+    >
+     {isVideo && mediaUrl ? (
+  <video
+    key={mediaUrl}
+    src={mediaUrl}
+    autoPlay
+    muted
+    loop
+    playsInline
+    controls={false}
+    preload="auto"
+    className="absolute inset-0 h-full w-full bg-black object-cover"
+    onCanPlay={(e) => {
+      e.currentTarget.play().catch(() => {});
+    }}
+    onError={(e) => {
+      console.warn('No se pudo reproducir video del feed:', mediaUrl, e);
+    }}
+  />
+) : (
+  <img
+    src={mediaUrl || '/avatar-fallback.png'}
+    onError={(e) => {
+      e.currentTarget.src = '/avatar-fallback.png';
+    }}
+    alt={workerName}
+    className="absolute inset-0 h-full w-full object-cover"
+  />
+)}
+
+      <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.92)_0%,rgba(0,0,0,0.58)_24%,rgba(0,0,0,0.04)_56%,rgba(0,0,0,0.34)_100%)]" />
+
+      <div className="absolute right-[4px] bottom-[145px] z-30 flex w-[72px] flex-col items-center text-white">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="relative mb-5 flex h-[68px] w-[68px] items-center justify-center active:scale-95"
+        >
+          <img
+            src={worker?.avatar_url || '/avatar-fallback.png'}
+            onError={(e) => {
+              e.currentTarget.src = '/avatar-fallback.png';
+            }}
+            alt={workerName}
+            className="h-[58px] w-[58px] rounded-full border-[2.5px] border-white object-cover shadow-[0_12px_26px_rgba(0,0,0,0.55)]"
+          />
+          <span className="absolute bottom-[1px] flex h-6 w-6 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)]">
+            <Plus size={14} strokeWidth={3.2} />
+          </span>
+        </button>
+
+        <button type="button" onClick={() => onLike(worker)} className="mb-5 flex w-[68px] flex-col items-center active:scale-95">
+          <Heart size={38} fill="white" strokeWidth={1.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+          <span className="mt-1 text-[13px] font-black">{likes}</span>
+        </button>
+
+        <button type="button" onClick={() => onComments(worker)} className="mb-5 flex w-[68px] flex-col items-center active:scale-95">
+          <MessageCircle size={38} fill="white" strokeWidth={1.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+          <span className="mt-1 text-[13px] font-black">{reviews}</span>
+        </button>
+
+        <button type="button" onClick={shareWorker} className="mb-5 flex w-[68px] flex-col items-center active:scale-95">
+          <Share2 size={36} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+          <span className="mt-1 text-[11px] font-black">Compartir</span>
+        </button>
+
+        <button type="button" onClick={onNearbyMap} className="flex w-[68px] flex-col items-center active:scale-95">
+          <MapPin size={38} fill="none" stroke="white" strokeWidth={2.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+        </button>
+      </div>
+
+      <div className="absolute left-4 right-[84px] bottom-[72px] z-20 text-white">
+        <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-black/30 px-3 py-1.5 text-[12px] font-black backdrop-blur-md">
+          <span className={isOnline ? 'h-2 w-2 rounded-full bg-emerald-400' : 'h-2 w-2 rounded-full bg-white/55'} />
+          {isOnline ? 'Activo ahora' : 'Disponible'}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <img
+            src={worker?.avatar_url || '/avatar-fallback.png'}
+            onError={(e) => {
+              e.currentTarget.src = '/avatar-fallback.png';
+            }}
+            alt={workerName}
+            className="h-11 w-11 rounded-full border-2 border-white object-cover"
+          />
+
+          <button type="button" onClick={onOpen} className="min-w-0 text-left">
+            <div className="truncate text-[20px] font-black leading-tight">
+              @{worker?.username || workerName}
+            </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] font-bold text-white/86">
+              <span>{primaryService}</span>
+              {worker?._distKm != null && <span>• {formatKm(worker._distKm)}</span>}
+              <span>• ⭐ {Number(worker?.avg_rating || 4.8).toFixed(1)}</span>
+            </div>
+          </button>
+        </div>
+
+        <div className="mt-2 text-[14px] font-semibold leading-5 text-white/95">
+          <p className={bioOpen ? '' : 'truncate'}>
+            {bioOpen ? postText : shortBio}
+          </p>
+
+          {isLongBio && (
+            <button
+              type="button"
+              onClick={() => setBioOpen((prev) => !prev)}
+              className="mt-0.5 text-[12px] font-black text-[#9ee5df]"
+            >
+              {bioOpen ? 'Ver menos' : 'Ver más'}
+            </button>
+          )}
+        </div>
+
+        <div className="mt-6 flex items-center gap-2 rounded-[42px] border border-white/80 bg-white/92 px-4 py-4 shadow-[0_18px_40px_rgba(98,191,185,0.28)] backdrop-blur-xl">
+          <input
+            defaultValue="Hola, ¿estás disponible?..."
+            className="flex-1 bg-transparent px-3 text-[15px] font-semibold text-slate-500 placeholder:text-slate-400 outline-none"
+          />
+
+          <button
+            type="button"
+            onClick={() => {
+              const message = `Hola ${workerName}, vi tu publicación. ¿Estás disponible?`;
+              onMessage?.(worker, message);
+            }}
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_14px_28px_rgba(98,191,185,0.60)] ring-1 ring-white/50 active:scale-95"
+          >
+            <SendHorizontal size={18} strokeWidth={2.6} />
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+function CommentsSheet({
+  open,
+  worker,
+  comments,
+  commentText,
+  setCommentText,
+  onClose,
+  onSend,
+}) {
+  if (!open || !worker) return null;
+
+  return (
+    <div className="fixed inset-0 z-[67000] flex items-end bg-black/55 backdrop-blur-sm">
+      <motion.div
+        initial={{ y: 420, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 420, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+        className="mx-auto flex max-h-[76vh] w-full max-w-xl flex-col overflow-hidden rounded-t-[34px] bg-white shadow-[0_-24px_80px_rgba(0,0,0,0.35)]"
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0c6b70]">
+              Comentarios
+            </div>
+            <div className="mt-1 truncate text-[20px] font-black text-slate-900">
+              {worker?.full_name || 'Trabajador'}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-700 active:scale-95"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {!comments?.length ? (
+            <div className="flex min-h-[180px] items-center justify-center text-center">
+              <div>
+                <MessageCircle className="mx-auto mb-3 text-slate-300" size={34} />
+                <div className="text-[17px] font-black text-slate-900">
+                  Todavía no hay comentarios
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-500">
+                  Sé el primero en comentar este perfil.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {comments.map((item) => (
+                <div key={item.id} className="flex gap-3">
+                  <img
+                    src={item.client_avatar || '/avatar-fallback.png'}
+                    onError={(e) => {
+                      e.currentTarget.src = '/avatar-fallback.png';
+                    }}
+                    alt={item.client_name || 'Cliente'}
+                    className="h-10 w-10 rounded-full object-cover"
+                  />
+
+                  <div className="min-w-0 flex-1 rounded-[22px] bg-slate-50 px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="truncate text-[14px] font-black text-slate-900">
+                        {item.client_name || 'Cliente'}
+                      </div>
+                      <div className="shrink-0 text-[12px] font-black text-amber-500">
+                        ⭐ {Number(item.rating || 5).toFixed(1)}
+                      </div>
+                    </div>
+
+                    <p className="mt-1 text-[14px] font-semibold leading-5 text-slate-600">
+                      {item.comment}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-slate-100 bg-white px-4 pb-[calc(env(safe-area-inset-bottom)+14px)] pt-3">
+          <div className="flex items-center gap-2 rounded-[28px] border border-slate-200 bg-slate-50 px-3 py-2">
+            <input
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder="Escribí un comentario público..."
+              className="h-11 min-w-0 flex-1 bg-transparent px-2 text-[14px] font-semibold text-slate-700 placeholder:text-slate-400 outline-none"
+            />
+
+            <button
+              type="button"
+              onClick={onSend}
+              disabled={!commentText.trim()}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_10px_22px_rgba(98,191,185,0.35)] disabled:opacity-45 active:scale-95"
+            >
+              <SendHorizontal size={17} strokeWidth={2.8} />
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+function WorkerRow({ worker, onSelect, onMessage, onRequest }) {
+  const online = isOnlineRecent(worker);
+  return (
+    <div className="flex items-center gap-3 rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
+      <img
+        src={worker?.avatar_url || '/avatar-fallback.png'}
+        onError={(e) => {
+          e.currentTarget.src = '/avatar-fallback.png';
+        }}
+        alt={worker?.full_name || 'Avatar'}
+        className="h-16 w-16 rounded-full object-cover"
+      />
+      <div className="min-w-0 flex-1">
+        <button type="button" onClick={onSelect} className="text-left">
+         <div className="truncate text-[17px] font-black text-slate-900">{worker?.full_name || 'Trabajador'}</div>
+        </button>
+        <div className="mt-1 flex flex-wrap gap-2 text-[12px] text-slate-500">
+          <span>{serviceLabelForWorker(worker)}</span>
+          {worker?._distKm != null && <span>• {formatKm(worker._distKm)}</span>}
+          <span>• ⭐ {Number(worker?.avg_rating || 4.8).toFixed(1)}</span>
+        </div>
+        <div className="mt-2">
+          {online ? (
+            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700">Activo ahora</span>
+          ) : (
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-500">Disponible</span>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
+  <button type="button" onClick={onMessage} className="rounded-full border border-slate-200 bg-slate-50 p-2 text-slate-700">
+    <MessageCircle size={16} />
+  </button>
+  <button type="button" onClick={onSelect} className="rounded-full bg-emerald-500 p-2 text-white">
+    <Sparkles size={16} />
+  </button>
+</div>
+    </div>
+  );
+}
+
+function WorkerProfileSheet({ worker, onClose, onRequest, onMessage }) {
+  if (!worker) return null;
+
+  const services = splitWorkerServices(worker);
+  const online = isOnlineRecent(worker);
+
+  return (
+    <div className="absolute inset-0 z-[65000] bg-slate-950/58 p-3 backdrop-blur-sm sm:p-5">
+      <motion.div
+        initial={{ opacity: 0, y: 32, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 24, scale: 0.98 }}
+        className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-hidden rounded-[34px] border border-white/18 bg-[linear-gradient(180deg,#eff6f7_0%,#ffffff_40%,#f8fbfc_100%)] shadow-[0_30px_90px_rgba(15,23,42,0.24)]"
+      >
+        <div className="relative h-[270px] overflow-hidden bg-slate-900">
+          <img
+            src={worker?.cover_url || worker?.video_thumb_url || worker?.avatar_url || '/avatar-fallback.png'}
+            onError={(e) => {
+              e.currentTarget.src = '/avatar-fallback.png';
+            }}
+            alt={worker?.full_name || 'Trabajador'}
+            className="h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(2,6,23,0.88),rgba(2,6,23,0.12))]" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/16 text-white backdrop-blur-md"
+          >
+            <X size={18} />
+          </button>
+
+          <div className="absolute bottom-5 left-5 right-5">
+            <div className="flex items-end gap-4">
+              <img
+                src={worker?.avatar_url || '/avatar-fallback.png'}
+                onError={(e) => {
+                  e.currentTarget.src = '/avatar-fallback.png';
+                }}
+                alt={worker?.full_name || 'Avatar'}
+                className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-[0_14px_30px_rgba(15,23,42,0.24)]"
+              />
+              <div className="pb-2 text-white">
+               <div className="text-[28px] font-black leading-none">{worker?.full_name || 'Trabajador'}</div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-white/85">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 backdrop-blur-md">
+                    <Sparkles size={14} />
+                    {serviceLabelForWorker(worker)}
+                  </span>
+                  {online && (
+                    <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[11px] font-black text-emerald-200">
+                      Activo ahora
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Rating</div>
+              <div className="mt-2 text-2xl font-black text-slate-900">{Number(worker?.avg_rating || 4.8).toFixed(1)}</div>
+            </div>
+            <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Reseñas</div>
+              <div className="mt-2 text-2xl font-black text-slate-900">{Number(worker?.total_reviews || 0)}</div>
+            </div>
+            <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Radio</div>
+              <div className="mt-2 text-2xl font-black text-slate-900">{Number(worker?.radius_km || 5)} km</div>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+           <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Sobre este trabajador</div>
+            <p className="mt-3 text-[15px] leading-7 text-slate-600">
+            {worker?.bio || 'Perfil listo para mostrar trabajos, fotos, videos y recibir solicitudes directas como trabajador dentro de ManosYA.'}
+            </p>
+          </div>
+
+          <div className="mt-5 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Servicios</div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {(services.length ? services : ['Servicio general']).map((item, idx) => (
+                <span
+                  key={`${item}-${idx}`}
+                  className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-bold text-[#0c6b70]"
+                >
+                  {serviceMetaBySlug(item)?.name || item}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-200 bg-white p-4 sm:p-5">
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onMessage}
+              className="flex-1 rounded-[22px] border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-black text-slate-700"
+            >
+              Mensaje
+            </button>
+            <button
+              type="button"
+              onClick={onRequest}
+              className="flex-1 rounded-[22px] bg-gradient-to-r from-[#0c6b70] via-[#62bfb9] to-[#9ee5df] px-5 py-4 text-sm font-black text-white shadow-[0_16px_34px_rgba(98,191,185,0.34)]"
+            >
+              Solicitar ahora
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+function NearbyMapSheet({ open, workers, center, hasMeCoords, me, selectedWorker, onSelectWorker, onClose, onMessage, onRequest }) {
+  if (!open) return null;
+
+  const validWorkers = (workers || []).filter((worker) => {
+    return Number.isFinite(Number(worker?.lat)) && Number.isFinite(Number(worker?.lng));
+  });
+
+ const [activeIndex, setActiveIndex] = useState(0);
+
+const active =
+  selectedWorker ||
+  validWorkers[activeIndex] ||
+  validWorkers[0] ||
+  null;
+  const closeWorkers = validWorkers
+  .filter((worker) => Number.isFinite(Number(worker?._distKm)))
+  .filter((worker) => Number(worker._distKm) <= 12)
+  .slice(0, 14);
+
+const mapWorkers = closeWorkers.length ? closeWorkers : validWorkers.slice(0, 10);
+
+const fitPoints = [
+  ...(hasMeCoords ? [[Number(me.lat), Number(me.lon)]] : []),
+  ...mapWorkers.map((worker) => [Number(worker.lat), Number(worker.lng)]),
+];
+function goPrevWorker() {
+  if (!validWorkers.length) return;
+  const next = activeIndex <= 0 ? validWorkers.length - 1 : activeIndex - 1;
+  setActiveIndex(next);
+  onSelectWorker(validWorkers[next]);
+}
+
+function goNextWorker() {
+  if (!validWorkers.length) return;
+  const next = activeIndex >= validWorkers.length - 1 ? 0 : activeIndex + 1;
+  setActiveIndex(next);
+  onSelectWorker(validWorkers[next]);
+}
+  return (
+    <div className="fixed inset-0 z-[66000] bg-slate-950/70 p-3 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 28, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 22, scale: 0.98 }}
+        className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[34px] border border-white/18 bg-[#eef8f7] shadow-[0_30px_90px_rgba(0,0,0,0.32)]"
+      >
+        <div className="flex items-center justify-between border-b border-white/50 bg-white/70 px-4 py-3 backdrop-blur-xl">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0c6b70]">
+              Cerca tuyo
+            </div>
+            <div className="text-[20px] font-black text-slate-900">
+              Elegí un trabajador cerca
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900/8 text-slate-700 active:scale-95"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="relative flex-1 overflow-hidden bg-white">
+          <MapContainer
+  center={center}
+  zoom={hasMeCoords ? 12 : 11}
+  className="h-full w-full"
+>
+            <TileLayer
+  attribution="&copy; CartoDB"
+  url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+/>
+<FitBounds points={fitPoints} />
+            {hasMeCoords && (
+              <>
+                <Marker
+                  position={[Number(me.lat), Number(me.lon)]}
+                  icon={clientLocationIcon() || undefined}
+                />
+                <Circle
+                  center={[Number(me.lat), Number(me.lon)]}
+                  radius={2500}
+                  pathOptions={{
+                    color: '#62bfb9',
+                    fillColor: '#62bfb9',
+                    fillOpacity: 0.12,
+                  }}
+                />
+              </>
+            )}
+
+           {mapWorkers.map((worker) => (
+              <Marker
+                key={String(worker.user_id)}
+                position={[Number(worker.lat), Number(worker.lng)]}
+                icon={avatarIcon(worker.avatar_url, worker) || undefined}
+                eventHandlers={{
+                 click: () => {
+  onSelectWorker(worker);
+  const idx = validWorkers.findIndex((w) => String(w.user_id) === String(worker.user_id));
+  if (idx >= 0) setActiveIndex(idx);
+},
+                }}
+              />
+            ))}
+          </MapContainer>
+
+         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[999] bg-gradient-to-t from-white/82 via-white/20 to-transparent p-4">
+  {active && (
+    <div className="pointer-events-auto rounded-[30px] border border-white/80 bg-white/96 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={goPrevWorker}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 active:scale-95"
+        >
+          ←
+        </button>
+
+        <img
+          src={active?.avatar_url || '/avatar-fallback.png'}
+          onError={(e) => {
+            e.currentTarget.src = '/avatar-fallback.png';
+          }}
+          alt={active?.full_name || 'Trabajador'}
+          className="h-14 w-14 rounded-2xl object-cover"
+        />
+
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[15px] font-black text-slate-900">
+            {active?.full_name || 'Trabajador'}
+          </div>
+
+          <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] font-bold text-slate-500">
+            <span>{serviceLabelForWorker(active)}</span>
+            {active?._distKm != null && <span>• {formatKm(active._distKm)}</span>}
+            <span>• ⭐ {Number(active?.avg_rating || 4.8).toFixed(1)}</span>
+          </div>
+
+          <div className="mt-1 text-[10px] font-black text-[#0c6b70]">
+            {isOnlineRecent(active) ? 'En línea ahora' : 'Disponible'}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={goNextWorker}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 active:scale-95"
+        >
+          →
+        </button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => onMessage(active)}
+          className="rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-[13px] font-black text-slate-700"
+        >
+          Mensaje
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onRequest(active)}
+          className="rounded-[18px] bg-[#62bfb9] px-4 py-3 text-[13px] font-black text-white shadow-[0_12px_28px_rgba(98,191,185,0.35)]"
+        >
+          Elegir trabajador
+        </button>
+      </div>
+    </div>
+  )}
+</div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+function AllWorkersSheet({ open, workers, workersSheetTitle, onClose, onSelect, onMessage, onRequest }) {
+  if (!open) return null;
+
+  return (
+    <div className="absolute inset-0 z-[64000] bg-slate-950/48 p-3 backdrop-blur-sm sm:p-5">
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 20 }}
+        className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[34px] border border-white/20 bg-[linear-gradient(180deg,#eff6f7_0%,#ffffff_40%,#f8fbfc_100%)] shadow-[0_30px_90px_rgba(15,23,42,0.22)]"
+      >
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Explorar</div>
+           <div className="mt-1 text-2xl font-black text-slate-900">
+  {workersSheetTitle || 'Todos los trabajadores'}
+</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-slate-200 bg-white p-2 text-slate-700"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+          <div className="space-y-3">
+            {(workers || []).map((worker) => (
+              <WorkerRow
+                key={String(worker.user_id)}
+                worker={worker}
+                onSelect={() => onSelect(worker)}
+                onMessage={() => onMessage(worker)}
+                onRequest={() => onRequest(worker)}
+              />
+            ))}
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+function ClientMessagesSheet({ open, chats, onClose, onOpenChat }) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[69000] bg-black/60 p-3 backdrop-blur-sm">
+      <motion.div
+        initial={{ y: 32, opacity: 0, scale: 0.98 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: 32, opacity: 0, scale: 0.98 }}
+        className="mx-auto flex h-full w-full max-w-xl flex-col overflow-hidden rounded-[34px] bg-white shadow-[0_30px_90px_rgba(0,0,0,0.35)]"
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0c6b70]">
+              Mensajes
+            </div>
+            <div className="text-xl font-black text-slate-950">
+              Tus conversaciones
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-700"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {!chats?.length ? (
+            <div className="flex h-full items-center justify-center text-center">
+              <div>
+                <MessageCircle className="mx-auto mb-3 text-slate-300" size={36} />
+                <div className="text-lg font-black text-slate-900">
+                  Todavía no tenés mensajes
+                </div>
+                <p className="mt-2 text-sm font-semibold text-slate-500">
+                  Cuando hables con un trabajador, va a aparecer acá.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {chats.map((chat) => (
+                <button
+                  key={chat.id}
+                  type="button"
+                  onClick={() => onOpenChat(chat.id)}
+                  className="flex w-full items-center gap-3 rounded-[24px] border border-slate-200 bg-white p-3 text-left shadow-sm active:scale-[0.99]"
+                >
+                  <img
+                    src={chat.worker?.avatar_url || '/avatar-fallback.png'}
+                    onError={(e) => {
+                      e.currentTarget.src = '/avatar-fallback.png';
+                    }}
+                    alt={chat.worker?.full_name || 'Trabajador'}
+                    className="h-14 w-14 rounded-full object-cover"
+                  />
+
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[15px] font-black text-slate-900">
+                      {chat.worker?.full_name || 'Trabajador'}
+                    </div>
+                    <div className="mt-1 truncate text-[13px] font-semibold text-slate-500">
+  {chat.lastMessage?.text || 'Abrir conversación'}
+</div>
+                  </div>
+
+                  <MessageCircle size={18} className="text-[#62bfb9]" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function CommentNotificationsSheet({ open, notifications, onClose }) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[69000] bg-black/60 p-3 backdrop-blur-sm">
+      <motion.div
+        initial={{ y: 32, opacity: 0, scale: 0.98 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: 32, opacity: 0, scale: 0.98 }}
+        className="mx-auto flex h-full w-full max-w-xl flex-col overflow-hidden rounded-[34px] bg-white shadow-[0_30px_90px_rgba(0,0,0,0.35)]"
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0c6b70]">
+              Notificaciones
+            </div>
+            <div className="text-xl font-black text-slate-950">
+              Comentarios
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-700"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {!notifications?.length ? (
+            <div className="flex h-full items-center justify-center text-center">
+              <div>
+                <Bell className="mx-auto mb-3 text-slate-300" size={36} />
+                <div className="text-lg font-black text-slate-900">
+                  Sin notificaciones todavía
+                </div>
+                <p className="mt-2 text-sm font-semibold text-slate-500">
+                  Tus comentarios e interacciones van a aparecer acá.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {notifications.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm"
+                >
+                  <div className="text-[13px] font-black text-slate-900">
+                    Comentaste en una publicación
+                  </div>
+                  <p className="mt-1 text-[14px] font-semibold leading-5 text-slate-600">
+                    {item.comment}
+                  </p>
+                  <div className="mt-2 text-[11px] font-bold text-slate-400">
+                    {item.created_at ? new Date(item.created_at).toLocaleString() : ''}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+export default function ClientPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const mapRef = useRef(null);
+const feedRef = useRef(null);
+const [mounted, setMounted] = useState(false);
+
+  const initialServiceFromUrl = normalizeSlug(searchParams?.get('service') || '');
+  const initialTimingFromUrl = searchParams?.get('timing') || '';
+
+const [me, setMe] = useState({ id: null, lat: null, lon: null });
+const [clientProfile, setClientProfile] = useState(null);
+const [workers, setWorkers] = useState([]);
+const [busy, setBusy] = useState(false);
+const [selectedService, setSelectedService] = useState(initialServiceFromUrl || '');
+const [serviceQuery, setServiceQuery] = useState('');
+const [feedMode, setFeedMode] = useState('all');
+const [feedSeed, setFeedSeed] = useState(Date.now());
+const [feedIndex, setFeedIndex] = useState(0);
+  const [selected, setSelected] = useState(null);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showAllWorkers, setShowAllWorkers] = useState(false);
+const [workersSheetTitle, setWorkersSheetTitle] = useState('Todos los trabajadores');
+const [workersSheetList, setWorkersSheetList] = useState([]);
+const [jobId, setJobId] = useState(null);
+const [jobStatus, setJobStatus] = useState(null);
+const [chatId, setChatId] = useState(null);
+const [route, setRoute] = useState(null);
+const [etaMinutes, setEtaMinutes] = useState(null);
+const [trackingWorker, setTrackingWorker] = useState(null);
+const [trackingOpen, setTrackingOpen] = useState(false);
+const [nearbyMapOpen, setNearbyMapOpen] = useState(false);
+const [commentsOpen, setCommentsOpen] = useState(false);
+const [commentsWorker, setCommentsWorker] = useState(null);
+const [workerComments, setWorkerComments] = useState([]);
+const [commentText, setCommentText] = useState('');
+const [messagesOpen, setMessagesOpen] = useState(false);
+const [commentNotificationsOpen, setCommentNotificationsOpen] = useState(false);
+const [clientChats, setClientChats] = useState([]);
+const [commentNotifications, setCommentNotifications] = useState([]);
+const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+const [unreadCommentsCount, setUnreadCommentsCount] = useState(0);
+const [nearbyMapWorker, setNearbyMapWorker] = useState(null);
+const [isCancelling, setIsCancelling] = useState(false);
+const [bookingTime] = useState(initialTimingFromUrl || '');
+
+  const hasMeCoords = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
+
+  useEffect(() => {
+    setMounted(true);
+    if (typeof window === 'undefined') return;
+
+    const setRealVH = () => {
+      const h = window.visualViewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty('--real-vh', `${Math.round(h)}px`);
+    };
+
+    setRealVH();
+    window.addEventListener('resize', setRealVH);
+    window.visualViewport?.addEventListener('resize', setRealVH);
+
+    return () => {
+      window.removeEventListener('resize', setRealVH);
+      window.visualViewport?.removeEventListener('resize', setRealVH);
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        const uid = data?.user?.id;
+
+        if (error || !uid) {
+          router.replace('/login');
+          return;
+        }
+
+        try {
+  localStorage.setItem(LS_APP_ROLE, 'client');
+} catch {}
+
+if (alive) setMe((prev) => ({ ...prev, id: uid }));
+
+const { data: profileData, error: profileError } = await supabase
+  .from('profiles')
+  .select('id, full_name, email, role, avatar_url')
+  .eq('id', uid)
+  .maybeSingle();
+
+if (!profileError && alive) {
+  setClientProfile(profileData || null);
+}
+      } catch (error) {
+        console.warn('No se pudo validar la sesión del cliente', error);
+        router.replace('/login');
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    const cached = (() => {
+      try {
+        const raw = localStorage.getItem(LAST_GPS_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    if (cached?.lat && cached?.lon) {
+      setMe((prev) => ({ ...prev, lat: Number(cached.lat), lon: Number(cached.lon) }));
+    }
+
+    const watcher = navigator.geolocation.watchPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+
+        setMe((prev) => ({ ...prev, lat, lon }));
+
+        try {
+          localStorage.setItem(
+            LAST_GPS_KEY,
+            JSON.stringify({ lat, lon, t: Date.now() })
+          );
+        } catch {}
+      },
+      (err) => {
+        console.warn('GPS client error', err);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 12000,
+        timeout: 10000,
+      }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watcher);
+    };
+  }, []);
+
+async function fetchWorkers(serviceFilter = '') {
   setBusy(true);
 
   try {
-    const { data, error } = await supabase
+    const { data: workersData, error: workersError } = await supabase
       .from('map_workers_view')
-      .select('*')
-      .not('lat', 'is', null);
+      .select('*');
 
-    if (error) throw error;
+    if (workersError) throw workersError;
+
+    const { data: postsData, error: postsError } = await supabase
+      .from('worker_posts_public')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (postsError) console.warn('posts public error', postsError);
+
+    const workerIdsFromPosts = [
+      ...new Set((postsData || []).map((p) => p.worker_id).filter(Boolean)),
+    ];
+
+    const { data: profilesData } = workerIdsFromPosts.length
+      ? await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .in('id', workerIdsFromPosts)
+      : { data: [] };
+
+    const profilesMap = (profilesData || []).reduce((acc, profile) => {
+      acc[String(profile.id)] = profile;
+      return acc;
+    }, {});
+
+    const workersMap = {};
+
+    (workersData || []).forEach((worker) => {
+      const id = String(worker.user_id || worker.id || '');
+      if (id) workersMap[id] = worker;
+    });
+
+    const postsByWorker = {};
+
+    (postsData || []).forEach((post) => {
+      const key = String(post.worker_id || '');
+      if (!key) return;
+      if (!postsByWorker[key]) postsByWorker[key] = post;
+    });
+
+    const allWorkerIds = [
+      ...new Set([
+        ...Object.keys(workersMap),
+        ...Object.keys(postsByWorker),
+      ]),
+    ];
 
     const normalizedFilter = normalizeSlug(serviceFilter);
 
-    const cleaned = (data || [])
-      .map((w) => {
-        const lat = Number(w?.lat);
-        const lng = Number(w?.lng ?? w?.lon ?? w?.long);
+    let merged = allWorkerIds.map((workerId) => {
+      const worker = workersMap[workerId] || {};
+      const post = postsByWorker[workerId] || null;
+      const profile = profilesMap[workerId] || {};
 
-        const workerServices = splitWorkerServices(w).map((item) =>
-          normalizeSlug(item)
-        );
+      const lat = Number(worker?.lat);
+      const lng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
 
-        return {
-          ...w,
-          lat,
-          lng,
-          _serviceTokens: workerServices,
-        };
-      })
-      .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng))
-      .filter((w) => {
-        if (!normalizedFilter) return true;
+      const distKm =
+        hasMeCoords && Number.isFinite(lat) && Number.isFinite(lng)
+          ? haversineKm(Number(me.lat), Number(me.lon), lat, lng)
+          : null;
 
-        return (w._serviceTokens || []).some((token) => token === normalizedFilter);
-      });
+      const tokens = splitWorkerServices(worker).map((item) =>
+        normalizeSlug(item)
+      );
 
-    console.log('🧠 Trabajadores total:', (data || []).length);
-    console.log('✅ Trabajadores coords válidas:', cleaned.length);
-    console.log('🎯 Filtro servicio activo:', normalizedFilter || 'todos');
+      const mediaUrl =
+        post?.media_url ||
+        post?.thumbnail_url ||
+        worker?.cover_url ||
+        worker?.video_thumb_url ||
+        worker?.avatar_url ||
+        profile?.avatar_url ||
+        '/avatar-fallback.png';
 
-    setWorkers(cleaned);
-  } catch (err) {
-    console.error('Error cargando trabajadores:', err.message);
-    toast.error('Error cargando trabajadores');
+      return {
+        ...worker,
+
+        user_id: worker.user_id || workerId,
+        id: worker.id || workerId,
+
+        full_name:
+          worker.full_name ||
+          profile.full_name ||
+          'Trabajador ManosYA',
+
+        avatar_url:
+          worker.avatar_url ||
+          profile.avatar_url ||
+          '/avatar-fallback.png',
+
+        lat,
+        lng,
+        _distKm: distKm,
+        _serviceTokens: tokens,
+
+        post_id: post?.post_id || post?.id || null,
+        post_created_at: post?.created_at || null,
+
+        media_url: mediaUrl,
+        cover_url: mediaUrl,
+        thumbnail_url: post?.thumbnail_url || mediaUrl,
+
+        media_type:
+          String(post?.media_type || '').toLowerCase() === 'video'
+            ? 'video'
+            : 'image',
+
+        post_description:
+          post?.caption ||
+          post?.text_overlay ||
+          worker?.bio ||
+          'Trabajador disponible en ManosYA.',
+      };
+    });
+
+    if (normalizedFilter) {
+      merged = merged.filter((w) =>
+        (w._serviceTokens || []).some((token) => {
+          if (token === normalizedFilter) return true;
+          if (token.includes(normalizedFilter)) return true;
+          if (normalizedFilter.includes(token)) return true;
+          return false;
+        })
+      );
+    }
+
+    merged.sort((a, b) => {
+      const aHasPost = Boolean(a.post_id);
+      const bHasPost = Boolean(b.post_id);
+      if (aHasPost !== bHasPost) return aHasPost ? -1 : 1;
+
+      const aPostTime = new Date(a.post_created_at || 0).getTime();
+      const bPostTime = new Date(b.post_created_at || 0).getTime();
+      if (aPostTime !== bPostTime) return bPostTime - aPostTime;
+
+      const aOnline = isOnlineRecent(a);
+      const bOnline = isOnlineRecent(b);
+      if (aOnline !== bOnline) return aOnline ? -1 : 1;
+
+      return Number(b?.avg_rating || 0) - Number(a?.avg_rating || 0);
+    });
+
+    console.log('CLIENT FEED MERGED', merged);
+
+    setWorkers(merged);
+    setFeedIndex(0);
+  } catch (error) {
+    console.error(error);
+    toast.error('No pudimos cargar trabajadores');
   } finally {
     setBusy(false);
   }
 }
-// ⚡ Cargar trabajadores DESPUÉS del mapa (mejora la velocidad)
-useEffect(() => {
-  setTimeout(() => {
-    fetchWorkers();
-  }, 350);
-}, []);
 
+ useEffect(() => {
+  if (!mounted) return;
 
-// ✅ Vista inicial fija (NO mover por workers)
-const HOME_VIEW = {
-  center: [-25.55, -55.75], // Central + Alto Paraná entra bien
-  zoom: 7,
-};
-
-const didSetHomeViewRef = useRef(false);
-
-useEffect(() => {
-  if (!mapRef.current) return;
-  if (didSetHomeViewRef.current) return;
-
-  didSetHomeViewRef.current = true;
-
-  try {
-    mapRef.current.setView(HOME_VIEW.center, HOME_VIEW.zoom, { animate: false });
-    setTimeout(() => mapRef.current?.invalidateSize?.(), 200);
-  } catch (e) {
-    console.warn('set home view error:', e);
-  }
-}, []);
-
-// 🛰️ Realtime instantáneo de cambios de estado (busy / available / paused)
-
-useEffect(() => {
-  const channel = supabase
-    .channel('worker-status-sync')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'worker_profiles' },
-      payload => {
-        const updated = payload.new;
-
-        setWorkers(prev =>
-  prev.map(w =>
-    String(w.user_id) === String(updated.user_id)
-      ? {
-          ...w,
-          status: updated.status,
-          busy_until: updated.busy_until,
-          is_active: updated.is_active,
-          updated_at: updated.updated_at,
-        }
-      : w
-  )
-);
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, []);
-  
-/* === 🛰️ Escuchar actualizaciones en tiempo real de los trabajadores (ubicación + datos generales) === */
-useEffect(() => {
-  // ✅ Canal 1: actualizaciones de ubicación con animación
-  const channelLocation = supabase
-    .channel('realtime-worker-locations')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'worker_locations' }, // 👈 AJUSTÁ el nombre de tabla si es otro
-      (payload) => {
-        const updated = payload.new;
-
-        // ✅ aceptar lat + (lng o lon/long)
-        const uLat = Number(updated?.lat);
-        const uLng = Number(updated?.lng ?? updated?.lon ?? updated?.long);
-        if (!Number.isFinite(uLat) || !Number.isFinite(uLng)) return;
-
-        setWorkers((prev) => {
-          const exists = prev.find((w) => w.user_id === updated.user_id);
-
-          if (exists) {
-  const marker = markersRef.current?.[updated.user_id];
-
-  const pLat = Number(exists?.lat);
-  const pLng = Number(exists?.lng ?? exists?.lon ?? exists?.long);
-
-  // ✅ Animación suave si hay marcador previo
-  if (marker && Number.isFinite(pLat) && Number.isFinite(pLng)) {
-    animateMarkerMove(marker, pLat, pLng, uLat, uLng);
+  if (feedMode === 'all') {
+    fetchWorkers('');
+    return;
   }
 
- return prev.map((w) =>
-  w.user_id === updated.user_id
-    ? {
-        ...w,
-        lat: uLat,
-        lng: uLng,
-        last_seen: updated.updated_at || new Date().toISOString(), // ✅
-        _justUpdated: true,
-      }
-    : w
-);
-}
-       return [
-  ...prev,
-  {
-    user_id: updated.user_id,
-    lat: uLat,
-    lng: uLng, // ✅ normalizado
-    last_seen: updated.updated_at || new Date().toISOString(),
-    full_name: updated.full_name || 'Nuevo trabajador',
-    avatar_url: updated.avatar_url || '/avatar-fallback.png',
-    _justUpdated: true,
-  },
-];
-        });
-
-        setTimeout(() => {
-          setWorkers((prev) =>
-            prev.map((w) =>
-              w.user_id === updated.user_id ? { ...w, _justUpdated: false } : w
-            )
-          );
-        }, 2000);
-      }
-    )
-    .subscribe((status) => console.log('📡 Canal realtime ubicaciones:', status));
-
-  // ✅ Canal 2a: cambios generales del perfil profesional (no-ubicación)
-  const channelGeneralWorker = supabase
-    .channel('realtime-workers-general-worker')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_profiles' }, () => {
-      fetchWorkers();
-    })
-    .subscribe();
-
-  // ✅ Canal 2b: cambios del perfil base (nombre, foto)
-  const channelGeneralProfile = supabase
-    .channel('realtime-workers-general-profile')
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, () => {
-      fetchWorkers();
-    })
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channelLocation);
-    supabase.removeChannel(channelGeneralWorker);
-    supabase.removeChannel(channelGeneralProfile);
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
-
-  /* === Realtime global jobs (informativo) === */
-useEffect(() => {
-  const channel = supabase
-    .channel('jobs-realtime-client')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'jobs' },
-      payload => {
-        if (payload.new?.client_id === me.id) {
-          toast.info(`🔄 Pedido actualizado: ${payload.new.status}`);
-
-          // 👇 Si el pedido se cancela, limpiar todo automáticamente
-          if (payload.new.status === 'cancelled') {
-            resetJobState();
-            
-          }
-        }
-      }
-    )
-    .subscribe();
-
-  return () => supabase.removeChannel(channel);
-}, [me.id]);
-
-/* === TRACKING DEL TRABAJADOR DEL PEDIDO (LIVE GPS) === */
-useEffect(() => {
-  if (!jobId) return;
-  if (!selected?.user_id) return;
-
-  const workerId = String(selected.user_id);
-
-  const channel = supabase
-    .channel(`worker-live-${workerId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'worker_locations',
-        filter: `user_id=eq.${workerId}`,
-      },
-      async (payload) => {
-        const loc = payload.new;
-
-        const lat = Number(loc?.lat);
-        const lng = Number(loc?.lng ?? loc?.lon ?? loc?.long);
-
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-
-        setSelected((prev) =>
-          prev && String(prev.user_id) === workerId
-            ? { ...prev, lat, lng, last_seen: loc?.updated_at || new Date().toISOString() }
-            : prev
-        );
-
-        setWorkers((prev) =>
-          prev.map((w) =>
-            String(w.user_id) === workerId
-              ? {
-                  ...w,
-                  lat,
-                  lng,
-                  last_seen: loc?.updated_at || new Date().toISOString(),
-                  _justUpdated: true,
-                }
-              : w
-          )
-        );
-
-        const marker = markersRef.current?.[workerId];
-        if (marker) {
-          const current = marker.getLatLng?.();
-          if (current) {
-            animateMarkerMove(marker, current.lat, current.lng, lat, lng);
-          } else {
-            marker.setLatLng([lat, lng]);
-          }
-        }
-
-        const cLat = Number(me?.lat);
-        const cLng = Number(me?.lon);
-
-  if (Number.isFinite(cLat) && Number.isFinite(cLng)) {
-  if (isTrackingWorker) {
-    const result = await fetchRoadRoute(cLat, cLng, lat, lng);
-
-    if (result?.route?.length) {
-      setRoute(result.route);
-      setEtaMinutes(result.durationMin ?? null);
-
-      mapRef.current?.flyToBounds(result.route, {
-        paddingTopLeft: [40, 100],
-        paddingBottomRight: [40, 240],
-        maxZoom: 15, // 🔥 antes 18
-        duration: 0.8,
-      });
-
-      setTimeout(() => {
-        mapRef.current?.invalidateSize?.();
-      }, 250);
-    } else {
-      const fallbackRoute = [
-        [cLat, cLng],
-        [lat, lng],
-      ];
-
-      setRoute(fallbackRoute);
-
-      const distKm = haversineKm(cLat, cLng, lat, lng);
-      const fallbackMin = Math.max(1, Math.round((distKm / 35) * 60));
-      setEtaMinutes(fallbackMin);
-
-      mapRef.current?.flyToBounds(fallbackRoute, {
-        paddingTopLeft: [40, 100],
-        paddingBottomRight: [40, 240],
-        maxZoom: 15, // 🔥 antes 17
-        duration: 0.8,
-      });
-
-      setTimeout(() => {
-        mapRef.current?.invalidateSize?.();
-      }, 250);
-    }
-  } else {
-    setRoute([
-      [cLat, cLng],
-      [lat, lng],
-    ]);
-  }
-}
-        setTimeout(() => {
-          setWorkers((prev) =>
-            prev.map((w) =>
-              String(w.user_id) === workerId
-                ? { ...w, _justUpdated: false }
-                : w
-            )
-          );
-        }, 1800);
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [jobId, selected?.user_id, me?.lat, me?.lon, isTrackingWorker]);
-
-// 🌍 Sincronización global en vivo (workers, jobs, perfiles)
-useEffect(() => {
-  const stop = startRealtimeCore((type, data) => {
-    switch (type) {
-      case 'worker': {
-  setWorkers((prev) => {
-    const exists = prev.some((w) => String(w.user_id) === String(data.user_id));
-
-    // ✅ NO borrar por status
-    if (exists) {
-      return prev.map((w) =>
-        String(w.user_id) === String(data.user_id)
-          ? { ...w, ...data, _justUpdated: true }
-          : w
-      );
-    }
-
-    // ✅ si no existe, lo agregamos igual (si tiene coords, mejor)
-    return [...prev, { ...data, _justUpdated: true }];
-  });
-
-  setTimeout(() => {
-    setWorkers((prev) =>
-      prev.map((w) =>
-        String(w.user_id) === String(data.user_id)
-          ? { ...w, _justUpdated: false }
-          : w
-      )
-    );
-  }, 2000);
-
-  break;
-}
-case 'job': {
-  if (data.client_id === me.id) {
-    setJobStatus(data.status);
-
-    if (data.status === 'completed' || data.status === 'worker_completed') {
-      toast.success('🎉 El trabajador finalizó el trabajo');
-      setJobStatus('worker_completed');
-    } 
-    else if (['cancelled', 'rejected', 'worker_rejected'].includes(data.status)) {
-      toast.error('🚫 El trabajador rechazó o canceló el pedido');
-      resetJobState();
-    } 
-   else if (data.status === 'accepted' || data.status === 'assigned') {
-  setIsTrackingWorker(true);
-
-  toast.success('🟢 Tu profesional aceptó y ya está en camino');
-
-  // ✅ cerrar overlays para dejar solo mapa + seguimiento
-  setShowPrice(false);
-  setClusterOpen(false);
-  setClusterMiniOpen(false);
-  setServicesOpen(false);
-  setIsChatOpen(false);
-
-  const workerFresh =
-    workersByIdRef.current?.get(String(data.worker_id)) || selected;
-
-  if (workerFresh) {
-    setSelected(workerFresh);
-
-    const wLat = Number(workerFresh?.lat);
-    const wLng = Number(workerFresh?.lng ?? workerFresh?.lon ?? workerFresh?.long);
-    const cLat = Number(me?.lat);
-    const cLng = Number(me?.lon);
-
-    // ✅ dejamos la UI en modo simplificado
-    setProfileSheetMode('mini');
-
-    if (
-      Number.isFinite(cLat) &&
-      Number.isFinite(cLng) &&
-      Number.isFinite(wLat) &&
-      Number.isFinite(wLng)
-    ) {
-      const liveRoute = [
-        [cLat, cLng],
-        [wLat, wLng],
-      ];
-
-      setRoute(liveRoute);
-
-      // ✅ mostrar automáticamente al trabajador viniendo
-      runSuperFocusOnWorker(wLat, wLng, liveRoute);
-
-      const distKm = haversineKm(cLat, cLng, wLat, wLng);
-      const fallbackMin = Math.max(1, Math.round((distKm / 35) * 60));
-      setEtaMinutes(fallbackMin);
-
-      setTimeout(() => {
-        mapRef.current?.invalidateSize?.();
-      }, 250);
-
-      setTimeout(() => {
-        mapRef.current?.invalidateSize?.();
-      }, 800);
-    }
-  }
-}
-  }
-  break;
-}
-
-      case 'profile': {
-        setWorkers((prev) =>
-          prev.map((w) => (w.user_id === data.id ? { ...w, ...data } : w))
-        );
-        break;
-      }
-
-      default:
-        console.log('Evento realtime desconocido:', type, data);
-    }
-  });
-
-  return () => {
-    try { stop?.(); } catch {}
-    stopRealtimeCore?.();
-  };
-}, [me.id]); // ✅ NO metas chatId acá si no lo usás dentro
-// 🛰️ ESCUCHAR MENSAJES NUEVOS GLOBALES (aunque el chat no esté abierto)
+  fetchWorkers(selectedService);
+}, [mounted, selectedService, hasMeCoords, feedMode]);
 useEffect(() => {
   if (!me?.id) return;
-  if (!jobId) return;
 
-  const channelGlobal = supabase
-    .channel(`global-messages-${jobId}`)
+  refreshClientBadges();
+
+  const channel = supabase
+    .channel(`client-notifications-${me.id}`)
     .on(
       'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'messages' },
-      async (payload) => {
-        const msg = payload?.new;
-        if (!msg) return;
-
-        const isMine = String(msg.sender_id) === String(me.id);
-        if (isMine) return;
-
-        let activeChatId = chatId;
-
-        // ✅ si todavía no tenemos chatId en memoria, lo aseguramos en caliente
-        if (!activeChatId && jobId) {
-          try {
-            const { data: ensuredChatId, error: ensureErr } = await supabase.rpc('ensure_chat_for_job', {
-              p_job_id: jobId,
-            });
-
-            if (!ensureErr && ensuredChatId) {
-              activeChatId = ensuredChatId;
-              setChatId(ensuredChatId);
-            }
-          } catch (err) {
-            console.warn('No se pudo asegurar chat en listener global:', err);
-          }
-        }
-
-        const isSameChat =
-          msg.chat_id &&
-          activeChatId &&
-          String(msg.chat_id) === String(activeChatId);
-
-        if (!isSameChat) return;
-
-        if (!isChatOpen) {
-          setHasUnread(true);
-          setUnreadCount((prev) => prev + 1);
-
-          // 🔊 reproducir sonido
-          playIncomingMessageSound();
-
-          // 📳 vibración opcional en celular
-          if (typeof navigator !== 'undefined' && navigator.vibrate) {
-            navigator.vibrate([120, 60, 120]);
-          }
-
-          toast.info('💬 Nuevo mensaje de un profesional');
-        }
+      {
+        event: '*',
+        schema: 'public',
+        table: 'messages',
+      },
+      () => {
+        refreshClientBadges();
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'worker_comments',
+        filter: `client_id=eq.${me.id}`,
+      },
+      () => {
+        refreshClientBadges();
       }
     )
     .subscribe();
 
   return () => {
-    supabase.removeChannel(channelGlobal);
+    supabase.removeChannel(channel);
   };
-}, [me?.id, jobId, chatId, isChatOpen, supabase]);
-/* === Interacciones mejoradas === */
-function handleMarkerClick(worker) {
-  if (!worker) return;
-
-  const workerServices = splitWorkerServices(worker)
-    .map((item) => normalizeSlug(item))
-    .filter(Boolean);
-
-  const uniqueWorkerServices = Array.from(new Set(workerServices));
-
-  let nextSelectedService = null;
-
-  // 1) Si ya venías con un servicio elegido y este trabajador lo ofrece, lo conservamos
-  if (selectedService) {
-    const currentWanted = normalizeSlug(selectedService);
-    if (uniqueWorkerServices.includes(currentWanted)) {
-      nextSelectedService = currentWanted;
-    }
-  }
-
-  // 2) Si no había servicio previo y el trabajador solo tiene uno, lo auto-seleccionamos
-  if (!nextSelectedService && uniqueWorkerServices.length === 1) {
-    nextSelectedService = uniqueWorkerServices[0];
-  }
-
-  // 3) Si no hubo match pero tiene main_skill, usarlo solo si existe entre sus servicios
-  if (!nextSelectedService && worker?.main_skill) {
-    const mainSkillSlug = normalizeSlug(worker.main_skill);
-    if (uniqueWorkerServices.includes(mainSkillSlug)) {
-      nextSelectedService = mainSkillSlug;
-    }
-  }
-
-  // 4) Si tiene exactamente 2 servicios y uno coincide con el service_type, priorizarlo
-  if (!nextSelectedService && worker?.service_type) {
-    const serviceTypeSlug = normalizeSlug(worker.service_type);
-    if (uniqueWorkerServices.includes(serviceTypeSlug)) {
-      nextSelectedService = serviceTypeSlug;
-    }
-  }
-
-  setSelected(worker);
-  setSelectedService(nextSelectedService);
-  setProfileSheetMode('full');
-  setRoute(null);
-  setShowPrice(false);
-
-  // ✅ IMPORTANTE:
-  // al seleccionar worker solo entramos en preview
-  // NO hacemos flyTo al worker porque eso secuestra el mapa
-  if (!isTrackingWorker) {
-    setCameraMode('preview');
-  }
-
-  if (nextSelectedService) {
-    const flow = getServiceFlowMeta(nextSelectedService);
-    toast.success(
-      `${worker.full_name || 'Trabajador'} • ${flow?.action_label || 'Servicio listo'}`,
-      { duration: 1700 }
-    );
-    return;
-  }
-
-  toast.success(`👷 ${worker.full_name || 'Trabajador'} seleccionado`, {
-    duration: 1500,
-  });
-}
-
-function focusWorkerFromSearch(worker) {
-  if (!worker) return;
-
-  setWorkerSearch(worker.full_name || '');
-  setWorkerSearchOpen(false);
-
-  handleMarkerClick(worker);
-
-  const wLat = Number(worker?.lat);
-  const wLng = Number(worker?.lng ?? worker?.lon ?? worker?.long);
-
-  // ✅ si NO estamos en tracking real, mostrar zona general:
-  // cliente + worker visibles, sin zoom exagerado
-  if (
-    mapRef.current &&
-    hasMeCoords &&
-    Number.isFinite(wLat) &&
-    Number.isFinite(wLng) &&
-    !isTrackingWorker
-  ) {
-    mapRef.current.fitBounds(
-      [
-        [Number(me.lat), Number(me.lon)],
-        [wLat, wLng],
-      ],
-      {
-        padding: [70, 70],
-        maxZoom: 14,
-      }
-    );
-
-    setCameraMode('preview');
-  }
-
-  const onlineText = isOnlineRecent(worker) ? '🟢 En línea' : '⚪ No reciente';
-
-  const distKm =
-    hasMeCoords && Number.isFinite(wLat) && Number.isFinite(wLng)
-      ? haversineKm(Number(me.lat), Number(me.lon), wLat, wLng)
-      : null;
-
-  const distText =
-    distKm != null
-      ? ` • ${formatKm(distKm)} de distancia`
-      : '';
-
-  toast.success(`${worker.full_name || 'Trabajador'} • ${onlineText}${distText}`, {
-    duration: 2200,
-  });
-}
-
-function solicitar() {
-  if (!selected) {
-    toast.error('Seleccioná un trabajador primero');
-    return;
-  }
-
-  const workerServices = splitWorkerServices(selected)
-    .map((item) => normalizeSlug(item))
-    .filter(Boolean);
-
-  const uniqueWorkerServices = Array.from(new Set(workerServices));
-
-  let serviceToUse = selectedServiceResolved;
-
-  if (!serviceToUse && uniqueWorkerServices.length === 1) {
-    serviceToUse = uniqueWorkerServices[0];
-    setSelectedService(uniqueWorkerServices[0]);
-  }
-
-  if (!serviceToUse && uniqueWorkerServices.length > 1) {
-    toast.error('Elegí una especialidad del perfil antes de solicitar');
-    return;
-  }
-
-  if (!serviceToUse && selected?.main_skill) {
-    serviceToUse = normalizeSlug(selected.main_skill);
-    setSelectedService(serviceToUse);
-  }
-
-  if (!serviceToUse) {
-    toast.error('No pudimos identificar el servicio a solicitar');
-    return;
-  }
-
-  const flow = getServiceFlowMeta(serviceToUse);
-
-  if (flow?.pricing_type === 'booking') {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-
-    if (!bookingDate) setBookingDate(`${yyyy}-${mm}-${dd}`);
-    if (!bookingTime) setBookingTime('09:00');
-  } else {
-    setBookingDate('');
-    setBookingTime('');
-  }
-
-  toast.success(flow?.action_label || 'Solicitud preparada', {
-    duration: 1600,
-  });
-
-  setShowPrice(true);
-}
-
-  // ✅ CONFIRMAR — guarda el pedido en Supabase y muestra visualmente el flujo
-async function confirmarSolicitud() {
-  try {
-    setShowPrice(false);
-    toast.loading('Enviando solicitud...', { id: 'pedido' });
-
-    // 1️⃣ Usuario logueado
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) throw new Error('Sesión no encontrada');
-
-    // 2️⃣ Trabajador seleccionado válido
-    if (!selected || !selected.user_id) {
-      throw new Error('No se seleccionó un trabajador válido');
-    }
-
-  // 3️⃣ 🔒 Asegurar perfil del cliente (profiles.id = auth.user.id)
-const { error: profileErr } = await supabase
-  .from('profiles')
-  .upsert(
-    {
-      id: user.id,               // PK = auth.uid
-      email: user.email ?? null,
-    },
-    { onConflict: 'id' }
-  );
-
-if (profileErr) {
-  console.error('Error asegurando perfil:', profileErr);
-  throw profileErr; // ✅ cortar acá porque luego FK depende de profiles
-}
-   // 🔒 VALIDACIÓN DE RUTA — blindado 100% (sin errores por 0 o strings)
-const canMakeRoute = hasMeCoords && hasSelCoords;
-
-if (!canMakeRoute) {
-  toast.error('No se puede crear el pedido. Coordenadas incompletas.');
-  console.warn('❌ Ruta inválida — coordenadas incompletas:', {
-    meLat: me?.lat,
-    meLon: me?.lon,
-    selLat,
-    selLng,
-  });
-  return;
-}
-
-// ✔ Generar ruta ANTES de crear pedido
-setRoute([
-  [Number(me.lat), Number(me.lon)],
-  [selLat, selLng],
-]);
-
-const flowMeta = getServiceFlowMeta(selectedServiceResolved);
-
-if (flowMeta?.pricing_type === 'booking') {
-  if (!bookingDate || !bookingTime) {
-    toast.error('Elegí fecha y hora para agendar este servicio');
-    return;
-  }
-}
-    // 4️⃣ Insertar el pedido con servicio y agenda si aplica
-const { data: inserted, error: insertError } = await supabase
-  .from('jobs')
-  .insert([
-    {
-      title:
-        selectedServiceMeta?.pricing_type === 'booking'
-          ? `Agendamiento con ${selected.full_name || 'Trabajador'}`
-          : `Trabajo con ${selected.full_name || 'Trabajador'}`,
-
-      description: [
-        `Pedido generado desde el mapa`,
-        `Servicio: ${selectedServiceCatalogMeta?.name || selectedServiceResolved || selected?.main_skill || 'servicio general'}`,
-        selectedServiceMeta?.pricing_type === 'booking'
-          ? `Fecha solicitada: ${bookingDate || '-'}`
-          : null,
-        selectedServiceMeta?.pricing_type === 'booking'
-          ? `Hora solicitada: ${bookingTime || '-'}`
-          : null,
-        bookingNotes?.trim() ? `Notas: ${bookingNotes.trim()}` : null,
-      ]
-        .filter(Boolean)
-        .join(' · '),
-
-      status: 'open',
-      client_id: user.id,
-      worker_id: selected.user_id,
-      client_lat: me.lat,
-      client_lng: me.lon,
-      worker_lat: selLat,
-      worker_lng: selLng,
-      created_at: new Date().toISOString(),
-      service_type: selectedServiceResolved || selected?.main_skill || 'servicio general',
-    },
-  ])
-  .select('id, status')
-  .single();
-
-if (insertError) throw insertError;
-
-   // 5️⃣ Actualizar estado local y UI
-setJobId(inserted.id);
-setJobStatus(inserted.status);
-
-// ✅ asegurar chat DESDE EL INICIO para que el contador funcione aunque el cliente nunca abra el modal
-try {
-  const { data: ensuredChatId, error: ensureErr } = await supabase.rpc('ensure_chat_for_job', {
-    p_job_id: inserted.id,
-  });
-
-  if (ensureErr) {
-    console.warn('No se pudo asegurar chat al crear solicitud:', ensureErr);
-  } else if (ensuredChatId) {
-    setChatId(ensuredChatId);
-  }
-} catch (chatBootErr) {
-  console.warn('Error creando chat inicial:', chatBootErr);
-}
-
-toast.success(`✅ Pedido enviado a ${selected.full_name}`, { id: 'pedido' });
-
-// ✅ NO recortar la lista de workers, solo mantener selección visual
-setWorkers((prev) =>
-  (prev || []).map((w) => ({
-    ...w,
-    _selected: String(w.user_id) === String(selected.user_id),
-  }))
-);
-
-// ✅ ruta SIEMPRE usando selLat/selLng (que ya contempla lon/lng)
-setRoute([[me.lat, me.lon], [selLat, selLng]]);
-
-if (mapRef.current && Number.isFinite(me.lat) && hasSelCoords) {
-  mapRef.current.fitBounds([[me.lat, me.lon], [selLat, selLng]], { padding: [80, 80] });
-}
-  } catch (err) {
-    console.error('Error al confirmar solicitud:', err?.message || err);
-    toast.error(err?.message || 'No se pudo enviar el pedido', { id: 'pedido' });
-  }
-}
-
-// ✅ CANCELAR PEDIDO — cancela en Supabase y limpia todo
-async function cancelarPedido() {
-  try {
-    if (!jobId) {
-      toast.warning('⚠️ No hay pedido activo para cancelar');
-      return;
-    }
-    
-
-    // 🔥 Cambiar el estado en la base de datos
-    const { error } = await supabase
-      .from('jobs')
-      .update({
-        status: 'cancelled',
-        cancelled_at: new Date().toISOString(),
-      })
-      .eq('id', jobId)
-      .select()
-      .maybeSingle(); // ✅ evita error 406 si no retorna nada
-
-    if (error) throw error;
-
-    toast.success('🚫 Pedido cancelado correctamente');
-
-    // 🧹 Limpiar estado local y UI
-    resetJobState();
-
-    // 📨 Notificar al trabajador (opcional)
-    if (chatId) {
-      await supabase.from('messages').insert([{
-        chat_id: chatId,
-        sender_id: me.id,
-        text: '🚫 El cliente canceló el pedido.',
-      }]);
-    }
-  } catch (err) {
-    console.error('Error al cancelar pedido:', err.message);
-    toast.error('No se pudo cancelar el pedido');
-  }
-}
- // 🔔 Abrir chat (crea/garantiza chat y se suscribe a mensajes)
-async function openChat(forceChatId = null) {
-  try {
-    if (!jobId || !jobStatus || ['completed', 'cancelled'].includes(jobStatus)) {
-      toast.warning('⚠️ Esperá un momento, cargando pedido activo...');
-      return;
-    }
-
-    const activeJob = localStorage.getItem('activeJobChat');
-    if (!jobId && activeJob) {
-      const parsed = JSON.parse(activeJob);
-      if (parsed?.jid) setJobId(parsed.jid);
-      if (parsed?.cid) setChatId(parsed.cid);
-    }
-
-    const finalJobId = jobId || JSON.parse(localStorage.getItem('activeJobChat') || '{}')?.jid;
-    const finalChatId = forceChatId || chatId || JSON.parse(localStorage.getItem('activeJobChat') || '{}')?.cid;
-
-    if (!finalJobId) {
-      toast.warning('⚠️ No hay pedido activo. Confirmá uno primero.');
-      return;
-    }
-
-    const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
-      p_job_id: finalJobId,
+}, [me?.id]);
+  const filteredServices = useMemo(() => {
+    const q = normalizeText(serviceQuery);
+    if (!q) return SERVICE_CATALOG;
+    return SERVICE_CATALOG.filter((item) => {
+      return normalizeText(item.name).includes(q) || normalizeText(item.slug).includes(q);
     });
-    if (chatErr) throw chatErr;
+  }, [serviceQuery]);
 
-    const cid = chatIdData || finalChatId;
-    setChatId(cid);
+const feedWorkers = useMemo(() => {
+  const base = Array.isArray(workers) ? workers : [];
+  const q = normalizeText(serviceQuery);
 
-    const { data: msgs } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('chat_id', cid)
-      .order('created_at', { ascending: true });
-
-    setMessages(msgs || []);
-    setIsChatOpen(true);
-
-    if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
-
-        const channel = supabase
-      .channel(`chat-${cid}`, {
-        config: {
-          broadcast: { self: true },
-          presence: { key: me.id || 'client' },
-          reconnect: true,
-        },
+  if (q) {
+    return base
+      .map((worker) => ({
+        ...worker,
+        _searchScore: workerSearchScore(worker, q),
+      }))
+      .filter((worker) => worker._searchScore > 0)
+      .sort((a, b) => {
+        if (b._searchScore !== a._searchScore) return b._searchScore - a._searchScore;
+        if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
+        return Number(b?.avg_rating || 0) - Number(a?.avg_rating || 0);
       })
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${String(cid)}` },
-        (payload) => {
-          const newMsg = payload?.new;
-          if (!newMsg) return;
-
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === newMsg.id)) return prev;
-            return [...prev, newMsg];
-          });
-
-          // ✅ si el chat está abierto, limpiar contador
-          setHasUnread(false);
-          setUnreadCount(0);
-
-          if (String(newMsg.sender_id) !== String(me?.id)) {
-            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-          }
-        }
-      )
-      .subscribe((status) => console.log('📡 Canal de chat conectado:', status));
-
-    chatChannelRef.current = channel;
-  } catch (e) {
-    console.error('❌ Error abriendo chat:', e);
-    toast.error('No se pudo abrir el chat');
+      .slice(0, 60);
   }
+
+  if (feedMode === 'near') {
+    const nearby = base
+      .filter((worker) => Number.isFinite(Number(worker?._distKm)))
+      .filter((worker) => Number(worker._distKm) <= 15)
+      .sort((a, b) => Number(a._distKm) - Number(b._distKm));
+
+    const topNear = nearby.slice(0, 6);
+    const restNear = shuffleBySeed(nearby.slice(6), feedSeed);
+
+    return [...topNear, ...restNear].slice(0, 24);
+  }
+
+  const online = base.filter((worker) => isOnlineRecent(worker));
+  const offline = base.filter((worker) => !isOnlineRecent(worker));
+
+  return [
+    ...shuffleBySeed(online, feedSeed),
+    ...shuffleBySeed(offline, feedSeed + 77),
+  ].slice(0, 60);
+}, [workers, feedMode, feedSeed, serviceQuery]);
+
+const currentWorker = feedWorkers[feedIndex] || null;
+const nearbyWorkers = useMemo(() => {
+  return (workers || [])
+    .filter((worker) => Number.isFinite(Number(worker?._distKm)))
+    .sort((a, b) => Number(a._distKm) - Number(b._distKm));
+}, [workers]);
+  useEffect(() => {
+    if (currentWorker) setSelected(currentWorker);
+  }, [currentWorker]);
+
+  async function openProfile(worker) {
+    setSelected(worker);
+    setShowProfile(true);
+  }
+async function openComments(worker) {
+  setCommentsWorker(worker);
+  setCommentsOpen(true);
+
+  const { data } = await supabase
+  .from('worker_comments')
+  .select('*')
+  .eq('worker_id', worker.user_id)
+  .order('created_at', { ascending: false });
+
+  setWorkerComments(data || []);
 }
+async function sendPublicComment() {
+  if (!commentsWorker || !commentText.trim()) return;
 
+  const workerId = commentsWorker.user_id;
 
-// ✉️ Enviar mensaje (acepta texto opcional)
-async function sendMessage(textOverride = null) {
-  const text = (textOverride ?? inputRef.current?.value)?.trim();
-  if (!text) return;
+  const payload = {
+    worker_id: workerId,
+    client_id: me.id,
+    client_name: clientProfile?.full_name || 'Cliente',
+    client_avatar: clientProfile?.avatar_url || '',
+    comment: commentText.trim(),
+  };
 
-  if (!chatId || !me?.id) {
-    console.error('❌ Falta chatId o sender_id');
-    toast.error('No se puede enviar el mensaje');
+  const { error } = await supabase.from('worker_comments').insert([payload]);
+
+  if (error) {
+    console.error('comment insert error', error);
+    toast.error(error.message || 'No se pudo comentar');
     return;
   }
-
-  try {
-    const { data, error } = await supabase
-      .from('messages')
-      .insert([
-        {
-          chat_id: chatId,
-          sender_id: me.id,
-          text,
-        },
-      ])
-      .select()
-      .single();
-
-    if (error) {
-      console.error('❌ Error enviando mensaje:', error);
-      toast.error('No se pudo enviar el mensaje');
-      return;
-    }
-
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === data?.id)) return prev;
-      return [...prev, data];
-    });
-
-   inputRef.current.value = '';
-
-if (typingTimeoutRef.current) {
-  clearTimeout(typingTimeoutRef.current);
-  typingTimeoutRef.current = null;
-}
-
-setIsTyping(false);
-setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-  } catch (err) {
-    console.error('❌ Error general al enviar mensaje:', err);
-    toast.error('No se pudo enviar el mensaje');
-  }
-}
-async function sendCurrentLocationMessage() {
-  try {
-    if (!chatId || !me?.id) {
-      toast.error('No se puede compartir la ubicación todavía');
-      return;
-    }
-
-    let lat = Number(me?.lat);
-    let lng = Number(me?.lon);
-
-    // ✅ si ya tenemos GPS en estado, usamos eso
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      const cached = loadLastGps();
-      if (cached) {
-        lat = Number(cached.lat);
-        lng = Number(cached.lon);
-      }
-    }
-
-    // ✅ si aún no hay coords, intentamos pedir una ubicación puntual
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      if (!navigator?.geolocation) {
-        toast.error('Tu dispositivo no soporta GPS');
-        return;
-      }
-
-      toast.loading('Obteniendo ubicación...', { id: 'share-location' });
-
-      const pos = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          resolve,
-          reject,
-          {
-            enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 10000,
-          }
-        );
-      });
-
-      lat = Number(pos?.coords?.latitude);
-      lng = Number(pos?.coords?.longitude);
-
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        toast.error('No se pudo obtener tu ubicación', { id: 'share-location' });
-        return;
-      }
-
-      saveLastGps(lat, lng);
-      setMe((prev) => ({ ...prev, lat, lon: lng }));
-      toast.dismiss('share-location');
-    }
-
-    const payload = {
-      chat_id: chatId,
-      sender_id: me.id,
-      text: '📍 Ubicación compartida',
-      message_type: 'location',
-      lat,
-      lng,
-      meta: {
-        label: 'Ubicación compartida',
-        shared_at: new Date().toISOString(),
-      },
-    };
-
-    const { data, error } = await supabase
-      .from('messages')
-      .insert([payload])
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === data.id)) return prev;
-      return [...prev, data];
-    });
-
-    toast.success('Ubicación enviada');
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-  } catch (err) {
-    console.error('❌ Error compartiendo ubicación:', err);
-    toast.error('No se pudo compartir la ubicación');
-  }
-}
-
-function openLocationMessageOnMap(message) {
-  const lat = Number(message?.lat);
-  const lng = Number(message?.lng);
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    toast.error('Este mensaje no tiene una ubicación válida');
-    return;
-  }
-
-  // ✅ cerrar chat para que el usuario vea el mapa
-  setIsChatOpen(false);
-
-  setTimeout(() => {
-    if (mapRef.current) {
-      mapRef.current.flyTo([lat, lng], 17, { duration: 1.2 });
-    }
-    toast.success('Ubicación abierta en el mapa');
-  }, 250);
-}
-function runSuperFocusOnWorker(workerLat, workerLng, routePoints = null) {
-  const map = mapRef.current;
-
-  if (
-    !map ||
-    typeof map.flyTo !== 'function' ||
-    typeof map.flyToBounds !== 'function'
-  ) {
-    toast.error('El mapa todavía no está listo');
-    console.warn('❌ mapRef.current inválido en verTrabajadorViniendo:', map);
-    return;
-  }
-
-  setTimeout(() => {
-    try {
-      map.invalidateSize();
-
-      // ✅ si hay ruta, mostrarla bien pero sin pasarse de zoom
-      if (Array.isArray(routePoints) && routePoints.length >= 2) {
-        map.flyToBounds(routePoints, {
-          paddingTopLeft: [40, 100],
-          paddingBottomRight: [40, 240],
-          maxZoom: 15, // 🔥 antes 18
-          duration: 1.1,
-        });
-
-        // ✅ segundo foco más suave
-        setTimeout(() => {
-          map.flyTo([workerLat, workerLng], 15, {
-            duration: 0.9,
-          });
-        }, 850);
-
-        setTimeout(() => {
-          map.invalidateSize();
-        }, 300);
-
-        setTimeout(() => {
-          map.invalidateSize();
-        }, 900);
-
-        return;
-      }
-
-      // ✅ fallback sin ruta: acercar pero no exagerar
-      map.flyTo([workerLat, workerLng], 15, {
-        duration: 1.0,
-      });
-
-      setTimeout(() => {
-        map.invalidateSize();
-      }, 300);
-    } catch (err) {
-      console.warn('runSuperFocusOnWorker error:', err);
-    }
-  }, 120);
-}
-async function verTrabajadorViniendo() {
-  if (!selected) {
-    toast.error('No hay trabajador seleccionado');
-    return;
-  }
-
-  const wLat = Number(selected?.lat);
-  const wLng = Number(selected?.lng ?? selected?.lon ?? selected?.long);
-  const cLat = Number(me?.lat);
-  const cLng = Number(me?.lon);
-
-  if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) {
-    toast.error('No se pudo ubicar al trabajador en el mapa');
-    return;
-  }
-
-  setIsChatOpen(false);
-  setShowPrice(false);
-  setClusterOpen(false);
-  setClusterMiniOpen(false);
-  setServicesOpen(false);
-
-  setIsTrackingWorker(true);
-setCameraMode('tracking');
-setProfileSheetMode('mini');
-
-  const map = mapRef.current;
-  console.log('🧪 mapRef.current en verTrabajadorViniendo:', map);
-
-  if (!map) {
-    toast.error('El mapa todavía no está listo');
-    console.warn('❌ mapRef.current vacío en verTrabajadorViniendo');
-    return;
-  }
-
-  map.invalidateSize();
-
-  if (Number.isFinite(cLat) && Number.isFinite(cLng)) {
-    const result = await fetchRoadRoute(cLat, cLng, wLat, wLng);
-
-    if (result?.route?.length) {
-      setRoute(result.route);
-      setEtaMinutes(result.durationMin ?? null);
-
-      runSuperFocusOnWorker(wLat, wLng, result.route);
-
-      toast.success(
-        `🚗 ${selected?.full_name || 'El trabajador'} llega en aprox ${result.durationMin ?? '—'} min`
-      );
-    } else {
-      const fallbackRoute = [
-        [cLat, cLng],
-        [wLat, wLng],
-      ];
-
-      setRoute(fallbackRoute);
-
-      const fallbackKm = haversineKm(cLat, cLng, wLat, wLng);
-      const fallbackMin = Math.max(1, Math.round((fallbackKm / 35) * 60));
-      setEtaMinutes(fallbackMin);
-
-      runSuperFocusOnWorker(wLat, wLng, fallbackRoute);
-
-      toast.success(
-        `🚗 ${selected?.full_name || 'El trabajador'} llega en aprox ${fallbackMin} min`
-      );
-    }
-  } else {
-    setEtaMinutes(null);
-    runSuperFocusOnWorker(wLat, wLng, null);
-    toast.success('📍 Viendo al trabajador en tiempo real');
-  }
-
-  setTimeout(() => {
-    mapRef.current?.invalidateSize?.();
-  }, 250);
-
-  setTimeout(() => {
-    mapRef.current?.invalidateSize?.();
-  }, 800);
-}
-
-// ✅ Finalizar pedido — cambia estado en Supabase y limpia todo
-async function finalizarPedido() {
-  const currentJobId = jobId;
-  const currentChatId = chatId;
-  const currentWorkerName = selected?.full_name || 'el profesional';
-
-  try {
-    if (!currentJobId) {
-      toast.warning('⚠️ No hay pedido activo para finalizar');
-      return;
-    }
-
-    const { error } = await supabase
-      .from('jobs')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', currentJobId);
-
-    if (error) throw error;
-
-    // ✅ mandar mensaje ANTES de limpiar estado
-    if (currentChatId && me?.id) {
-      const { error: msgError } = await supabase.from('messages').insert([
-        {
-          chat_id: currentChatId,
-          sender_id: me.id,
-          text: '✅ El cliente marcó el trabajo como finalizado.',
-        },
-      ]);
-
-      if (msgError) {
-        console.warn('No se pudo enviar mensaje de finalización:', msgError);
-      }
-    }
-
-    // ✅ detener tracking visual, pero NO limpiar todo todavía
-    setIsTrackingWorker(false);
-    setRoute(null);
-    setEtaMinutes(null);
-    setIsChatOpen(false);
-
-    // ✅ importante: dejar selected/job vivos para el modal de valoración
-    setJobStatus('completed');
-    setProfileSheetMode('full');
-
-    toast.success(`✅ Pedido finalizado con ${currentWorkerName}`);
-  } catch (err) {
-    console.error('Error al finalizar pedido:', err.message);
-    toast.error('No se pudo finalizar el pedido');
-  }
-}
-// 🧹 Limpia todo el estado del pedido y refresca el mapa
-function resetJobState() {
-  console.log('🧹 Limpieza de estado del pedido');
-
-  setRoute(null);
-  setSelected(null);
-  setJobId(null);
-  setJobStatus(null);
-  setChatId(null);
-  setIsChatOpen(false);
-  setMessages([]);
-  setProfileSheetMode('full');
-
-  // ✅ apagar tracking
-  setIsTrackingWorker(false);
-  setEtaMinutes(null);
 
   setWorkers((prev) =>
-    (prev || []).map((w) => ({
-      ...w,
-      _selected: false,
-    }))
+    prev.map((w) =>
+      String(w.user_id) === String(workerId)
+        ? { ...w, comments_count: Number(w.comments_count || 0) + 1 }
+        : w
+    )
   );
 
-  localStorage.removeItem('activeJobChat');
+  setCommentText('');
+  openComments(commentsWorker);
+}
 
-  fetchWorkers(selectedService || null);
+async function toggleWorkerLike(worker) {
+  if (!worker?.user_id || !me?.id) return;
 
-  // ✅ volver SIEMPRE a la vista general de Paraguay + clusters
-  if (mapRef.current) {
-    mapRef.current.setView(HOME_VIEW.center, HOME_VIEW.zoom, { animate: true });
+  const workerId = worker.user_id;
 
-    setTimeout(() => {
-      mapRef.current?.invalidateSize?.();
-    }, 250);
+  const { data: existing } = await supabase
+    .from('worker_likes')
+    .select('id')
+    .eq('worker_id', workerId)
+    .eq('client_id', me.id)
+    .maybeSingle();
 
-    setTimeout(() => {
-      mapRef.current?.invalidateSize?.();
-    }, 700);
+  if (existing?.id) {
+    await supabase.from('worker_likes').delete().eq('id', existing.id);
+
+    setWorkers((prev) =>
+      prev.map((w) =>
+        String(w.user_id) === String(workerId)
+          ? { ...w, likes_count: Math.max(0, Number(w.likes_count || 0) - 1) }
+          : w
+      )
+    );
+
+    toast.success('Quitaste el me gusta');
+    return;
+  }
+
+  const { error } = await supabase.from('worker_likes').insert([
+    {
+      worker_id: workerId,
+      client_id: me.id,
+    },
+  ]);
+
+  if (error) {
+    toast.error(error.message || 'No se pudo guardar el me gusta');
+    return;
+  }
+
+  setWorkers((prev) =>
+    prev.map((w) =>
+      String(w.user_id) === String(workerId)
+        ? { ...w, likes_count: Number(w.likes_count || 0) + 1 }
+        : w
+    )
+  );
+
+  toast.success('Te gustó este trabajador');
+}
+async function openClientMessages() {
+  if (!me?.id) return;
+
+  const { data: chatsRaw, error: chatsError } = await supabase
+    .from('chats')
+    .select('id, worker_id, created_at')
+    .eq('client_id', me.id)
+    .order('created_at', { ascending: false });
+
+  if (chatsError) {
+    console.error('client chats error', chatsError);
+    toast.error('No pudimos cargar tus mensajes');
+    return;
+  }
+
+  const chatIds = (chatsRaw || []).map((c) => c.id);
+
+  let messagesRaw = [];
+  if (chatIds.length) {
+    const { data: msgs } = await supabase
+      .from('messages')
+      .select('id, chat_id, text, created_at, sender_id')
+      .in('chat_id', chatIds)
+      .order('created_at', { ascending: false });
+
+    messagesRaw = msgs || [];
+  }
+
+  const workerIds = [
+    ...new Set((chatsRaw || []).map((chat) => chat.worker_id).filter(Boolean)),
+  ];
+
+  let profilesMap = {};
+
+  if (workerIds.length) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, avatar_url')
+      .in('id', workerIds);
+
+    profilesMap = (profiles || []).reduce((acc, profile) => {
+      acc[profile.id] = profile;
+      return acc;
+    }, {});
+  }
+
+  const enriched = (chatsRaw || []).map((chat) => {
+    const sortedMessages = messagesRaw.filter(
+      (m) => String(m.chat_id) === String(chat.id)
+    );
+
+    return {
+      ...chat,
+      worker: profilesMap[chat.worker_id] || null,
+      lastMessage: sortedMessages[0] || null,
+    };
+  });
+
+  localStorage.setItem('manosya_client_messages_seen_at', String(Date.now()));
+  setUnreadMessagesCount(0);
+  setClientChats(enriched);
+  setMessagesOpen(true);
+}
+async function refreshClientBadges() {
+  if (!me?.id) return;
+
+  try {
+    const lastMessagesOpen = Number(localStorage.getItem('manosya_client_messages_seen_at') || 0);
+    const lastCommentsOpen = Number(localStorage.getItem('manosya_client_comments_seen_at') || 0);
+
+    const { data: chatsRaw } = await supabase
+      .from('chats')
+      .select('id')
+      .eq('client_id', me.id);
+
+    const chatIds = (chatsRaw || []).map((c) => c.id);
+
+    let messagesRaw = [];
+    if (chatIds.length) {
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('id, chat_id, created_at, sender_id')
+        .in('chat_id', chatIds);
+
+      messagesRaw = msgs || [];
+    }
+
+    const unreadMessages = messagesRaw.filter((msg) => {
+      return (
+        msg.sender_id !== me.id &&
+        new Date(msg.created_at).getTime() > lastMessagesOpen
+      );
+    }).length;
+
+    const { data: commentsData } = await supabase
+      .from('worker_comments')
+      .select('id, created_at')
+      .eq('client_id', me.id);
+
+    const unreadComments = (commentsData || []).filter((item) => {
+      return new Date(item.created_at).getTime() > lastCommentsOpen;
+    }).length;
+
+    setUnreadMessagesCount(unreadMessages);
+    setUnreadCommentsCount(unreadComments);
+  } catch (error) {
+    console.warn('badge refresh error', error);
+  }
+}
+async function openCommentNotifications() {
+  if (!me?.id) return;
+
+  const { data, error } = await supabase
+    .from('worker_comments')
+    .select('*')
+    .eq('client_id', me.id)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('comment notifications error', error);
+    toast.error('No pudimos cargar notificaciones');
+    return;
+  }
+
+  localStorage.setItem('manosya_client_comments_seen_at', String(Date.now()));
+  setUnreadCommentsCount(0);
+  setCommentNotifications(data || []);
+  setCommentNotificationsOpen(true);
+}
+
+async function openMessage(worker, presetMessage = '') {
+  const target = worker || selected || currentWorker;
+  if (!target || !me?.id) return;
+
+  try {
+    const workerId = String(target.user_id);
+
+    const { data: existingChats, error: existingError } = await supabase
+      .from('chats')
+      .select('id, client_id, worker_id, created_at')
+      .eq('client_id', me.id)
+      .eq('worker_id', workerId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (existingError) throw existingError;
+
+    let nextChatId = existingChats?.[0]?.id || null;
+
+    if (!nextChatId) {
+      const { data: newChat, error: newChatError } = await supabase
+        .from('chats')
+        .insert([
+          {
+            client_id: me.id,
+            worker_id: workerId,
+          },
+        ])
+        .select('id')
+        .single();
+
+      if (newChatError) throw newChatError;
+      if (!newChat?.id) throw new Error('No se pudo crear el chat');
+
+      nextChatId = newChat.id;
+    }
+
+    setChatId(nextChatId);
+
+    if (presetMessage?.trim()) {
+  const { error: messageError } = await supabase.from('messages').insert([
+    {
+      chat_id: nextChatId,
+      sender_id: me.id,
+      text: presetMessage.trim(),
+    },
+  ]);
+
+  if (messageError) throw messageError;
+}
+
+    router.push(`/client/chat/${nextChatId}`);
+  } catch (error) {
+    console.error('openMessage error', error);
+    toast.error(error?.message || 'No pudimos abrir la mensajería');
   }
 }
 
+  async function requestWorker(worker) {
+    const activeWorker = worker || selected || currentWorker;
+    if (!activeWorker || !me?.id) return;
 
+    try {
+      const chosenService =
+        selectedService ||
+        normalizeSlug(splitWorkerServices(activeWorker)[0] || activeWorker?.service_type || '');
 
-// ⭐ Guardar reseña del trabajador
-async function confirmarReseña() {
-  try {
-    if (!jobId || !selected?.user_id) return;
+      const serviceLabel = serviceMetaBySlug(chosenService)?.name || serviceLabelForWorker(activeWorker);
+      const descriptionParts = [`Servicio: ${serviceLabel}`];
+      if (bookingTime) descriptionParts.push(`Hora solicitada: ${bookingTime}`);
+      descriptionParts.push('Solicitado desde feed cliente');
 
-    if (!rating || rating < 1 || rating > 5) {
-      toast.error('Elegí una calificación de 1 a 5 estrellas');
-      return;
+      const { data: job, error: jobError } = await supabase
+        .from('jobs')
+        .insert([
+          {
+            client_id: me.id,
+            worker_id: activeWorker.user_id,
+            service_type: chosenService || null,
+            status: 'open',
+            description: descriptionParts.join(' · '),
+          },
+        ])
+        .select('*')
+        .single();
+
+      if (jobError) throw jobError;
+
+      let nextChatId = null;
+
+      try {
+        const { data: chat, error: chatError } = await supabase
+          .from('chats')
+          .insert([
+            {
+              job_id: job.id,
+              client_id: me.id,
+              worker_id: activeWorker.user_id,
+            },
+          ])
+          .select('id')
+          .single();
+
+        if (!chatError) nextChatId = chat?.id || null;
+      } catch (chatErr) {
+        console.warn('No se pudo crear chat al vuelo', chatErr);
+      }
+
+      setJobId(job.id);
+      setJobStatus(job.status);
+      setChatId(nextChatId);
+      setTrackingWorker(activeWorker);
+      setTrackingOpen(true);
+      setShowProfile(false);
+      setShowAllWorkers(false);
+
+      if (hasMeCoords) {
+        const routeData = await fetchRoadRoute(
+          Number(me.lat),
+          Number(me.lon),
+          Number(activeWorker.lat),
+          Number(activeWorker.lng)
+        );
+
+        if (routeData?.route?.length) {
+          setRoute(routeData.route);
+          setEtaMinutes(routeData.durationMin);
+        } else {
+          setRoute([
+            [Number(me.lat), Number(me.lon)],
+            [Number(activeWorker.lat), Number(activeWorker.lng)],
+          ]);
+        }
+      }
+
+      try {
+        localStorage.setItem(
+          'activeJobChat',
+          JSON.stringify({
+            jid: job.id,
+            jstatus: job.status,
+            cid: nextChatId,
+            selectedWorker: activeWorker,
+          })
+        );
+      } catch {}
+
+      toast.success('Solicitud enviada. Ahora sí aparece el mapa.');
+    } catch (error) {
+      console.error(error);
+      toast.error('No pudimos crear la solicitud');
     }
+  }
+async function cancelActiveJob() {
+  if (!jobId) {
+    toast.error('No hay pedido activo para cancelar');
+    return;
+  }
 
-    const { error } = await supabase.from('reviews').insert([
-      {
-        job_id: jobId,
-        worker_id: selected.user_id,
-        client_id: me.id,
-        rating,
-        comment: comment?.trim() || null,
-        created_at: new Date().toISOString(),
-      },
-    ]);
+  try {
+    setIsCancelling(true);
+
+    const { error } = await supabase.rpc('cancel_job', {
+      job_id: jobId,
+    });
 
     if (error) throw error;
 
-    toast.success('✅ ¡Gracias por tu valoración!');
-    setRating(0);
-    setComment('');
-    resetJobState();
-  } catch (err) {
-    console.error('Error guardando reseña:', err.message);
-    toast.error('No se pudo guardar la valoración');
+    setJobStatus('cancelled');
+    setTrackingOpen(false);
+    setRoute(null);
+    setEtaMinutes(null);
+    setTrackingWorker(null);
+    setChatId(null);
+    setJobId(null);
+
+    try {
+      localStorage.removeItem('activeJobChat');
+    } catch {}
+
+    toast.success('Pedido cancelado');
+  } catch (error) {
+    console.error(error);
+    toast.error(error?.message || 'No pudimos cancelar el pedido');
+  } finally {
+    setIsCancelling(false);
   }
 }
-
-function toggleService(id) {
-  const next = selectedService === id ? null : id;
-
-  setSelectedService(next);
-  setSelected(null);
-  setRoute(null);
-  setServiceQuery('');
-  setShowAllServices(false);
-
-  fetchWorkers(next);
-}
-
-  // Etiqueta estado bonita
-  function StatusBadge() {
-    if (!jobId) return null;
-    const base = 'text-xs px-2 py-1 rounded-lg font-semibold inline-flex items-center gap-1';
-    if (jobStatus === 'accepted') {
-      return (
-        <span className={`${base} bg-green-100 text-green-700`}>
-          🟢 Trabajador en camino
-        </span>
-      );
-    }
-    if (jobStatus === 'completed') {
-      return (
-        <span className={`${base} bg-emerald-100 text-emerald-700`}>
-          <CheckCircle2 size={14} /> Trabajo finalizado
-        </span>
-      );
-    }
-    if (jobStatus === 'cancelled') {
-      return <span className={`${base} bg-red-100 text-red-600`}>Cancelado</span>;
-    }
-    if (jobStatus === 'assigned') {
-      return <span className={`${base} bg-blue-100 text-blue-700`}>Asignado</span>;
-    }
-    return <span className={`${base} bg-emerald-50 text-emerald-700`}>{jobStatus || 'open'}</span>;
-  }
-
-  function reopenActiveJobModal() {
-  const hasActiveJob =
-    !!jobId && jobStatus && !['completed', 'cancelled', 'worker_completed'].includes(jobStatus);
-
-  if (!hasActiveJob) {
-    toast.info('No hay pedido en ejecución');
-    return;
-  }
-
-  if (!selected) {
-    toast.warning('Pedido activo encontrado, pero aún se está restaurando el profesional.');
-    return;
-  }
-
-  setShowPrice(false);
-  setServicesOpen(false);
-  setClusterOpen(false);
-  setClusterMiniOpen(false);
-  setIsChatOpen(false);
-
-  if (jobStatus === 'accepted' || jobStatus === 'assigned') {
-    verTrabajadorViniendo();
-    return;
-  }
-
-  setProfileSheetMode('full');
-
-  const wLat = Number(selected?.lat);
-  const wLng = Number(selected?.lng ?? selected?.lon ?? selected?.long);
-
-  if (mapRef.current && Number.isFinite(wLat) && Number.isFinite(wLng)) {
-    mapRef.current.flyTo([wLat, wLng], 15, { duration: 1.0 });
-    setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-  }
-
-  toast.success('Pedido en ejecución reabierto');
-}
-/* 💰 Algoritmo de cálculo de precios dinámico (versión estable y flexible) */
-function calcularPrecio(
-  servicio,
-  distanciaKm,
-  horas = 1,
-  esUrgencia = false,
-  esNocturno = false,
-  worker = null
-) {
- const tarifas = {
-  "plomería":     { tipo: "fijo",  base: 45000, porKm: 2000 },
-  "electricidad": { tipo: "fijo",  base: 50000, porKm: 2000 },
-  "limpieza":     { tipo: "hora",  hora: 30000, porKm: 1500 },
-  "jardinería":   { tipo: "hora",  hora: 25000, porKm: 1500 },
-  "mascotas":     { tipo: "hora",  hora: 20000, porKm: 1000 },
-  "construcción": { tipo: "mixto", base: 60000, horaExtra: 25000, porKm: 2500 },
-  "emergencia":   { tipo: "fijo",  base: 60000, porKm: 2500, urgencia: 0.3 },
-  "car detailing": { tipo: "fijo", base: 70000, porKm: 2000 },
-};
-  let servicioBase = servicio?.toLowerCase();
-
-  // 🧠 Si no hay servicio seleccionado, intentar deducirlo desde worker.skills
-  if (!servicioBase && worker?.skills) {
-    const skillsArray = Array.isArray(worker.skills)
-      ? worker.skills
-      : String(worker.skills).split(',').map((s) => s.trim());
-
-    const posibles = skillsArray
-      .map((s) => s.toLowerCase())
-      .filter((s) => tarifas[s]);
-
-    if (posibles.length > 0) {
-      servicioBase = posibles.sort(
-        (a, b) => (tarifas[a].base || 0) - (tarifas[b].base || 0)
-      )[0];
-    }
-  }
-
-  const t = tarifas[servicioBase || ''];
-  if (!t) return 55000; // precio base por defecto
-
-  let precio = 0;
-  if (t.tipo === 'hora') precio = t.hora * horas;
-  else if (t.tipo === 'fijo') precio = t.base;
-  else if (t.tipo === 'mixto')
-    precio = t.base + Math.max(0, horas - 1) * t.horaExtra;
-
-  if (distanciaKm > 3) precio += (distanciaKm - 3) * t.porKm;
-
-  const horaActual = new Date().getHours();
-  if (horaActual >= 19 || horaActual < 6) precio *= 1.2; // nocturno
-  if (esUrgencia && t.urgencia) precio *= 1 + t.urgencia; // urgencia
-
-  if (precio < 10000) precio = 10000;
-  return Math.round(precio);
-}
-
-/* ⚙️ Estados auxiliares para el cálculo dinámico */
-const [horasTrabajo, setHorasTrabajo] = useState(1);
-const [distanciaKm, setDistanciaKm] = useState(0);
-const [precioEstimado, setPrecioEstimado] = useState(55000);
-// ✅ Distancia real al seleccionado (para precio) — ahora sí, después de declarar setDistanciaKm
-useEffect(() => {
-  if (!Number(me?.lat) || !Number(me?.lon)) return;
-  if (!selLat || !selLng) return;
-
-  const km = haversineKm(
-    Number(me.lat),
-    Number(me.lon),
-    selLat,
-    selLng
-  );
-
-  setDistanciaKm(km);
-}, [me?.lat, me?.lon, selLat, selLng]);
-
-/* 🔁 Recalcular automáticamente el precio */
-useEffect(() => {
-  let nuevoPrecio = 55000;
-
-  // ✅ Si el usuario selecciona un servicio manualmente
-  if (selectedService) {
-    nuevoPrecio = calcularPrecio(selectedService, distanciaKm, horasTrabajo);
-  }
-  // ✅ Si no selecciona servicio pero elige un trabajador (modo búsqueda directa)
-  else if (selected) {
-    nuevoPrecio = calcularPrecio(null, distanciaKm, horasTrabajo, false, false, selected);
-  }
-
-  setPrecioEstimado(nuevoPrecio);
-}, [selectedService, distanciaKm, horasTrabajo, selected]);
-
+  const mapCenter = useMemo(() => {
+    if (hasMeCoords) return [Number(me.lat), Number(me.lon)];
+    return HOME_VIEW.center;
+  }, [hasMeCoords, me?.lat, me?.lon]);
 
   return (
-    <div className="no-pull-refresh fixed inset-0 bg-white overflow-hidden">
-{/* 🔥 BOTÓN PEDIDO ACTIVO */}
-{jobId && jobStatus && !['completed', 'cancelled', 'worker_completed'].includes(jobStatus) && (
-  <div className="fixed inset-x-0 bottom-24 z-[65] px-4">
-    <div className="mx-auto w-full max-w-md">
-      <button
-        onClick={reopenActiveJobModal}
-        className="group relative w-full overflow-hidden rounded-[24px] bg-gradient-to-r from-slate-900 via-emerald-700 to-cyan-500 px-4 py-4 text-left text-white shadow-[0_22px_46px_rgba(16,185,129,0.24)] transition-all duration-200 hover:-translate-y-[1px] active:scale-[0.99]"
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.18),transparent_38%)] opacity-80" />
+   <div className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-slate-900">
+      <div className="pointer-events-none absolute inset-0 bg-black" />
 
-        <div className="relative flex items-center gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/16 backdrop-blur-md ring-1 ring-white/20">
-            <CheckCircle2 size={20} />
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <div className="text-[16px] font-extrabold tracking-tight">
-              Ver pedido en ejecución
-            </div>
-            <div className="mt-0.5 text-[12px] text-white/80">
-              Volvé a tu seguimiento, chat y estado actual
-            </div>
-          </div>
-
-          <div className="rounded-full bg-white/14 px-3 py-1.5 text-[11px] font-bold backdrop-blur">
-            {jobStatus === 'accepted' || jobStatus === 'assigned' ? 'En camino' : 'Activo'}
-          </div>
-        </div>
-      </button>
-    </div>
-  </div>
-)}
-    {/* Header superior — volver atrás */}
-<div className="fixed top-4 left-4 z-[10000] pointer-events-auto">
-  <button
-    onClick={() => router.replace('/role-selector')}
-    className="
-      flex items-center gap-2
-      bg-white/90 backdrop-blur
-      text-gray-800 font-semibold
-      px-4 py-2
-      rounded-full
-      shadow-lg
-      border border-gray-200
-      hover:bg-emerald-50 hover:text-emerald-700
-      active:scale-95
-      transition
-    "
-  >
-    <ChevronLeft size={20} />
-    <span className="text-sm">Volver</span>
-  </button>
-</div>
-
-{/* Mensaje marketing sutil centrado */}
-<div className="absolute top-4 left-1/2 -translate-x-1/2 z-[999]">
-  <div className="
-    bg-emerald-500 text-white
-    px-4 py-2
-    rounded-full
-    shadow-md
-    text-sm font-semibold
-    hidden sm:block
-  ">
-  </div>
-</div>
-
-{/* 🔔 Banner elegante de estado */}
-{statusBanner && (
-  <div
-    className={`fixed top-4 left-1/2 -translate-x-1/2 px-5 py-2 text-white text-sm font-semibold rounded-full shadow-lg ${statusBanner.color} z-[20000]`}
-  >
-    {statusBanner.text}
-  </div>
-)}
-{(gpsStatus === 'init' || gpsStatus === 'requesting' || gpsStatus === 'denied' || gpsStatus === 'error') && (
-  <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[20000] px-3 w-full max-w-sm">
-    <div className="bg-white/95 border border-gray-200 shadow-lg rounded-2xl px-4 py-4 text-sm">
-      <div className="font-bold text-gray-800 text-[15px]">
-        📍 {gpsStatus === 'requesting' ? 'Buscando tu ubicación...' : 'Usá tu ubicación'}
-      </div>
-
-      <div className="text-gray-600 mt-2 leading-relaxed">
-        {gpsStatus === 'requesting'
-          ? 'Estamos buscando dónde estás para mostrarte tu punto en el mapa y los profesionales más cercanos.'
-          : 'Tocá el botón verde para que el mapa te muestre dónde estás y quién está más cerca de vos.'}
-      </div>
-
-      {gpsStatus === 'denied' && (
-        <div className="mt-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-          No diste permiso para ver tu ubicación.
-        </div>
-      )}
-
-      {gpsStatus === 'error' && (
-        <div className="mt-2 text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-          No pudimos encontrar tu ubicación. Probá otra vez.
-        </div>
-      )}
-
-      <div className="flex gap-2 mt-4">
-        <button
-          onClick={requestGPS}
-          className="flex-1 px-3 py-3 rounded-xl bg-emerald-500 text-white font-bold active:scale-95"
-        >
-          {gpsStatus === 'requesting' ? 'Buscando...' : 'Ver mi ubicación'}
-        </button>
-
-        <button
-          onClick={() =>
-            toast('Abrí Ajustes del celular > Aplicaciones > ManosYA > Permisos > Ubicación > Permitir')
-          }
-          className="flex-1 px-3 py-3 rounded-xl bg-gray-100 text-gray-700 font-semibold active:scale-95"
-        >
-          Cómo activar
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-{/* MAPA */}
-<div
-  className="absolute inset-x-0 top-0 z-0"
-  style={{
-    height: 'calc(var(--real-vh) - 160px)',
-    overscrollBehavior: 'none',
-    touchAction: 'pan-x pan-y', // ✅ permite drag del mapa en móvil
-  }}
->
-<div className="absolute top-4 left-4 right-4 z-[70] pointer-events-none">
-  <div className="mx-auto max-w-xl pointer-events-auto">
-    <div className="rounded-[22px] border border-white/80 bg-white/95 backdrop-blur-xl shadow-[0_18px_40px_rgba(15,23,42,0.16)] overflow-hidden">
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className="text-emerald-600 text-lg">🔎</div>
-
-        <input
-          type="text"
-          value={workerSearch}
-          onChange={(e) => {
-            setWorkerSearch(e.target.value);
-            setWorkerSearchOpen(true);
-          }}
-          onFocus={() => setWorkerSearchOpen(true)}
-          placeholder="Buscar trabajador o servicio. Ej: albañil, plomero, chofer..."
-          className="flex-1 bg-transparent text-[15px] text-slate-800 placeholder:text-slate-400 outline-none"
-        />
-
-        {workerSearch ? (
-          <button
-            type="button"
-            onClick={() => {
-              setWorkerSearch('');
-              setWorkerSearchOpen(false);
-            }}
-            className="shrink-0 rounded-full px-2 py-1 text-xs font-bold text-slate-500 hover:bg-slate-100"
-          >
-            ✕
-          </button>
-        ) : null}
-      </div>
-
-      {workerSearchOpen && workerSearch.trim() ? (
-        <div className="border-t border-slate-100 max-h-[320px] overflow-y-auto">
-          {searchedWorkers.length > 0 ? (
-            <div className="p-2 space-y-2">
-              {searchedWorkers.map((worker) => {
-                const workerSkills = Array.isArray(worker?.skills)
-                  ? worker.skills.join(', ')
-                  : String(worker?.skills || '');
-
-                return (
-                  <button
-                    key={worker.user_id}
-                    type="button"
-                    onClick={() => focusWorkerFromSearch(worker)}
-                    className="w-full text-left rounded-2xl border border-slate-200 bg-white px-3 py-3 hover:border-emerald-300 hover:bg-emerald-50/60 transition"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-extrabold text-slate-900 truncate">
-                          {worker.full_name || 'Trabajador'}
-                        </div>
-
-                        <div className="text-xs text-slate-500 mt-1 line-clamp-2">
-                          {workerSkills || 'Sin oficio cargado'}
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold border ${
-                              worker._onlineNow
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : 'bg-slate-50 text-slate-600 border-slate-200'
-                            }`}
-                          >
-                            {worker._onlineNow ? 'En línea' : 'No reciente'}
-                          </span>
-
-                          <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold border bg-cyan-50 text-cyan-700 border-cyan-200">
-                            {worker._distKm != null
-                              ? formatKm(worker._distKm)
-                              : 'Distancia no disponible'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="text-[11px] font-bold text-emerald-700 shrink-0">
-                        Ver en mapa
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="px-4 py-4 text-sm text-slate-500">
-              No encontramos trabajadores con esa búsqueda.
-            </div>
-          )}
-        </div>
-      ) : null}
-    </div>
-  </div>
-</div>
-{/* 🔍 BUSCADOR INTELIGENTE MANOSYA — FIX PRO */}
-<div
-  style={{
-    position: 'absolute',
-    top: 10,
-    left: 120, // 👈 MÁS SEPARADO DEL BOTÓN ←
-    right: 60, // 👈 MÁS CORTO (NO OCUPA TODO)
-    zIndex: 9999,
-    pointerEvents: 'auto',
-  }}
->
-  <div
-    style={{
-      background: 'rgba(255,255,255,0.88)',
-      backdropFilter: 'blur(16px)',
-      WebkitBackdropFilter: 'blur(16px)',
-      borderRadius: 16,
-      border: '1px solid rgba(255,255,255,0.9)',
-      boxShadow: '0 10px 22px rgba(15,23,42,0.10)',
-      overflow: 'hidden',
-    }}
-  >
-    {/* 🔹 INPUT */}
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '8px 10px',
-        minHeight: 42, // 👈 un poquito más alto (UX mejor)
-        background:
-          'linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(6,182,212,0.04) 100%)',
+    <div className="relative z-10 mx-auto h-[var(--real-vh,100dvh)] w-full max-w-6xl overflow-hidden px-0">
+  <div className="relative h-full">
+    <div className="relative z-10 h-full">
+          <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-4 pt-[calc(env(safe-area-inset-top)+10px)] text-white">
+  <div className="flex items-center gap-2">
+    <button
+      type="button"
+      onClick={() => {
+        setFeedMode('all');
+        setSelectedService('');
+        setServiceQuery('');
       }}
+      className="flex shrink-0 items-center text-[20px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]"
     >
-      <div
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 9,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
-          color: '#fff',
-          fontSize: 12,
-          fontWeight: 900,
-          boxShadow: '0 6px 14px rgba(16,185,129,0.18)',
-          flexShrink: 0,
-        }}
-      >
-        🔎
-      </div>
+      ManosYA
+    </button>
+
+    <div className="relative min-w-0 flex-1 rounded-full border border-white/25 bg-black/18 shadow-[0_10px_24px_rgba(0,0,0,0.20)] backdrop-blur-xl">
+      <Search
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60"
+        size={15}
+      />
 
       <input
-        type="text"
-        value={workerSearch}
+        value={serviceQuery}
         onChange={(e) => {
-          setWorkerSearch(e.target.value);
-          setWorkerSearchOpen(true);
+          const value = e.target.value;
+          setServiceQuery(value);
+
+          const normalizedValue = normalizeSlug(value);
+          const matchedService = SERVICE_CATALOG.find((service) => {
+            const slug = normalizeSlug(service.slug);
+            const name = normalizeSlug(service.name);
+            return (
+              slug.includes(normalizedValue) ||
+              name.includes(normalizedValue) ||
+              normalizedValue.includes(slug)
+            );
+          });
+
+          setSelectedService(matchedService ? matchedService.slug : '');
         }}
-        onFocus={() => setWorkerSearchOpen(true)}
-        placeholder="Ej: albañil, pintor..."
+        placeholder="Buscar..."
+        className="h-9 w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/60 outline-none"
+      />
+
+      {serviceQuery && (
+        <button
+          type="button"
+          onClick={() => {
+            setServiceQuery('');
+            setSelectedService('');
+          }}
+          className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/14 text-white/80 active:scale-95"
+        >
+          <X size={14} />
+        </button>
+      )}
+    </div>
+
+    <button
+      type="button"
+      onClick={openCommentNotifications}
+      className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/28 text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur-xl active:scale-95"
+    >
+      <Bell size={18} />
+
+      {unreadCommentsCount > 0 && (
+        <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#62bfb9] px-1 text-[10px] font-black text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)]">
+          {unreadCommentsCount > 9 ? '9+' : unreadCommentsCount}
+        </span>
+      )}
+    </button>
+  </div>
+
+  <div className="mt-3 flex justify-center">
+    <div className="relative inline-flex items-center rounded-full bg-white/20 p-1 shadow-lg backdrop-blur-md">
+      <motion.div
+        layout
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        className="absolute bottom-1 top-1 w-1/2 rounded-full bg-white"
         style={{
-          width: '100%',
-          border: 'none',
-          outline: 'none',
-          background: 'transparent',
-          fontSize: 13,
-          fontWeight: 700,
-          color: '#0f172a',
+          left: feedMode === 'all' ? '4px' : 'calc(50% + 2px)',
         }}
       />
 
-      {workerSearch ? (
-        <button
-          onClick={() => {
-            setWorkerSearch('');
-            setWorkerSearchOpen(false);
-          }}
-          style={{
-            border: 'none',
-            background: 'rgba(15,23,42,0.06)',
-            width: 22,
-            height: 22,
-            borderRadius: 7,
-            cursor: 'pointer',
-            fontSize: 11,
-          }}
-        >
-          ✕
-        </button>
-      ) : (
-        <div
-          style={{
-            padding: '3px 6px',
-            borderRadius: 999,
-            background: 'rgba(16,185,129,0.12)',
-            color: '#047857',
-            fontSize: 8,
-            fontWeight: 800,
-          }}
-        >
-          ''
-        </div>
-      )}
+      <button
+        type="button"
+        onClick={() => {
+          setFeedMode('all');
+          setSelectedService('');
+          setServiceQuery('');
+          setFeedSeed(Date.now() + Math.random());
+          setFeedIndex(0);
+          setSelected(null);
+          setNearbyMapWorker(null);
+          fetchWorkers('');
+          feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+        }}
+        className={`relative z-10 rounded-full px-8 py-2 text-[12px] font-black transition ${
+          feedMode === 'all' ? 'text-black' : 'text-white'
+        }`}
+      >
+        Todos
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setFeedMode('near');
+          setFeedSeed(Date.now() + Math.random());
+          setFeedIndex(0);
+          setSelected(null);
+          setNearbyMapWorker(null);
+          feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+        }}
+        className={`relative z-10 rounded-full px-8 py-2 text-[12px] font-black transition ${
+          feedMode === 'near' ? 'text-black' : 'text-white'
+        }`}
+      >
+        Cerca tuyo
+      </button>
     </div>
-
-    {/* 🔹 RESULTADOS */}
-    {workerSearchOpen && workerSearch.trim() && (
-      <div
-        style={{
-          maxHeight: 200,
-          overflowY: 'auto',
-          background: '#fff',
-          borderTop: '1px solid #eef2f7',
-        }}
-      >
-        {searchedWorkers.length > 0 ? (
-          searchedWorkers.map((w, i) => {
-            const workerSkills = Array.isArray(w.skills)
-              ? w.skills.join(', ')
-              : String(w?.skills || '');
-
-            const mainService =
-              workerSkills ||
-              w?.main_skill ||
-              w?.category ||
-              'Servicio no especificado';
-
-            return (
-              <button
-                key={w.user_id}
-                onClick={() => focusWorkerFromSearch(w)}
-                style={{
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '10px 12px',
-                  border: 'none',
-                  borderBottom:
-                    i !== searchedWorkers.length - 1
-                      ? '1px solid #eef2f7'
-                      : 'none',
-                  background: 'transparent',
-                  cursor: 'pointer',
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 800 }}>
-                  {w.full_name}
-                </div>
-
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: '#0f766e',
-                    fontWeight: 600,
-                  }}
-                >
-                  {mainService}
-                </div>
-
-                <div style={{ fontSize: 11, color: '#64748b' }}>
-                  {w._onlineNow ? '🟢 En línea' : '⚪ No reciente'}
-                  {w._distKm != null && ` • ${formatKm(w._distKm)}`}
-                </div>
-              </button>
-            );
-          })
-        ) : (
-          <div style={{ padding: 12, fontSize: 12, color: '#64748b' }}>
-            No encontramos resultados.
-          </div>
-        )}
-      </div>
-    )}
   </div>
 </div>
-<MapContainer
-  center={HOME_VIEW.center}
-  zoom={HOME_VIEW.zoom}
-  minZoom={5}
-  maxZoom={19}
-  zoomControl={false}
-  scrollWheelZoom={false}
-  style={{
-    height: '100%',
-    width: '100%',
-    touchAction: 'pan-x pan-y',
-    overscrollBehavior: 'none',
-    WebkitOverflowScrolling: 'auto',
-  }}
->
-  <MapEffectBinder onReady={bindMapInstance} />
-    {/* 🗺️ CARTO Light (mapa blanco minimalista) */}
-    <TileLayer
-      url="https://tile.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
-      attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-      updateWhenIdle={true}
-      
-      updateWhenZooming={false}
-      keepBuffer={2}
-    />
+            {!trackingOpen ? (
+              <div className="h-full">
+                {busy ? (
+                 <div className="flex min-h-[calc(var(--real-vh,100dvh)-220px)] items-center justify-center rounded-[28px] bg-[#163943]/82 text-white backdrop-blur-xl">
+                    <div className="text-center">
+                     <div className="text-xl font-black">Cargando trabajadores</div>
+                      <div className="mt-2 text-sm text-white/70">Estamos ordenando lo mejor para vos.</div>
+                    </div>
+                  </div>
+                ) : !feedWorkers.length ? (
+                  <div className="flex min-h-[calc(var(--real-vh,100dvh)-270px)] items-center justify-center rounded-[32px] border border-white/20 bg-[#081924]/72 text-white backdrop-blur-xl">
+                    <div className="text-center">
+                      <Compass className="mx-auto mb-3 text-white/70" size={28} />
+                     <div className="text-xl font-black">No encontramos trabajadores</div>
+                      <div className="mt-2 text-sm text-white/70">Probá cambiar el servicio o revisar tu zona.</div>
+                    </div>
+                  </div>
+                ) : (
+             <div
+  key={`${feedMode}-${feedSeed}-${selectedService || 'todos'}`}
+  ref={feedRef}
+  onScroll={(e) => {
+    const el = e.currentTarget;
+    const cardHeight = Math.max(1, el.clientHeight - 74);
+    const nextIndex = Math.round(el.scrollTop / cardHeight);
 
-   {/* ✅ Bloque final actualizado — oculta 'paused' y muestra estados dinámicos */}
-{/* ✅ BLOQUE CLUSTER + FILTRO FINAL (reemplazar completo) */}
-{/* ✅ BLOQUE CLUSTER + FILTRO FINAL (REEMPLAZAR COMPLETO) */}
-{/* ✅ CLUSTER REAL: markers reales (sin anti-overlap) */}
-{/* ✅ CLUSTER REAL (ordenado + UX claro + modal por zona) */}
-{/* 🛣 Ruta premium cliente → trabajador */}
-{route && (
-  <>
-    {/* base glow */}
-    <Polyline
-      positions={route}
-      pathOptions={{
-        color: "#34d399",
-        weight: 14,
-        opacity: 0.18,
-        lineJoin: "round",
-        lineCap: "round",
-      }}
-    />
-
-    {/* capa media */}
-    <Polyline
-      positions={route}
-      pathOptions={{
-        color: "#10b981",
-        weight: 8,
-        opacity: 0.35,
-        lineJoin: "round",
-        lineCap: "round",
-      }}
-    />
-
-    {/* línea principal */}
-    <Polyline
-      positions={route}
-      pathOptions={{
-        color: "#059669",
-        weight: 5,
-        opacity: 0.95,
-        lineJoin: "round",
-        lineCap: "round",
-        dashArray: "10 10",
-      }}
-    />
-  </>
-)}
-
-{/* ✅ MARKER LIVE DEL TRABAJADOR CUANDO ESTÁ VINIENDO */}
-{isTrackingWorker && selected && hasSelCoords && (
-  <Marker
-    key={`tracking-worker-${String(selected.user_id)}-${selLat}-${selLng}`}
-    position={[selLat, selLng]}
-    icon={
-      avatarIcon(selected.avatar_url, {
-        ...selected,
-        _selected: true,
-        _justUpdated: true,
-      }) || undefined
+    if (nextIndex !== feedIndex && feedWorkers[nextIndex]) {
+      setFeedIndex(nextIndex);
+      setSelected(feedWorkers[nextIndex]);
     }
-    eventHandlers={{
-      add: (e) => {
-        const leafletMarker = e?.target;
-        if (!leafletMarker || !selected?.user_id) return;
-
-        markersRef.current[String(selected.user_id)] = leafletMarker;
-      },
-      click: () => {
-        setProfileSheetMode('full');
-      },
-    }}
-  />
-)}
-
-{/* ✅ TU UBICACIÓN PREMIUM CUANDO EL GPS ESTÁ ACTIVO */}
-{hasMeCoords && (
-  <>
-    {/* área visible de referencia del cliente */}
-    <Circle
-      center={[Number(me.lat), Number(me.lon)]}
-      radius={500}
-      pathOptions={{
-        color: '#0ea5e9',
-        fillColor: '#38bdf8',
-        fillOpacity: 0.10,
-        weight: 2,
-      }}
-    />
-
-    {/* aro tecnológico elegante */}
-    <Circle
-      center={[Number(me.lat), Number(me.lon)]}
-      radius={120}
-      pathOptions={{
-        color: '#38bdf8',
-        fillColor: '#38bdf8',
-        fillOpacity: 0.08,
-        weight: 3,
-      }}
-    />
-
-    {/* marcador premium animado tipo GPS/Uber */}
-    <Marker
-      key={`client-location-${Number(me.lat)}-${Number(me.lon)}`}
-      position={[Number(me.lat), Number(me.lon)]}
-      icon={clientLocationIcon() || undefined}
-      interactive={false}
-      zIndexOffset={1200}
-    />
-  </>
-)}
-
-{!isTrackingWorker && (
-  <MarkerClusterGroup
-    chunkedLoading
-    showCoverageOnHover={false}
-    removeOutsideVisibleBounds={true}
-    disableClusteringAtZoom={16}
-    spiderfyOnMaxZoom={false}
-    zoomToBoundsOnClick={false}
-    maxClusterRadius={(zoom) => {
-      if (zoom <= 7) return 120;
-      if (zoom <= 10) return 95;
-      if (zoom <= 12) return 70;
-      return 55;
-    }}
-    iconCreateFunction={clusterIconCreateFunction}
-    eventHandlers={{
-      clusterclick: (e) => {
-        try {
-          e?.originalEvent?.preventDefault?.();
-          e?.originalEvent?.stopPropagation?.();
-
-          const cluster = e.layer;
-          if (!cluster) return;
-
-          const childMarkers = cluster.getAllChildMarkers?.() || [];
-          if (!childMarkers.length) return;
-
-          const ref = typeof getRefPoint === 'function'
-            ? getRefPoint()
-            : { lat: Number(me?.lat), lng: Number(me?.lon), mode: 'home' };
-
-          const refOk = Number.isFinite(Number(ref?.lat)) && Number.isFinite(Number(ref?.lng));
-          const refLat = Number(ref?.lat);
-          const refLng = Number(ref?.lng);
-
-          const uniq = new Map();
-
-          for (const m of childMarkers) {
-            const w0 = m?.options?.__worker;
-            const uid = String(m?.options?.__userId ?? w0?.user_id ?? '');
-            if (!uid) continue;
-
-            const fresh = workersByIdRef.current?.get(uid);
-            const w = fresh || w0;
-            if (!w) continue;
-
-            const wLat = Number(w?.lat);
-            const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-            if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) continue;
-
-            if (refOk) {
-              const km = haversineKm(refLat, refLng, wLat, wLng);
-              if (Number.isFinite(km) && km > MAX_RADIUS_KM) continue;
-            }
-
-            uniq.set(uid, w);
-          }
-
-          let list = Array.from(uniq.values());
-          if (!list.length) {
-            toast('No hay profesionales disponibles en este clúster', { duration: 1200 });
-            return;
-          }
-
-          list = list
-            .map((w) => {
-              const wLat = Number(w?.lat);
-              const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-
-              const dist =
-                refOk && Number.isFinite(wLat) && Number.isFinite(wLng)
-                  ? haversineKm(refLat, refLng, wLat, wLng)
-                  : null;
-
-              return {
-                ...w,
-                _distKm: Number.isFinite(dist) ? dist : null,
-                _dist: Number.isFinite(dist) ? dist : null,
-                _online: isOnlineRecent(w),
-                _rating: Number(w?.avg_rating || 0),
-                _reviews: Number(w?.total_reviews || 0),
-              };
-            })
-            .sort((a, b) => {
-              if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
-              if (a._distKm != null) return -1;
-              if (b._distKm != null) return 1;
-
-              if (a._online !== b._online) return a._online ? -1 : 1;
-              if (a._rating !== b._rating) return b._rating - a._rating;
-              if (a._reviews !== b._reviews) return b._reviews - a._reviews;
-
-              return String(a.user_id).localeCompare(String(b.user_id));
-            });
-
-          setClusterMode('cluster');
-          setClusterList(list);
-          setClusterOpen(true);
-
-          toast.success(`👥 ${list.length} en esta zona`, { duration: 900 });
-        } catch (err) {
-          console.warn('cluster click error', err);
-        }
-      },
-    }}
-  >
-    {(workers || [])
-      .filter((w) => {
-        const wLat = Number(w?.lat);
-        const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-        if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) return false;
-
-        const ref = typeof getRefPoint === 'function'
-          ? getRefPoint()
-          : { lat: Number(me?.lat), lng: Number(me?.lon), mode: 'home' };
-
-        const refOk = Number.isFinite(Number(ref?.lat)) && Number.isFinite(Number(ref?.lng));
-        if (refOk) {
-          const km = haversineKm(Number(ref.lat), Number(ref.lng), wLat, wLng);
-          if (Number.isFinite(km) && km > MAX_RADIUS_KM) return false;
-        }
-
-        return true;
-      })
-      .map((w) => {
-        const wLat = Number(w?.lat);
-        const wLng = Number(w?.lng ?? w?.lon ?? w?.long);
-
-        return (
-          <Marker
-            key={String(w.user_id)}
-            position={[wLat, wLng]}
-            icon={avatarIcon(w.avatar_url, w) || undefined}
-            __userId={String(w.user_id)}
-            __worker={workersByIdRef.current?.get(String(w.user_id)) || w}
-            eventHandlers={{
-              add: (e) => {
-                const leafletMarker = e?.target;
-                if (!leafletMarker) return;
-
-                const uid = String(w.user_id);
-                markersRef.current[uid] = leafletMarker;
-              },
-              click: () => {
-                const uid = String(w.user_id);
-                const fresh = workersByIdRef.current?.get(uid);
-                handleMarkerClick(fresh || w);
-              },
-            }}
-          />
-        );
-      })}
-  </MarkerClusterGroup>
-)}
-
-
-</MapContainer>
-<button
-  type="button"
-  onClick={() => {
-    setSelected(null);
-    setRoute(null);
-    setShowPrice(false);
-    setProfileSheetMode('mini');
-    setIsTrackingWorker(false);
-    setCameraMode('explore');
   }}
-  className="absolute right-4 bottom-44 z-[70] flex h-12 w-12 items-center justify-center rounded-full bg-white text-emerald-600 shadow-[0_16px_34px_rgba(0,0,0,0.18)] active:scale-[0.98]"
+  className="h-[calc(var(--real-vh,100dvh)-0px)] overflow-y-auto snap-y snap-mandatory pb-[74px]"
 >
-  📍
-</button>
-{/* ✅ MODAL CLUSTER (PORTAL + estrellas) */}
-{mounted && createPortal(
-  <AnimatePresence>
-    {clusterOpen && (
-     <motion.div
-  className={`fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center ${
-    clusterMode === 'cluster' ? 'items-center' : 'items-end'
-  }`}
-  style={{ zIndex: 60000, height: 'var(--real-vh)' }} // ✅ clave anti-recorte en PWA
-  initial={{ opacity: 0 }}
-  animate={{ opacity: 1 }}
-  exit={{ opacity: 0 }}
-  onClick={() => setClusterOpen(false)}
->
-        {/* =========================
-            ✅ MODO CLUSTER: CARD CENTRADA
-           ========================= */}
-        {clusterMode === 'cluster' ? (
-          <motion.div
-            className="w-[92vw] max-w-lg bg-white rounded-3xl p-5 shadow-2xl border border-gray-200"
-            initial={{ scale: 0.92, y: 10, opacity: 0 }}
-            animate={{ scale: 1, y: 0, opacity: 1 }}
-            exit={{ scale: 0.92, y: 10, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 160, damping: 18 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div>
-                <h3 className="text-lg font-extrabold text-gray-800">
-                  Zona seleccionada ({clusterList.length})
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Tocá un profesional para ver su perfil.
-                </p>
+  {feedWorkers.map((worker, idx) => (
+  <div key={String(worker.user_id)} className="h-[calc(var(--real-vh,100dvh)-74px)] snap-start">
+      <FeedCard
+  worker={worker}
+  onOpen={() => openProfile(worker)}
+  onComments={() => openComments(worker)}
+  onMessage={() => openMessage(worker)}
+  onRequest={() => requestWorker(worker)}
+  onLike={() => toggleWorkerLike(worker)}
+  onNearbyMap={() => {
+    setNearbyMapWorker(null);
+    setNearbyMapOpen(true);
+  }}
+/>
+
+    
+    </div>
+  ))}
+</div>
+                )}
               </div>
-
-              <button
-                onClick={() => setClusterOpen(false)}
-                className="text-gray-500 hover:text-red-500"
-              >
-                <XCircle size={22} />
-              </button>
-            </div>
-
-            {/* ✅ Scroll adentro */}
-            <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">
-              {clusterList.map((w) => {
-                const rating = Number(w?.avg_rating || 0);
-                const reviews = Number(w?.total_reviews || 0);
-
-                const goProfile = () => {
-                  setClusterOpen(false);
-                  handleMarkerClick(w);
-                };
-
-                const d =
-                  Number.isFinite(Number(w?._distKm)) ? Number(w._distKm)
-                  : Number.isFinite(Number(w?._dist)) ? Number(w._dist)
-                  : null;
-
-                return (
-                  <div
-                    key={w.user_id}
-                    className="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-emerald-50 transition"
-                  >
-                    <button
-                      onClick={goProfile}
-                      className="flex-1 flex items-center gap-3 text-left active:scale-[0.99] transition"
-                    >
-                      <img
-                        src={w.avatar_url || "/avatar-fallback.png"}
-                        onError={(e) => (e.currentTarget.src = "/avatar-fallback.png")}
-                        className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400"
-                        alt="avatar"
-                      />
-
-                      <div className="flex-1">
-                        <div className="font-bold text-gray-800 leading-5">
-                          {w.full_name || "Profesional"}
-                        </div>
-
-                        <div className="text-xs text-gray-500">
-                          {isOnlineRecent(w) ? "🟢 EN LÍNEA" : "⚪ Inactivo"}
-                        </div>
-
-                        <div className="mt-1">
-                          {d != null ? (
-                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200">
-                              <span className="text-[12px] font-extrabold text-emerald-700">
-                                📍 {formatKm(d)}
-                              </span>
-                              <span className="text-[11px] font-semibold text-gray-500">
-                                (referencia)
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-50 border border-gray-200">
-                              <span className="text-[12px] font-bold text-gray-500">📍 —</span>
-                              <span className="text-[11px] font-semibold text-gray-400">
-                                activá GPS para ver km
-                              </span>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-1 mt-1">
-                          {[0, 1, 2, 3, 4].map((i) => (
-                            <Star
-                              key={i}
-                              size={14}
-                              className={
-                                i < Math.round(rating)
-                                  ? "text-yellow-400 fill-yellow-400"
-                                  : "text-gray-300"
-                              }
-                            />
-                          ))}
-                          <span className="text-xs text-gray-500 ml-1">
-                            {rating ? rating.toFixed(1) : "0.0"} ({reviews})
-                          </span>
-                        </div>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        goProfile();
-                      }}
-                      className="
-                        px-3 py-2 rounded-xl
-                        bg-emerald-600 text-white
-                        font-extrabold text-[12px]
-                        shadow-[0_10px_22px_rgba(16,185,129,0.30)]
-                        active:scale-[0.98] transition
-                        whitespace-nowrap
-                      "
-                    >
-                      Ver perfil
-                    </button>
+            ) : (
+              <div className="overflow-hidden rounded-[28px] bg-[#163943]/82 backdrop-blur-xl">
+                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-black uppercase tracking-[0.16em] text-emerald-200">Tracking</div>
+                    <div className="mt-1 text-lg font-black">
+  {trackingWorker?.full_name || 'Trabajador en camino'}
+</div>
                   </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        ) : (
-          /* =========================
-              ✅ MODO NEAREST: TU BOTTOM-SHEET (igual al actual)
-             ========================= */
-          <motion.div
-  className="w-full max-w-md bg-white rounded-t-3xl p-5 shadow-2xl"
-  initial={{ y: 420 }}
-  animate={{ y: 0 }}
-  exit={{ y: 420 }}
-  transition={{ type: "spring", stiffness: 120, damping: 18 }}
-  onClick={(e) => e.stopPropagation()}
-  style={{
-    paddingBottom: "calc(16px + env(safe-area-inset-bottom))",
-    maxHeight: "calc(var(--real-vh) - 10px)",   // ✅ no se corta
-    width: "min(100%, 28rem)",
-  }}
->
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="text-lg font-extrabold text-gray-800">
-                  Profesionales cerca tuyo ({clusterList.length})
-                </h3>
-                <p className="text-xs text-gray-500 -mt-1">
-                  Tocá “Ver perfil” para elegir rápido. Si activás GPS, te mostramos quién está más cerca.
-                </p>
-              </div>
-              <button
-                onClick={() => setClusterOpen(false)}
-                className="text-gray-500 hover:text-red-500"
-              >
-                <XCircle size={22} />
-              </button>
-            </div>
 
-            <div className="max-h-[55vh] overflow-y-auto space-y-2">
-              {clusterList.map((w) => {
-                const rating = Number(w?.avg_rating || 0);
-                const reviews = Number(w?.total_reviews || 0);
-
-                const goProfile = () => {
-                  setClusterOpen(false);
-                  handleMarkerClick(w);
-                };
-
-                return (
-                  <div
-                    key={w.user_id}
-                    className="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-emerald-50 transition"
-                  >
-                    <button
-                      onClick={goProfile}
-                      className="flex-1 flex items-center gap-3 text-left active:scale-[0.99] transition"
-                    >
-                      <img
-                        src={w.avatar_url || "/avatar-fallback.png"}
-                        onError={(e) => (e.currentTarget.src = "/avatar-fallback.png")}
-                        className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400"
-                        alt="avatar"
-                      />
-
-                      <div className="flex-1">
-                        <div className="font-bold text-gray-800 leading-5">
-                          {w.full_name || "Profesional"}
-                        </div>
-
-                        <div className="text-xs text-gray-500">
-                          {isOnlineRecent(w) ? "🟢 EN LÍNEA" : "⚪ Inactivo"}
-                        </div>
-
-                        <div className="mt-1">
-                          {(() => {
-                            const d =
-                              Number.isFinite(Number(w?._distKm)) ? Number(w._distKm)
-                              : Number.isFinite(Number(w?._dist)) ? Number(w._dist)
-                              : null;
-
-                            return d != null ? (
-                              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200">
-                                <span className="text-[12px] font-extrabold text-emerald-700">
-                                  📍 {formatKm(d)}
-                                </span>
-                                <span className="text-[11px] font-semibold text-gray-500">(más cerca)</span>
-                              </div>
-                            ) : (
-                              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-50 border border-gray-200">
-                                <span className="text-[12px] font-bold text-gray-500">📍 —</span>
-                                <span className="text-[11px] font-semibold text-gray-400">
-                                  activá GPS para ver km
-                                </span>
-                              </div>
-                            );
-                          })()}
-                        </div>
-
-                        <div className="flex items-center gap-1 mt-1">
-                          {[0, 1, 2, 3, 4].map((i) => (
-                            <Star
-                              key={i}
-                              size={14}
-                              className={
-                                i < Math.round(rating)
-                                  ? "text-yellow-400 fill-yellow-400"
-                                  : "text-gray-300"
-                              }
-                            />
-                          ))}
-                          <span className="text-xs text-gray-500 ml-1">
-                            {rating ? rating.toFixed(1) : "0.0"} ({reviews})
-                          </span>
-                        </div>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        goProfile();
-                      }}
-                      className="
-                        px-3 py-2 rounded-xl
-                        bg-emerald-600 text-white
-                        font-extrabold text-[12px]
-                        shadow-[0_10px_22px_rgba(16,185,129,0.30)]
-                        active:scale-[0.98] transition
-                        whitespace-nowrap
-                      "
-                    >
-                      Ver más
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </motion.div>
-    )}
-  </AnimatePresence>,
-  document.body
-)}
-</div>
-{/* ===========================
-     PANEL MINI PROFESIONAL — FIX (MOBILE SAFE)
-   =========================== */}
-<motion.div
-  animate={{ y: 0 }}
-  transition={{ type: "spring", stiffness: 150, damping: 20 }}
-  className="
-    fixed left-0 right-0 bottom-0
-    z-[9999]
-    bg-white rounded-t-3xl shadow-xl border-t border-gray-200
-  "
-  style={{
-    paddingBottom: "calc(12px + env(safe-area-inset-bottom))",
-  }}
->
-  {/* ===== Handle ===== */}
-  <div className="w-full flex justify-center pt-2 pb-2 select-none">
-    <div className="h-1.5 w-12 bg-gray-300 rounded-full"></div>
-  </div>
-
-  {/* ===== Título ===== */}
-  <h2 className="text-center text-[17px] font-bold text-emerald-600 mb-2 tracking-tight">
-    ManosYA
-  </h2>
-
- {/* ===== Botones principales (PREMIUM) ===== */}
-<div className="px-3 mb-3">
-  <div
-  className="
-    grid grid-cols-3 gap-2
-      rounded-2xl p-2
-      bg-white/70 backdrop-blur-xl
-      border border-gray-200/70
-      shadow-[0_12px_40px_rgba(0,0,0,0.08)]
-    "
-  >
-
-{/* Más cerca (CTA principal cool) */}
-<motion.button
-  whileTap={{ scale: 0.96 }}
-  whileHover={{ scale: 1.02 }}
-  onClick={() => {
-    // ✅ usa la función ya creada: GPS -> orden por GPS / sin GPS -> orden por centro del mapa
-    openNearestModal();
-  }}
-  className="
-    relative col-span-1 overflow-hidden
-    rounded-2xl px-2 py-3
-    text-white
-    border border-white/20
-    shadow-[0_18px_40px_rgba(16,185,129,0.35)]
-    active:scale-[0.98] transition
-    flex flex-col items-center justify-center gap-1
-  "
-  style={{
-    background:
-      "radial-gradient(120% 120% at 20% 10%, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 55%), linear-gradient(135deg, #10b981 0%, #059669 45%, #047857 100%)",
-  }}
->
-  {/* Aurora blobs */}
-  <span className="absolute -top-6 -right-6 w-16 h-16 rounded-full bg-white/20 blur-xl" />
-  <span className="absolute -bottom-8 -left-8 w-20 h-20 rounded-full bg-cyan-300/20 blur-xl" />
-
-  {/* Shine */}
-  <span className="absolute inset-0 opacity-60">
-    <span className="absolute -left-10 top-0 h-full w-10 rotate-12 bg-white/25 blur-md animate-[ctaShine_2.6s_ease-in-out_infinite]" />
-  </span>
-
-  {/* Top dot */}
-  <span className="absolute left-2 top-2 w-2.5 h-2.5 rounded-full bg-white">
-    <span className="absolute inset-0 rounded-full bg-white animate-ping opacity-70" />
-  </span>
-
-  {/* Pin + badge */}
-  <div className="relative mt-0.5">
-    <span className="text-[20px] leading-none drop-shadow">📍</span>
-    <span className="absolute -right-2 -top-1 text-[10px] font-black bg-white/20 px-2 py-0.5 rounded-full border border-white/15">
-    </span>
-  </div>
-
-  <div className="leading-none text-center">
-    <div className="text-[12px] font-extrabold">Más</div>
-    <div className="text-[10px] font-semibold opacity-95 -mt-0.5">cerca</div>
-    <div className="text-[9px] font-bold opacity-90 mt-1">Encontrá ya</div>
-  </div>
-</motion.button>
-    {/* Mis pedidos */}
-    <button
-      onClick={() => router.push('/client/jobs')}
-      className="
-        col-span-1
-        rounded-2xl px-2 py-3
-        bg-white
-        border border-gray-200/80
-        shadow-[0_10px_26px_rgba(0,0,0,0.07)]
-        active:scale-[0.98] transition
-        flex flex-col items-center justify-center gap-1
-      "
-    >
-      <span className="text-[18px] leading-none">📦</span>
-      <span className="text-[12px] font-extrabold text-gray-800 leading-none">Mis</span>
-      <span className="text-[10px] font-semibold text-gray-500 -mt-0.5">pedidos</span>
-    </button>
-
-    {/* Empresarial */}
-    <button
-      onClick={() => router.push('/client/new')}
-      className="
-        col-span-1
-        rounded-2xl px-2 py-3
-        bg-white
-        border border-gray-200/80
-        shadow-[0_10px_26px_rgba(0,0,0,0.07)]
-        active:scale-[0.98] transition
-        flex flex-col items-center justify-center gap-1
-      "
-    >
-      <span className="text-[18px] leading-none">🏢</span>
-      <span className="text-[12px] font-extrabold text-gray-800 leading-none">Empre</span>
-      <span className="text-[10px] font-semibold text-gray-500 -mt-0.5">sarial</span>
-    </button>
-  </div>
-</div>
-
-{/* ===========================
-  SERVICIOS — MÁS VISIBLE Y MÁS ENTENDIBLE
-=========================== */}
-<div className="px-3 pb-3">
-  <div
-    className="
-      flex items-stretch gap-2
-      rounded-[26px] p-2
-      bg-white/90 backdrop-blur-xl
-      border border-gray-200
-      shadow-[0_14px_38px_rgba(0,0,0,0.10)]
-    "
-  >
-    {/* CTA principal: abrir servicios */}
-    <button
-      onClick={() => setServicesOpen(true)}
-      aria-label="Elegir servicio"
-      className="
-        relative flex-1 overflow-hidden
-        rounded-[22px] px-4 py-3.5
-        text-left
-        bg-gradient-to-br from-emerald-100 via-cyan-50 to-emerald-50
-        border border-emerald-300/80
-        active:scale-[0.99] transition
-        shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_10px_28px_rgba(16,185,129,0.16)]
-      "
-    >
-      {/* glow fuerte */}
-      <span className="pointer-events-none absolute -top-10 -right-10 w-32 h-32 rounded-full bg-emerald-300/30 blur-2xl" />
-      <span className="pointer-events-none absolute -bottom-10 -left-10 w-28 h-28 rounded-full bg-cyan-300/25 blur-2xl" />
-
-      {/* brillo sutil */}
-      <span className="pointer-events-none absolute inset-0 opacity-70">
-        <span className="absolute -left-10 top-0 h-full w-10 rotate-12 bg-white/30 blur-md animate-[ctaShine_2.6s_ease-in-out_infinite]" />
-      </span>
-
-      <div className="relative flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white border border-emerald-300 text-[14px] shadow-sm">
-              ⚡
-            </span>
-
-            <div className="min-w-0">
-              <div className="text-[14px] font-extrabold text-gray-800 tracking-tight leading-none">
-                Elegí qué necesitás
-              </div>
-
-              <div className="text-[11px] font-semibold text-gray-600 mt-1">
-                Tocá acá para ver los servicios.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* CTA más notorio */}
-        <div
-          className="
-            shrink-0 inline-flex items-center gap-1.5
-            text-[11px] font-black
-            text-white
-            bg-gradient-to-r from-emerald-500 to-teal-500
-            rounded-full
-            px-4 py-2
-            shadow-[0_10px_22px_rgba(16,185,129,0.28)]
-            border border-white/30
-          "
-        >
-          Abrir
-          <span className="text-[12px]">→</span>
-        </div>
-      </div>
-    </button>
-
-    {/* Estado visible del filtro */}
-    <button
-      onClick={() => setServicesOpen(true)}
-      aria-label="Ver o cambiar filtro actual"
-      className="
-        min-w-[118px]
-        rounded-[22px] px-3 py-3.5
-        bg-gradient-to-b from-white to-gray-50
-        border border-gray-200
-        shadow-[0_10px_24px_rgba(0,0,0,0.08)]
-        flex items-center justify-center
-        active:scale-[0.98] transition
-      "
-    >
-      <div className="text-center leading-tight">
-        <div className="text-[10px] font-extrabold text-gray-500">
-          📌 Mostrando
-        </div>
-
-        <div className="text-[15px] font-black text-emerald-700 mt-1">
-          {selectedService
-            ? (services.find(s => s.id === selectedService)?.label || selectedService)
-            : 'Todos'}
-        </div>
-
-        <div className="text-[9px] font-semibold text-gray-400 mt-1">
-          tocar para cambiar
-        </div>
-      </div>
-    </button>
-  </div>
-</div>
-
-
-</motion.div>
-
-{/* MODAL SERVICIOS */}
-<AnimatePresence>
-  {servicesOpen && (
-    <motion.div
-      className="fixed inset-0 z-[20000] bg-slate-900/34 backdrop-blur-[6px] flex items-end justify-center"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={() => {
-        setServicesOpen(false);
-        setServiceQuery('');
-        setShowAllServices(false);
-      }}
-    >
-      <motion.div
-        className="w-full max-w-md overflow-hidden rounded-t-[32px] border border-emerald-100 bg-[#f8fffc] shadow-[0_30px_80px_rgba(16,185,129,0.18)]"
-        style={{
-          paddingBottom: 'calc(14px + env(safe-area-inset-bottom))',
-          maxHeight: '76vh',
-        }}
-        initial={{ y: 380 }}
-        animate={{ y: 0 }}
-        exit={{ y: 380 }}
-        transition={{ type: 'spring', stiffness: 125, damping: 18 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-[#ecfff7] via-[#dffaf0] to-[#c8f3e4] px-4 pb-4 pt-4">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_42%)]" />
-          <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-300/20 blur-2xl" />
-
-          <div className="relative flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-700/80">
-                Smart filter
-              </div>
-              <h3 className="mt-1 text-[20px] font-black leading-tight text-slate-900">
-                Elegí un servicio
-              </h3>
-              <p className="mt-1 text-xs font-medium text-slate-600">
-                Simple, claro y alineado con ManosYA.
-              </p>
-            </div>
-
-            <button
-              onClick={() => {
-                setServicesOpen(false);
-                setServiceQuery('');
-                setShowAllServices(false);
-              }}
-              className="shrink-0 rounded-2xl border border-emerald-200 bg-white/85 p-2 text-emerald-700 shadow-sm transition hover:bg-white active:scale-95"
-            >
-              <XCircle size={20} />
-            </button>
-          </div>
-
-          <div className="relative mt-4">
-            <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-3 shadow-[0_8px_20px_rgba(16,185,129,0.08)]">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                <Sparkles size={16} />
-              </div>
-
-              <input
-                value={serviceQuery}
-                onChange={(e) => {
-                  setServiceQuery(e.target.value);
-                  setShowAllServices(true);
-                }}
-                placeholder="Buscar servicio..."
-                className="h-12 w-full bg-transparent text-sm font-semibold text-slate-800 placeholder:text-slate-400 outline-none"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="px-4 pt-4">
-          <button
-            onClick={() => {
-              toggleService(null);
-              setServicesOpen(false);
-            }}
-            className={`
-              mb-3 flex w-full items-center justify-center rounded-[20px] border px-4 py-3 text-sm font-black transition active:scale-[0.98]
-              ${!selectedService
-                ? 'border-emerald-500 bg-gradient-to-r from-emerald-500 to-emerald-400 text-white shadow-[0_14px_30px_rgba(16,185,129,0.24)]'
-                : 'border-emerald-100 bg-white text-slate-700 shadow-sm'}
-            `}
-          >
-            🌍 Mostrar todos
-          </button>
-
-          {!serviceQuery.trim() && suggestedServices.length > 0 && (
-            <div className="mb-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
-                  Sugeridos
-                </span>
-                <span className="text-[11px] font-bold text-emerald-600">
-                  más usados
-                </span>
-              </div>
-
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {suggestedServices.slice(0, 8).map((s) => (
                   <button
-                    key={`suggested-${s.id}`}
+                    type="button"
                     onClick={() => {
-                      toggleService(s.id);
-                      setServicesOpen(false);
-                    }}
-                    className={`
-                      shrink-0 rounded-full border px-3 py-2 text-xs font-extrabold transition active:scale-[0.98]
-                      ${selectedService === s.id
-                        ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                        : 'border-emerald-100 bg-white text-slate-700'}
-                    `}
+  setTrackingOpen(false);
+  setRoute(null);
+  setEtaMinutes(null);
+  setTrackingWorker(null);
+}}
+                    className="rounded-full border border-white/14 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white/90"
                   >
-                    {s.label}
+                    Volver
                   </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+                </div>
 
-        <div className="max-h-[42vh] overflow-y-auto px-4 pb-4">
-          {visibleServices.length > 0 ? (
-            <div className="grid grid-cols-2 gap-2.5">
-              {visibleServices.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => {
-                    toggleService(s.id);
-                    setServicesOpen(false);
-                  }}
-                  className={`
-                    rounded-[20px] border px-3 py-3 text-left transition active:scale-[0.98]
-                    ${selectedService === s.id
-                      ? 'border-emerald-500 bg-gradient-to-br from-emerald-500 to-emerald-400 text-white shadow-[0_14px_28px_rgba(16,185,129,0.22)]'
-                      : 'border-emerald-100 bg-white text-slate-800 shadow-sm hover:border-emerald-200'}
-                  `}
-                >
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`
-                        flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl
-                        ${selectedService === s.id
-                          ? 'bg-white/15 text-white'
-                          : 'bg-emerald-50 text-emerald-700'}
-                      `}
+                <div className="grid gap-0 md:grid-cols-[1.45fr_0.95fr]">
+                  <div className="relative h-[320px] md:h-[calc(var(--real-vh,100dvh)-350px)]">
+                    <MapContainer
+                      center={mapCenter}
+                      zoom={hasMeCoords ? 14 : HOME_VIEW.zoom}
+                      className="h-full w-full"
+                      whenReady={() => {
+                        setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
+                      }}
+                      ref={mapRef}
                     >
-                      {s.icon}
-                    </div>
+                      <TileLayer
+                        attribution='&copy; OpenStreetMap'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
 
-                    <div className="min-w-0">
-                      <div className="line-clamp-2 text-[12px] font-black leading-tight">
-                        {s.label}
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-[22px] border border-dashed border-emerald-200 bg-white px-4 py-7 text-center">
-              <div className="text-sm font-black text-slate-700">
-                No encontramos ese servicio
-              </div>
-              <div className="mt-1 text-xs font-medium text-slate-500">
-                Probá con otra palabra.
-              </div>
-            </div>
-          )}
+                      {hasMeCoords && (
+                        <>
+                          <Marker
+                            position={[Number(me.lat), Number(me.lon)]}
+                            icon={clientLocationIcon() || undefined}
+                          />
+                          <Circle
+                            center={[Number(me.lat), Number(me.lon)]}
+                            radius={120}
+                            pathOptions={{ color: '#16a3a8', fillColor: '#16a3a8', fillOpacity: 0.12 }}
+                          />
+                        </>
+                      )}
 
-          {filteredServices.length > visibleServices.length && (
-            <button
-              onClick={() => setShowAllServices((prev) => !prev)}
-              className="mt-3 w-full rounded-[20px] border border-emerald-100 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-emerald-200 hover:text-emerald-700 active:scale-[0.98]"
-            >
-              {showAllServices ? 'Ver menos' : 'Ver más'}
-            </button>
-          )}
+                      {trackingWorker && Number.isFinite(Number(trackingWorker.lat)) && Number.isFinite(Number(trackingWorker.lng)) && (
+                        <Marker
+                          position={[Number(trackingWorker.lat), Number(trackingWorker.lng)]}
+                          icon={avatarIcon(trackingWorker.avatar_url, trackingWorker) || undefined}
+                        />
+                      )}
 
-          <p className="mt-3 text-center text-[11px] font-semibold text-slate-400">
-            Filtro simple y coherente con trabajador.
-          </p>
-        </div>
-      </motion.div>
-    </motion.div>
-  )}
-</AnimatePresence>
-
-{/* PERFIL DEL TRABAJADOR / CHOFER */}
-<AnimatePresence>
-  {selected && !showPrice && jobStatus !== 'completed' && jobStatus !== 'cancelled' && (() => {
-    const km =
-      hasMeCoords && hasSelCoords
-        ? Math.round(haversineKm(Number(me.lat), Number(me.lon), selLat, selLng) * 10) / 10
-        : null;
-
-    const renderActionButtons = () => {
-      if (!jobId) {
-        return (
-          <div className="flex justify-center gap-3 mt-5">
-            <button
-  onClick={() => {
-    setSelected(null);
-    setSelectedService(null);
-    setProfileSheetMode('full');
-  }}
-  className="px-5 py-3 rounded-xl border text-gray-700"
->
-  Cerrar
-</button>
-
-            <button
-              onClick={solicitar}
-              className="px-6 py-3 rounded-xl bg-emerald-500 text-white font-semibold flex items-center gap-1"
-            >
-              <>
-                {selectedServiceMeta?.pricing_type === 'booking' ? '📅 ' : '🚀 '}
-                {selectedServiceMeta?.action_label || 'Solicitar'}
-              </>
-            </button>
-          </div>
-        );
-      }
-
-      if (jobStatus === 'open') {
-        return (
-          <div className="flex flex-col gap-3 w-full mt-5">
-            <button
-              onClick={() => {
-                openChat();
-                setHasUnread(false);
-                setUnreadCount(0);
-              }}
-              className="relative px-6 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
-            >
-              <MessageCircle size={18} className="text-emerald-600" />
-              Chatear
-
-              {unreadCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={cancelarPedido}
-              className="px-6 py-3 rounded-xl bg-red-500 text-white font-semibold flex items-center justify-center gap-1"
-            >
-              <XCircle size={16} /> Cancelar pedido
-            </button>
-          </div>
-        );
-      }
-
-      if (jobStatus === 'accepted' || jobStatus === 'assigned') {
-        return (
-          <div className="flex flex-col gap-3 w-full mt-5">
-            <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white px-4 py-4 text-center shadow-sm">
-              <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-600">
-                En camino
-              </div>
-
-              <div className="mt-1 text-lg font-black text-gray-800">
-                {selected?.full_name || 'Tu profesional'} ya viene hacia vos
-              </div>
-
-              <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
-                {Number.isFinite(km) && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[12px] font-extrabold">
-                    📍 {formatKm(km)}
-                  </span>
-                )}
-
-                {etaMinutes != null && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-700 text-[12px] font-extrabold">
-                    ⏱ {etaMinutes} min aprox
-                  </span>
-                )}
-              </div>
-
-              <p className="mt-2 text-xs text-gray-500">
-                Mirá el mapa para seguir su llegada en tiempo real.
-              </p>
-            </div>
-
-            <button
-              onClick={verTrabajadorViniendo}
-              className="relative overflow-hidden px-6 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white font-extrabold text-[15px] flex items-center justify-center gap-2 shadow-[0_18px_35px_rgba(16,185,129,0.28)] active:scale-[0.98] transition"
-            >
-              <span className="absolute inset-0 opacity-60">
-                <span className="absolute -left-10 top-0 h-full w-10 rotate-12 bg-white/25 blur-md animate-[ctaShine_2.6s_ease-in-out_infinite]" />
-              </span>
-              <span className="relative z-10">📍 Ver llegada en el mapa</span>
-            </button>
-
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => {
-                  openChat();
-                  setHasUnread(false);
-                  setUnreadCount(0);
-                }}
-                className="relative px-4 py-3 rounded-2xl border-2 border-emerald-300 bg-white text-emerald-700 font-bold flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition"
-              >
-                <MessageCircle size={18} className="text-emerald-600" />
-                Chatear
-
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={cancelarPedido}
-                className="px-4 py-3 rounded-2xl bg-red-500 text-white font-bold flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition"
-              >
-                <XCircle size={16} />
-                Cancelar
-              </button>
-            </div>
-
-            <button
-              onClick={finalizarPedido}
-              className="px-6 py-3 rounded-2xl bg-gray-900 text-white font-bold flex items-center justify-center gap-2 shadow-[0_12px_26px_rgba(17,24,39,0.18)] active:scale-[0.98] transition"
-            >
-              <CheckCircle2 size={16} />
-              Finalizar trabajo
-            </button>
-          </div>
-        );
-      }
-
-      return null;
-    };
-
-    return (
-      <motion.div
-        key="perfil"
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
-        transition={{ type: 'spring', stiffness: 120, damping: 18 }}
-        className="fixed inset-x-0 bottom-0 z-[10000]"
-      >
-        {profileSheetMode === 'mini' ? (
-          <div
-            className="mx-3 mb-3 rounded-3xl bg-white shadow-2xl border border-gray-200 p-4"
-            style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}
-          >
-            <button
-              onClick={() => setProfileSheetMode('full')}
-              className="w-full flex items-center justify-center mb-3"
-            >
-              <div className="h-1.5 w-12 bg-gray-300 rounded-full"></div>
-            </button>
-
-            <div className="flex items-center gap-3">
-              <img
-                src={selected.avatar_url || '/avatar-fallback.png'}
-                onError={(e) => {
-                  e.currentTarget.src = '/avatar-fallback.png';
-                }}
-                className="w-14 h-14 rounded-full border-2 border-emerald-500 object-cover object-center shadow-sm"
-                alt="avatar"
-              />
-
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-gray-800 truncate">
-                  {selected.full_name || 'Profesional'}
-                </div>
-
-                <div className="text-xs text-gray-500 mt-0.5">
-                  {jobStatus === 'accepted' || jobStatus === 'assigned'
-                    ? '🟢 Trabajador en camino'
-                    : 'Pedido activo'}
-                </div>
-
-                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  {Number.isFinite(km) && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-bold text-emerald-700">
-                      📍 {formatKm(km)}
-                    </span>
-                  )}
-
-                  {etaMinutes != null && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-[11px] font-bold text-emerald-700">
-                      ⏱ {etaMinutes} min
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <button
-                onClick={() => setProfileSheetMode('full')}
-                className="px-3 py-2 rounded-xl bg-emerald-500 text-white text-sm font-semibold"
-              >
-                Ver
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 mt-4">
-              <button
-                onClick={() => {
-                  openChat();
-                  setHasUnread(false);
-                  setUnreadCount(0);
-                }}
-                className="relative px-4 py-3 rounded-2xl border-2 border-emerald-400 text-emerald-700 font-semibold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-all duration-200 shadow-sm active:scale-95"
-              >
-                <MessageCircle size={18} className="text-emerald-600" />
-                Chatear
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-red-500 text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-pulse">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setProfileSheetMode('full')}
-                className="px-4 py-3 rounded-2xl bg-gray-100 text-gray-700 font-semibold"
-              >
-                Ver detalles
-              </button>
-
-              <button
-                onClick={cancelarPedido}
-                className="px-4 py-3 rounded-2xl bg-red-500 text-white font-semibold flex items-center justify-center gap-2"
-              >
-                <XCircle size={16} />
-                Cancelar
-              </button>
-
-              <button
-                onClick={finalizarPedido}
-                className="px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold flex items-center justify-center gap-2"
-              >
-                <CheckCircle2 size={16} />
-                Finalizar
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            className="bg-white rounded-t-3xl shadow-xl p-6"
-            style={{ paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}
-          >
-            <button
-              onClick={() => setProfileSheetMode('mini')}
-              className="w-full flex items-center justify-center mb-3"
-            >
-              <div className="h-1.5 w-12 bg-gray-300 rounded-full"></div>
-            </button>
-
-            <div className="text-center">
-              <div className="relative w-20 h-20 mx-auto mb-2">
-                <img
-                  src={selected.avatar_url || '/avatar-fallback.png'}
-                  onError={(e) => {
-                    e.currentTarget.src = '/avatar-fallback.png';
-                  }}
-                  className="w-20 h-20 rounded-full border-4 border-emerald-500 shadow-md object-cover object-center"
-                  alt="avatar"
-                />
-
-                {selected.worker_verified && selected.profile_verified && (
-                  <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-1.5 border-2 border-white shadow">
-                    <CheckCircle2 size={14} className="text-white" />
-                  </div>
-                )}
-              </div>
-
-              <h2 className="font-bold text-lg">{selected.full_name}</h2>
-
-              <div className="flex flex-wrap justify-center gap-2 mt-3">
-                <span
-                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border ${
-                    isOnlineRecent(selected)
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-slate-50 text-slate-600 border-slate-200'
-                  }`}
-                >
-                  {isOnlineRecent(selected) ? '🟢 En línea' : '🕘 No reciente'}
-                </span>
-
-                {distanceToSelectedKm != null ? (
-                  <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-cyan-50 text-cyan-700 border-cyan-200">
-                    📍 {formatKm(distanceToSelectedKm)}
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-slate-50 text-slate-500 border-slate-200">
-                    📍 Sin distancia
-                  </span>
-                )}
-              </div>
-
-              <p className="text-sm italic text-gray-500 mb-2">
-                “{selected.bio || 'Sin descripción'}”
-              </p>
-
-              <div className="flex justify-center items-center gap-1 mb-2">
-                {[...Array(5)].map((_, i) => (
-                  <Star
-                    key={i}
-                    size={14}
-                    className={
-                      i < Math.round(selected.avg_rating)
-                        ? 'text-yellow-400 fill-yellow-400'
-                        : 'text-gray-300'
-                    }
-                  />
-                ))}
-                <span className="text-xs text-gray-500 ml-1">
-                  ({selected.total_reviews || 0})
-                </span>
-              </div>
-
-              <p className="text-sm text-gray-600">
-                <Clock3 size={14} className="inline mr-1" />
-                {selected?.years_experience
-                  ? `${selected.years_experience} ${
-                      selected.years_experience === 1 ? 'año' : 'años'
-                    } de experiencia`
-                  : 'Sin experiencia registrada'}
-              </p>
-
-              <p className="text-xs text-gray-500 mt-1">
-                {(() => {
-                  const mins = minutesSince(selected?.updated_at);
-                  if (mins == null) return 'Sin actividad reciente';
-                  if (mins < 60) return `Activo hace ${mins} min`;
-                  if (mins < 1440) return `Activo hace ${Math.floor(mins / 60)} h`;
-                  return `Activo hace ${Math.floor(mins / 1440)} d`;
-                })()}
-              </p>
-
-              <div className="mt-2 flex justify-center">
-                {Number.isFinite(km) ? (
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200">
-                    <span className="text-[12px] font-extrabold text-emerald-700">
-                      📍 {formatKm(km)}
-                    </span>
-                    <span className="text-[11px] font-semibold text-gray-500">
-                      desde tu ubicación
-                    </span>
-                  </div>
-                ) : (
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-50 border border-gray-200">
-                    <span className="text-[12px] font-bold text-gray-500">📍 —</span>
-                    <span className="text-[11px] font-semibold text-gray-400">
-                      activá GPS para ver km
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {etaMinutes != null && (
-                <div className="mt-2 flex justify-center">
-                  <div className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                    ⏱️ llega en aprox {etaMinutes} min
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-5">
-                <p className="text-center text-[15px] font-semibold text-slate-700">
-                  Especialidades
-                </p>
-
-                <div className="mt-3 flex flex-wrap justify-center gap-2">
-                  {selectedWorkerServices.map((item) => {
-                    const active = selectedServiceResolved === item.slug;
-
-                    return (
-                      <button
-                        key={item.slug}
-                        type="button"
-                        onClick={() => setSelectedService(item.slug)}
-                        className={[
-                          'rounded-full px-4 py-2 text-[14px] font-semibold transition-all duration-200',
-                          active
-                            ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-[0_10px_22px_rgba(16,185,129,0.22)]'
-                            : 'border border-emerald-200 bg-[#dff8ee] text-emerald-700 hover:-translate-y-[1px] hover:border-emerald-300 hover:bg-[#d7f5e9]',
-                        ].join(' ')}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {selectedWorkerServices.length > 1 && !selectedServiceResolved && (
-                  <p className="mt-3 text-center text-[12px] font-medium text-slate-500">
-                    Elegí una especialidad para continuar
-                  </p>
-                )}
-              </div>
-
-              <div className="mt-3">{jobId && <StatusBadge />}</div>
-
-              {selectedServiceResolved && (
-                <div className="mt-4 rounded-[22px] border border-emerald-200/70 bg-gradient-to-br from-white via-[#f7fffc] to-[#eefcf6] px-4 py-4 shadow-[0_12px_30px_rgba(16,185,129,0.10)]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700/70">
-                        Servicio elegido
-                      </p>
-                      <h3 className="mt-1 text-[17px] font-extrabold text-slate-900">
-                        {selectedServiceCatalogMeta?.name || selectedServiceResolved}
-                      </h3>
-                      <p className="mt-1 text-[13px] leading-5 text-slate-600">
-                        {selectedServiceMeta?.helper_text || 'Coordiná los detalles con el profesional.'}
-                      </p>
-                    </div>
-
-                    <span className="shrink-0 rounded-full bg-emerald-500/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-emerald-700">
-                      {selectedServiceMeta?.badge || 'Servicio'}
-                    </span>
+                      {Array.isArray(route) && route.length > 1 && (
+                        <Polyline
+                          positions={route}
+                          pathOptions={{ color: '#0ea5a4', weight: 5, opacity: 0.92 }}
+                        />
+                      )}
+                    </MapContainer>
                   </div>
 
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
-                      {selectedServiceCatalogMeta?.base_label || 'Servicio'}
-                    </span>
-
-                    <span className="rounded-full bg-[#dff8ee] px-3 py-1 text-[11px] font-bold text-emerald-700">
-                      {selectedServiceMeta?.action_label || 'Solicitar servicio'}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {renderActionButtons()}
-            </div>
-          </div>
-        )}
-      </motion.div>
-    );
-  })()}
-</AnimatePresence>
-{/* 💵 MODAL INFORMACIÓN DE SOLICITUD — SIN PRECIOS FIJOS AÚN */}
-{/* 💵 MODAL SOLICITUD / AGENDAMIENTO */}
-<AnimatePresence>
-  {showPrice && (
-    <motion.div
-      key="modal-precio"
-      className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
-      <motion.div
-        className="w-full max-w-md rounded-[28px] border border-emerald-100 bg-gradient-to-br from-white via-[#fbfffd] to-emerald-50 p-6 shadow-2xl"
-        initial={{ scale: 0.94, y: 40 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.94, y: 40 }}
-        transition={{ type: 'spring', stiffness: 140, damping: 20 }}
-      >
-        <div className="text-center">
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-emerald-700/70">
-            ManosYA
-          </p>
-
-          <h3 className="mt-1 text-xl font-extrabold text-slate-900">
-            {selectedServiceMeta?.pricing_type === 'booking'
-              ? 'Agendar servicio'
-              : 'Confirmar solicitud'}
-          </h3>
-
-          <p className="mt-2 text-sm leading-5 text-slate-600">
-            {selectedServiceMeta?.helper_text || 'Revisá los detalles antes de enviar tu solicitud.'}
-          </p>
-        </div>
-
-        <div className="mt-5 rounded-2xl border border-emerald-100 bg-white/90 p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                Profesional
-              </p>
-              <p className="mt-1 text-base font-extrabold text-slate-900">
-                {selected?.full_name || 'Trabajador'}
-              </p>
-              <p className="mt-1 text-sm text-emerald-700 font-semibold">
-                {selectedServiceCatalogMeta?.name || selectedServiceResolved || 'Servicio'}
-              </p>
-            </div>
-
-            <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-emerald-700">
-              {selectedServiceMeta?.badge || 'Servicio'}
-            </span>
-          </div>
-        </div>
-
-        {selectedServiceMeta?.pricing_type === 'booking' ? (
-          <div className="mt-5 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1.5 block text-[12px] font-bold text-slate-700">
-                  Fecha
-                </span>
-                <input
-                  type="date"
-                  value={bookingDate}
-                  min={new Date().toISOString().slice(0, 10)}
-                  onChange={(e) => setBookingDate(e.target.value)}
-                  className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-1.5 block text-[12px] font-bold text-slate-700">
-                  Hora
-                </span>
-                <input
-                  type="time"
-                  value={bookingTime}
-                  onChange={(e) => setBookingTime(e.target.value)}
-                  className="w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
-                />
-              </label>
-            </div>
-
-            <label className="block">
-              <span className="mb-1.5 block text-[12px] font-bold text-slate-700">
-                Detalles para el trabajador
-              </span>
-              <textarea
-                value={bookingNotes}
-                onChange={(e) => setBookingNotes(e.target.value)}
-                rows={3}
-                placeholder="Ej.: cumpleaños, reunión, cantidad de personas, dirección exacta o detalles importantes."
-                className="w-full resize-none rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
-              />
-            </label>
-
-            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-4 py-3 text-left">
-              <p className="text-[12px] font-bold text-cyan-800">
-                El trabajador recibirá tu fecha y hora solicitada.
-              </p>
-              <p className="mt-1 text-[12px] leading-5 text-cyan-700">
-                Luego podrá aceptar o rechazar según su disponibilidad y agenda.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-5 rounded-2xl border border-emerald-200 bg-white px-4 py-4 text-center shadow-sm">
-            <p className="text-2xl font-extrabold text-emerald-600">
-              Solicitud sin costo
-            </p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              Enviás la solicitud y el profesional recibe tu pedido para responder.
-            </p>
-          </div>
-        )}
-
-        <div className="mt-6 flex items-center gap-3">
-          <button
-            onClick={() => {
-              setShowPrice(false);
-            }}
-            className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700"
-          >
-            Cerrar
-          </button>
-
-          <button
-            onClick={confirmarSolicitud}
-            className="flex-1 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-4 py-3 text-sm font-extrabold text-white shadow-[0_14px_30px_rgba(16,185,129,0.24)]"
-          >
-            {selectedServiceMeta?.pricing_type === 'booking'
-              ? '📅 Confirmar agenda'
-              : '🚀 Enviar solicitud'}
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
-  )}
-</AnimatePresence>
-
-
-
-{/* 🌟 MODAL DE CALIFICACIÓN MANOSYA */}
-<AnimatePresence>
-  {(jobStatus === 'worker_completed' || jobStatus === 'completed') && (
-    <motion.div
-      key="modal-review"
-      className="fixed inset-0 z-[10020] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onAnimationStart={() => {
-        if (navigator.vibrate) navigator.vibrate(30);
-      }}
-    >
-      <motion.div
-        initial={{ scale: 0.94, y: 24, opacity: 0 }}
-        animate={{ scale: 1, y: 0, opacity: 1 }}
-        exit={{ scale: 0.94, y: 30, opacity: 0 }}
-        transition={{ type: 'spring', stiffness: 160, damping: 18 }}
-        className="
-          relative w-full max-w-md overflow-hidden
-          rounded-[30px]
-          border border-emerald-100
-          bg-white
-          shadow-[0_30px_80px_rgba(0,0,0,0.35)]
-        "
-      >
-
-        {/* decoración suave marca */}
-        <div className="pointer-events-none absolute -top-20 -right-20 h-44 w-44 rounded-full bg-emerald-400/15 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-20 -left-20 h-44 w-44 rounded-full bg-emerald-300/10 blur-3xl" />
-
-        {/* botón cerrar */}
-        <button
-          onClick={() => {
-            setJobStatus(null);
-            setTimeout(() => {
-              resetJobState();
-            }, 400);
-          }}
-          className="
-            absolute top-4 right-4
-            h-9 w-9 rounded-full
-            bg-gray-100
-            text-gray-400
-            hover:text-red-500
-            transition
-            flex items-center justify-center
-          "
-        >
-          <XCircle size={18} />
-        </button>
-
-        <div className="px-7 pt-7 pb-6 text-center">
-
-          {/* encabezado */}
-          <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-1.5 text-[12px] font-semibold text-emerald-700">
-            ✅ Servicio finalizado
-          </div>
-
-          {/* avatar */}
-          <div className="relative mx-auto mb-4 h-24 w-24">
-            <div className="absolute inset-0 rounded-full bg-emerald-400/25 blur-xl" />
-            <img
-              src={selected?.avatar_url || '/avatar-fallback.png'}
-              alt="avatar trabajador"
-              onError={(e) => {
-                e.currentTarget.src = '/avatar-fallback.png';
-              }}
-              className="
-                relative z-10 h-24 w-24 rounded-full
-                object-cover object-center
-                border-4 border-emerald-500
-                shadow-[0_10px_25px_rgba(16,185,129,0.35)]
-              "
-            />
-          </div>
-
-          {/* título */}
-          <h3 className="text-[22px] font-bold text-gray-800">
-            ¿Cómo fue tu experiencia?
-          </h3>
-
-          <p className="mt-1 text-sm text-gray-500">
-            Valorá a <span className="font-semibold text-emerald-600">{selected?.full_name || 'el profesional'}</span> y ayudá a mejorar ManosYA.
-          </p>
-
-          {/* estrellas */}
-          <div className="mt-6 mb-3">
-            <div className="flex justify-center gap-2">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => {
-                    setRating(n);
-                    if (navigator.vibrate) navigator.vibrate(15);
-                  }}
-                  className={`
-                    h-11 w-11 rounded-xl
-                    flex items-center justify-center
-                    border transition
-                    ${
-                      n <= rating
-                        ? 'bg-emerald-500 border-emerald-500 shadow-md'
-                        : 'bg-white border-gray-200 hover:bg-emerald-50'
-                    }
-                  `}
-                >
-                  <Star
-                    size={22}
-                    className={
-                      n <= rating
-                        ? 'fill-white text-white'
-                        : 'text-gray-300'
-                    }
-                  />
-                </button>
-              ))}
-            </div>
-
-            <div className="mt-3 text-xs text-gray-500 font-medium">
-              {rating === 0 && 'Seleccioná una cantidad de estrellas'}
-              {rating === 1 && 'Muy mala experiencia'}
-              {rating === 2 && 'Podría mejorar'}
-              {rating === 3 && 'Experiencia aceptable'}
-              {rating === 4 && 'Muy buena atención'}
-              {rating === 5 && 'Excelente servicio'}
-            </div>
-          </div>
-
-          {/* comentario */}
-          <div className="mt-5 text-left">
-            <label className="mb-2 block text-[12px] font-semibold text-gray-500">
-              COMENTARIO OPCIONAL
-            </label>
-
-            <textarea
-              rows={4}
-              placeholder="Comentá cómo fue la atención, puntualidad y calidad del servicio..."
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              className="
-                w-full resize-none rounded-2xl
-                border border-gray-200
-                px-4 py-3 text-sm
-                shadow-inner
-                outline-none
-                focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100
-              "
-            />
-          </div>
-
-          {/* botones */}
-          <div className="mt-6 flex gap-3">
-
-            <button
-              onClick={() => {
-                toast('Valoración omitida');
-                setJobStatus(null);
-                setTimeout(() => {
-                  resetJobState();
-                }, 400);
-              }}
-              className="
-                flex-1 rounded-2xl
-                bg-gray-100
-                py-3 text-sm font-semibold
-                text-gray-600
-                hover:bg-gray-200
-                transition
-              "
-            >
-              Omitir
-            </button>
-
-            <button
-              onClick={async () => {
-                try {
-                  await confirmarReseña();
-                  toast.success('Gracias por valorar al profesional 🙌');
-
-                  setTimeout(() => {
-                    setJobStatus(null);
-                    resetJobState();
-                  }, 600);
-                } catch (err) {
-                  console.error('❌ Error al guardar reseña:', err);
-                  toast.error('No se pudo guardar la valoración');
-                }
-              }}
-              className="
-                flex-[1.4]
-                rounded-2xl
-                bg-emerald-500
-                py-3
-                text-sm font-bold text-white
-                shadow-lg shadow-emerald-400/30
-                hover:bg-emerald-600
-                transition
-              "
-            >
-              Finalizar y valorar
-            </button>
-
-          </div>
-
-          <div className="mt-4 text-[11px] text-gray-400">
-            Tu opinión ayuda a mejorar la calidad de los servicios en ManosYA.
-          </div>
-
-        </div>
-      </motion.div>
-    </motion.div>
-  )}
-</AnimatePresence>
-
-
-      {/* 💬 CHAT MODAL FLOTANTE PREMIUM (AGRANDADO) */}
-<AnimatePresence>
-  {isChatOpen && selected && (
-    <motion.div
-      className="fixed inset-0 z-[10020] bg-black/45 backdrop-blur-md flex items-end justify-center"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.25 }}
-    >
-      <motion.div
-        className="
-          w-full 
-          max-w-md 
-          h-[85vh]
-          bg-white 
-          rounded-t-[38px] 
-          shadow-[0_-18px_60px_rgba(0,0,0,0.28)]
-          flex flex-col 
-          overflow-hidden
-          border border-gray-200/40
-        "
-        initial={{ y: 320 }}
-        animate={{ y: 0 }}
-        exit={{ y: 320 }}
-        transition={{ type: 'spring', stiffness: 110, damping: 16 }}
-      >
-        {/* 🧊 HEADER ESTILO IPHONE */}
-        <div
-          className="
-            flex items-center justify-between 
-            px-6 py-5 
-            border-b border-gray-100 
-            bg-white/70 backdrop-blur-xl
-          "
-        >
-          <button
-            onClick={() => {
-              setIsChatOpen(false);
-              setMessages([]);
-              setHasUnread(false);
-              setUnreadCount(0);
-              setIsTyping(false);
-
-              if (typingTimeoutRef.current) {
-                clearTimeout(typingTimeoutRef.current);
-                typingTimeoutRef.current = null;
-              }
-
-              if (chatChannelRef.current) {
-                supabase.removeChannel(chatChannelRef.current);
-                chatChannelRef.current = null;
-              }
-            }}
-            className="flex items-center gap-1 text-gray-500 hover:text-emerald-600 transition font-medium"
-          >
-            <ChevronLeft size={22} />
-            Volver
-          </button>
-
-          {/* NOMBRE + ESTADO */}
-          <div className="flex items-center gap-3">
-            <img
-              src={selected.avatar_url || '/avatar-fallback.png'}
-              className="
-                w-11 h-11 rounded-full 
-                shadow-md border border-gray-200 object-cover
-              "
-            />
-            <div className="leading-4">
-              <p className="font-semibold text-gray-800 text-[15px] tracking-tight">
-                {selected.full_name || 'Profesional'}
-              </p>
-              <p className="text-xs text-emerald-600 flex items-center gap-1">
-                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                {jobStatus === 'accepted' ? 'En camino' : 'Disponible'}
-              </p>
-            </div>
-          </div>
-
-          <div className="w-6"></div>
-        </div>
-
-        {/* 🗨 MENSAJES — MÁS GRANDE */}
-        <div
-          className="
-            flex-1 
-            overflow-y-auto 
-            px-5 py-5 
-            space-y-4 
-            bg-gradient-to-b from-white to-gray-50
-          "
-        >
-          {messages.length === 0 ? (
-            <p className="text-center text-gray-400 mt-8 text-sm">
-              Inicia la conversación ✨
-            </p>
-          ) : (
-            messages.map((m) => {
-              const mine = String(m.sender_id) === String(me?.id);
-              const isLocation = m?.message_type === 'location';
-              const hasCoords =
-                Number.isFinite(Number(m?.lat)) &&
-                Number.isFinite(Number(m?.lng));
-
-              return (
-                <div
-                  key={m.id}
-                  className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
-                >
-                  {isLocation ? (
-                    <button
-                      type="button"
-                      onClick={() => openLocationMessageOnMap(m)}
-                      className={`
-                        max-w-[82%] text-left overflow-hidden
-                        rounded-2xl shadow-sm border
-                        transition active:scale-[0.98]
-                        ${
-                          mine
-                            ? 'bg-emerald-500 text-white border-emerald-500 rounded-br-none'
-                            : 'bg-white text-gray-800 border-gray-200 rounded-bl-none'
-                        }
-                      `}
-                    >
-                      <div className="px-4 pt-3 pb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[18px]">📍</span>
-                          <div>
-                            <div className="text-[14px] font-extrabold leading-none">
-                              Ubicación compartida
-                            </div>
-                            <div
-                              className={`text-[11px] mt-1 ${
-                                mine ? 'text-white/80' : 'text-gray-500'
-                              }`}
-                            >
-                              Tocá para abrir en el mapa
-                            </div>
+                  <div className="overflow-y-auto p-4 sm:p-5">
+                    <div className="rounded-[28px] border border-white/12 bg-white/10 p-5 text-white shadow-[0_18px_50px_rgba(15,23,42,0.12)]">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={trackingWorker?.avatar_url || '/avatar-fallback.png'}
+                          onError={(e) => {
+                            e.currentTarget.src = '/avatar-fallback.png';
+                          }}
+                         alt={trackingWorker?.full_name || 'Trabajador'}
+                          className="h-16 w-16 rounded-full border-2 border-white object-cover"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-black uppercase tracking-[0.16em] text-emerald-200">Solicitud activa</div>
+                          <div className="mt-1 text-xl font-black leading-none">{trackingWorker?.full_name || 'Trabajador'}</div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-white/80">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1">
+                              <Sparkles size={13} />
+                              {serviceLabelForWorker(trackingWorker)}
+                            </span>
+                            {etaMinutes != null && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1">
+                                <Clock3 size={13} />
+                                ETA {etaMinutes} min
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
 
-                      <div
-                        className={`
-                          mx-3 mb-3 rounded-2xl px-3 py-3
-                          ${
-                            mine
-                              ? 'bg-white/12 border border-white/15'
-                              : 'bg-emerald-50 border border-emerald-100'
-                          }
-                        `}
-                      >
-                        <div className="text-[12px] font-bold">
-                          {hasCoords
-                            ? `${Number(m.lat).toFixed(6)}, ${Number(m.lng).toFixed(6)}`
-                            : 'Ubicación no disponible'}
+                      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-[20px] border border-white/10 bg-slate-950/20 p-4">
+                          <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">Pedido</div>
+                          <div className="mt-2 text-base font-black">{jobId ? `#${String(jobId).slice(0, 8)}` : 'Creado'}</div>
+                          <div className="mt-1 text-sm text-white/70">{jobStatus || 'open'}</div>
                         </div>
-
-                        <div
-                          className={`text-[11px] mt-1 ${
-                            mine ? 'text-white/80' : 'text-gray-500'
-                          }`}
-                        >
-                          Ver punto exacto en el mapa
+                        <div className="rounded-[20px] border border-white/10 bg-slate-950/20 p-4">
+                          <div className="text-[11px] font-black uppercase tracking-[0.16em] text-white/55">Chat</div>
+                          <div className="mt-2 text-base font-black">{chatId ? 'Listo' : 'Pendiente'}</div>
+                          <div className="mt-1 text-sm text-white/70">Mensajería directa</div>
                         </div>
                       </div>
-                    </button>
-                  ) : (
-                    <div
-                      className={`
-                        max-w-[80%] px-4 py-3
-                        rounded-2xl text-[15px]
-                        shadow-sm leading-relaxed
-                        ${
-                          mine
-                            ? 'bg-emerald-500 text-white rounded-br-none shadow-emerald-300/30'
-                            : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
-                        }
-                      `}
-                    >
-                      {m.text}
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
 
-          {/* “ESCRIBIENDO...” efecto lujo */}
-          {isTyping && (
-            <div className="flex justify-start">
-              <div
-                className="
-                  bg-white border border-gray-200 
-                  px-4 py-[7px] 
-                  rounded-2xl shadow-sm flex gap-[4px]
-                "
-              >
-                <span className="animate-bounce text-gray-500">•</span>
-                <span className="animate-bounce text-gray-500 delay-100">•</span>
-                <span className="animate-bounce text-gray-500 delay-200">•</span>
-              </div>
-            </div>
-          )}
+                     <div className="mt-5 space-y-3">
+  <button
+    type="button"
+    onClick={() => openMessage(trackingWorker || selected || currentWorker)}
+    className="w-full rounded-[20px] border border-white/12 bg-white/10 px-4 py-4 text-sm font-black text-white"
+  >
+    Abrir chat
+  </button>
 
-          <div ref={bottomRef} />
-        </div>
-
-        {/* ✨ INPUT PREMIUM — MÁS ALTO & MEJOR DISEÑO */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const value = inputRef.current?.value?.trim() || '';
-            if (value) sendMessage(value);
-
-            if (typingTimeoutRef.current) {
-              clearTimeout(typingTimeoutRef.current);
-              typingTimeoutRef.current = null;
-            }
-
-            inputRef.current.value = '';
-          }}
-          className="
-            flex items-center gap-3
-            p-5
-            bg-white/85 backdrop-blur-lg
-            border-t border-gray-200
-          "
-        >
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Escribí un mensaje…"
-            onChange={() => {
-              if (!chatChannelRef.current || !me?.id || !chatId) return;
-
-              chatChannelRef.current.send({
-                type: 'broadcast',
-                event: 'typing',
-                payload: {
-                  sender_id: me.id,
-                  chat_id: chatId,
-                },
-              });
-
-              if (typingTimeoutRef.current) {
-                clearTimeout(typingTimeoutRef.current);
-              }
-
-              typingTimeoutRef.current = setTimeout(() => {
-                typingTimeoutRef.current = null;
-              }, 1200);
-            }}
-            className="
-              flex-1
-              px-5 py-3.5
-              rounded-2xl
-              bg-gray-100/70
-              border border-gray-200
-              focus:ring-2 focus:ring-emerald-400/40
-              text-gray-700 shadow-inner
-              text-[15px]
-            "
-          />
-
-          <button
-            type="submit"
-            className="
-              p-4 rounded-2xl
-              bg-emerald-500 hover:bg-emerald-600
-              active:scale-95
-              text-white
-              shadow-lg shadow-emerald-300/30
-              transition
-            "
-          >
-            <SendHorizontal size={22} />
-          </button>
-        </form>
-      </motion.div>
-    </motion.div>
+  {(jobStatus === 'open' || jobStatus === 'accepted' || jobStatus === 'assigned') && (
+    <button
+      type="button"
+      onClick={cancelActiveJob}
+      disabled={isCancelling}
+      className="w-full rounded-[20px] border border-red-300/30 bg-red-500/15 px-4 py-4 text-sm font-black text-red-50 disabled:opacity-60"
+    >
+      {isCancelling ? 'Cancelando...' : 'Cancelar pedido'}
+    </button>
   )}
-</AnimatePresence>
+
+  <button
+    type="button"
+    onClick={() => router.push('/client/jobs')}
+   className="w-full rounded-[20px] bg-gradient-to-r from-[#0c6b70] via-[#62bfb9] to-[#9ee5df] px-4 py-4 text-sm font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.30)]"
+  >
+    Ver pedido
+  </button>
+
+
+  <div className="rounded-[20px] border border-emerald-200/30 bg-emerald-500/10 p-4 text-sm text-emerald-50">
+    <div className="flex items-start gap-2">
+      <ShieldCheck size={16} className="mt-0.5 shrink-0" />
+      <div>
+        Primero elegís al trabajador. Después chateás, solicitás y recién ahí seguís todo en el mapa.
+      </div>
+    </div>
+  </div>
 </div>
-);
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+<div className="pointer-events-auto absolute bottom-0 left-0 right-0 z-50 h-[74px] border-t border-white/10 bg-black/86 px-5 pb-[env(safe-area-inset-bottom)] pt-2 text-white backdrop-blur-xl">
+  <div className="grid h-full grid-cols-4 items-center text-center text-[11px] font-bold">
+    <button
+      type="button"
+      onClick={() => router.push('/role-selector')}
+      className="flex flex-col items-center justify-center gap-1 active:scale-95"
+    >
+      <PanelTop size={24} strokeWidth={2.4} />
+      Modos
+    </button>
+
+    <button
+      type="button"
+      onClick={() => router.push('/client/jobs')}
+      className="flex flex-col items-center justify-center gap-1 active:scale-95"
+    >
+      <Briefcase size={24} />
+      Pedidos
+    </button>
+
+    <button
+      type="button"
+      onClick={openClientMessages}
+      className="relative flex flex-col items-center justify-center gap-1 active:scale-95"
+    >
+      <MessageCircle size={24} />
+      Mensajes
+    </button>
+
+    <button
+      type="button"
+      onClick={() => router.push('/client/profile')}
+      className="flex flex-col items-center justify-center gap-1 active:scale-95"
+    >
+      <img
+        src={clientProfile?.avatar_url || '/avatar-fallback.png'}
+        onError={(e) => {
+          e.currentTarget.src = '/avatar-fallback.png';
+        }}
+        alt={clientProfile?.full_name || 'Mi perfil'}
+        className="h-8 w-8 rounded-full border border-white object-cover"
+      />
+      Tú
+    </button>
+  </div>
+</div>
+
+{mounted &&
+  createPortal(
+    <AnimatePresence>
+      {commentsOpen && (
+        <CommentsSheet
+          open={commentsOpen}
+          worker={commentsWorker}
+          comments={workerComments}
+          commentText={commentText}
+          setCommentText={setCommentText}
+          onClose={() => {
+            setCommentsOpen(false);
+            setCommentsWorker(null);
+            setWorkerComments([]);
+            setCommentText('');
+          }}
+          onSend={sendPublicComment}
+        />
+      )}
+    </AnimatePresence>,
+    document.body
+  )}
+
+{mounted &&
+  createPortal(
+    <AnimatePresence>
+      {nearbyMapOpen && (
+        <NearbyMapSheet
+          open={nearbyMapOpen}
+          workers={nearbyWorkers.length ? nearbyWorkers.slice(0, 30) : workers.slice(0, 30)}
+          center={mapCenter}
+          hasMeCoords={hasMeCoords}
+          me={me}
+          selectedWorker={nearbyMapWorker}
+          onSelectWorker={(worker) => setNearbyMapWorker(worker)}
+          onClose={() => setNearbyMapOpen(false)}
+          onMessage={(worker) => openMessage(worker)}
+          onRequest={(worker) => {
+            setNearbyMapOpen(false);
+            requestWorker(worker);
+          }}
+        />
+      )}
+    </AnimatePresence>,
+    document.body
+  )}
+      {mounted &&
+        createPortal(
+          <AnimatePresence>
+            {showProfile && (
+              <WorkerProfileSheet
+                worker={selected}
+                onClose={() => setShowProfile(false)}
+                onMessage={() => openMessage(selected)}
+                onRequest={() => requestWorker(selected)}
+              />
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
+
+      {mounted &&
+        createPortal(
+          <AnimatePresence>
+            {showAllWorkers && (
+              <AllWorkersSheet
+  open={showAllWorkers}
+  workers={workersSheetList.length ? workersSheetList : workers}
+workersSheetTitle={workersSheetTitle}
+                onClose={() => setShowAllWorkers(false)}
+                onSelect={(worker) => {
+                  setShowAllWorkers(false);
+                  openProfile(worker);
+                }}
+                onMessage={(worker) => openMessage(worker)}
+                onRequest={(worker) => requestWorker(worker)}
+              />
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
+
+        {mounted &&
+  createPortal(
+    <AnimatePresence>
+      {messagesOpen && (
+        <ClientMessagesSheet
+          open={messagesOpen}
+          chats={clientChats}
+          onClose={() => setMessagesOpen(false)}
+          onOpenChat={(id) => router.push(`/client/chat/${id}`)}
+        />
+      )}
+    </AnimatePresence>,
+    document.body
+  )}
+
+{mounted &&
+  createPortal(
+    <AnimatePresence>
+      {commentNotificationsOpen && (
+        <CommentNotificationsSheet
+          open={commentNotificationsOpen}
+          notifications={commentNotifications}
+          onClose={() => setCommentNotificationsOpen(false)}
+        />
+      )}
+    </AnimatePresence>,
+    document.body
+  )}
+    </div>
+  );
 }

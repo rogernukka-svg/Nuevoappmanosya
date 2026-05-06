@@ -1,23 +1,21 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import {
   Loader2,
   LogOut,
-  Settings,
-  ShieldCheck,
-  Lock,
-  Zap,
   ArrowRight,
   BriefcaseBusiness,
   MapPinned,
+  Settings,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const supabase = getSupabase();
+const LOGIN_BG = '#62bfb9';
 
 export default function RoleSelectorPage() {
   const router = useRouter();
@@ -37,15 +35,6 @@ export default function RoleSelectorPage() {
 
     checkSession();
   }, [router]);
-
-  const micro = useMemo(
-    () => [
-      { icon: <ShieldCheck className="w-4 h-4" />, label: 'Verificado' },
-      { icon: <Lock className="w-4 h-4" />, label: 'Pago seguro' },
-      { icon: <Zap className="w-4 h-4" />, label: 'Rápido' },
-    ],
-    []
-  );
 
   const handleSelectRole = async (role) => {
     setLoading(true);
@@ -73,10 +62,10 @@ export default function RoleSelectorPage() {
     localStorage.setItem('app_role', role);
 
     if (role === 'worker') {
-      toast.success('Modo Profesional activado');
+      toast.success('Modo profesional activado');
       router.push('/worker');
     } else {
-      toast.success('Modo Cliente activado');
+      toast.success('Modo cliente activado');
       router.push('/client');
     }
   };
@@ -89,175 +78,128 @@ export default function RoleSelectorPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-slate-700">
-        <Loader2 className="animate-spin w-6 h-6 mr-2 text-teal-500" />
-        Cargando ManosYA...
-      </div>
+      <main
+        className="fixed inset-0 flex h-screen w-screen items-center justify-center text-white"
+        style={{ background: LOGIN_BG }}
+      >
+        <div className="flex items-center gap-3 rounded-[28px] bg-white/20 px-6 py-4 text-sm font-black shadow-[0_18px_50px_rgba(8,15,52,0.16)] backdrop-blur-xl">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Cargando ManosYA...
+        </div>
+      </main>
     );
   }
 
   return (
-    <div className="min-h-[100dvh] bg-white">
-
-      {/* Fondo suave usando color YA */}
+    <main
+      className="fixed inset-0 h-[100dvh] w-screen min-w-full overflow-y-auto overflow-x-hidden text-[#08233a]"
+      style={{ background: LOGIN_BG }}
+    >
       <div className="pointer-events-none fixed inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(20,184,166,0.12),transparent_35%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.34),transparent_30%),radial-gradient(circle_at_90%_18%,rgba(255,255,255,0.22),transparent_26%)]" />
+        <div className="absolute -left-24 top-28 h-72 w-72 rounded-full bg-white/18 blur-3xl" />
+        <div className="absolute -right-24 bottom-20 h-72 w-72 rounded-full bg-[#0c6b70]/18 blur-3xl" />
       </div>
 
-      <div className="relative px-4 py-10">
-        <div className="max-w-[460px] mx-auto">
+      <div className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col items-center justify-center px-5 py-8">
+        <motion.div
+          initial={{ opacity: 0, y: 18, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.35 }}
+          className="w-full text-center"
+        >
+          <img
+            src="/logo-manosya.png"
+            alt="ManosYA"
+            className="mx-auto mb-3 w-[230px] object-contain"
+          />
 
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35 }}
-            className="rounded-[32px] border border-slate-200 bg-white shadow-[0_18px_50px_rgba(2,6,23,0.06)] overflow-hidden"
+          <div className="relative mx-auto mb-2 h-[210px] w-[210px]">
+            <div className="absolute inset-8 rounded-full bg-white/28 blur-3xl" />
+            <img
+              src="/ROGER SALUDANDO.png"
+              alt="Roger ManosYA"
+              className="relative z-10 h-full w-full object-contain drop-shadow-[0_24px_35px_rgba(8,15,52,0.20)]"
+            />
+          </div>
+
+          <h1 className="text-[42px] font-black leading-[0.94] tracking-[-0.05em] text-white">
+            ¿Cómo querés
+            <br />
+            entrar?
+          </h1>
+
+          <p className="mx-auto mt-4 max-w-[320px] text-[17px] font-semibold leading-6 text-[#071a27]/78">
+            Elegí una opción y seguimos al toque.
+          </p>
+
+          <div className="mt-8 space-y-4">
+            <button
+              type="button"
+              onClick={() => handleSelectRole('client')}
+              className="flex w-full items-center gap-4 rounded-[34px] bg-white px-5 py-5 text-left shadow-[0_18px_44px_rgba(8,15,52,0.14)] active:scale-[0.985]"
+            >
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[24px] bg-[#06182a] text-white">
+                <MapPinned className="h-7 w-7" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="text-[23px] font-black leading-tight text-[#08233a]">
+                  Necesito ayuda
+                </div>
+                <div className="mt-1 text-[14px] font-semibold text-[#5e7486]">
+                  Buscar un servicio
+                </div>
+              </div>
+
+              <ArrowRight className="h-5 w-5 shrink-0 text-[#62bfb9]" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectRole('worker')}
+              className="flex w-full items-center gap-4 rounded-[34px] bg-white/78 px-5 py-5 text-left shadow-[0_18px_44px_rgba(8,15,52,0.10)] backdrop-blur-xl active:scale-[0.985]"
+            >
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[24px] bg-white text-[#0c6b70] shadow-sm">
+                <BriefcaseBusiness className="h-7 w-7" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="text-[23px] font-black leading-tight text-[#08233a]">
+                  Quiero trabajar
+                </div>
+                <div className="mt-1 text-[14px] font-semibold text-[#5e7486]">
+                  Entrar como profesional
+                </div>
+              </div>
+
+              <ArrowRight className="h-5 w-5 shrink-0 text-[#0c6b70]" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => router.push('/settings/account')}
+            className="mt-5 flex w-full items-center justify-center gap-2 rounded-[24px] bg-white/34 px-5 py-4 text-[14px] font-black text-[#08233a] backdrop-blur-xl active:scale-95"
           >
+            <Settings className="h-4 w-4" />
+            Gestionar perfil
+          </button>
 
-            {/* HEADER */}
-            <div className="px-6 pt-8 pb-6 text-center">
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="mt-3 inline-flex items-center justify-center gap-2 rounded-full bg-white/22 px-5 py-3 text-[13px] font-black text-[#08233a]/70 backdrop-blur-xl active:scale-95"
+          >
+            <LogOut className="h-4 w-4" />
+            Cerrar sesión
+          </button>
 
-              <div className="flex justify-center mb-5">
-                <img
-                  src="/logo-manosya.png"
-                  alt="ManosYA"
-                  className="w-[240px] object-contain"
-                />
-              </div>
-
-              <h1 className="text-[28px] font-black text-slate-900 tracking-tight">
-                Elegí cómo ingresar
-              </h1>
-
-              <p className="text-[14px] text-slate-500 mt-2">
-                Elegí una opción para continuar.
-              </p>
-
-              {/* micro confianza */}
-              <div className="flex justify-center gap-2 mt-5 flex-wrap">
-                {micro.map((x, i) => (
-                  <div
-                    key={i}
-                    className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-full border border-slate-200 bg-white text-slate-700"
-                  >
-                    <span className="text-teal-500">{x.icon}</span>
-                    {x.label}
-                  </div>
-                ))}
-              </div>
-
-            </div>
-
-            {/* OPCIONES */}
-            <div className="px-5 pb-5 space-y-4">
-
-              {/* CLIENTE */}
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.985 }}
-                onClick={() => handleSelectRole('client')}
-                className="w-full text-left rounded-[26px] border border-teal-500 bg-teal-50 px-5 py-5"
-              >
-
-                <div className="flex items-start gap-4">
-
-                  <div className="w-14 h-14 rounded-2xl bg-white border border-teal-200 flex items-center justify-center shrink-0">
-                    <MapPinned className="w-6 h-6 text-teal-500" />
-                  </div>
-
-                  <div className="flex-1">
-
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-900 text-white mb-3">
-                      <Zap className="w-3.5 h-3.5" />
-                      Recomendado
-                    </div>
-
-                    <div className="text-[22px] font-black text-slate-900">
-                      Necesito un servicio
-                    </div>
-
-                    <div className="text-[13px] text-slate-500 mt-2">
-                      Buscar profesionales cerca de mí.
-                    </div>
-
-                    <div className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-white font-semibold bg-gradient-to-r from-teal-500 to-cyan-400">
-                      Entrar como cliente
-                      <ArrowRight className="w-4 h-4"/>
-                    </div>
-
-                  </div>
-
-                </div>
-
-              </motion.button>
-
-              {/* PROFESIONAL */}
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.985 }}
-                onClick={() => handleSelectRole('worker')}
-                className="w-full text-left rounded-[26px] border border-slate-200 bg-white px-5 py-5"
-              >
-
-                <div className="flex items-start gap-4">
-
-                  <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0">
-                    <BriefcaseBusiness className="w-6 h-6 text-slate-700" />
-                  </div>
-
-                  <div className="flex-1">
-
-                    <div className="text-[22px] font-black text-slate-900">
-                      Soy profesional
-                    </div>
-
-                    <div className="text-[13px] text-slate-500 mt-2">
-                      Gestionar mis trabajos y recibir pedidos.
-                    </div>
-
-                    <div className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200 text-slate-900 font-semibold">
-                      Entrar como profesional
-                      <ArrowRight className="w-4 h-4"/>
-                    </div>
-
-                  </div>
-
-                </div>
-
-              </motion.button>
-
-              {/* CONFIG */}
-              <button
-                onClick={() => router.push('/settings/account')}
-                className="w-full rounded-2xl px-4 py-3 bg-white border border-slate-200 text-slate-800 text-[13px] font-semibold hover:bg-slate-50 flex items-center justify-center gap-2"
-              >
-                <Settings className="w-4 h-4"/>
-                Configuración de cuenta
-              </button>
-
-              {/* LOGOUT */}
-              <button
-                onClick={handleLogout}
-                className="w-full rounded-2xl px-4 py-3 bg-white border border-slate-200 text-slate-600 text-[13px] font-semibold hover:bg-slate-50 flex items-center justify-center gap-2"
-              >
-                <LogOut className="w-4 h-4"/>
-                Cerrar sesión
-              </button>
-
-            </div>
-
-            {/* FOOTER */}
-            <div className="pb-6 text-center text-[11px] text-slate-400">
-              ManosYA • Plataforma de servicios
-            </div>
-
-          </motion.div>
-
-          <div className="h-6"/>
-          <div className="pb-[env(safe-area-inset-bottom)]"/>
-
-        </div>
+          <div className="mt-8 text-[11px] font-bold text-[#08233a]/45">
+            ManosYA • Tu ayuda al instante
+          </div>
+        </motion.div>
       </div>
-    </div>
+    </main>
   );
 }

@@ -84,11 +84,26 @@ export default function WorkerOnboardPage() {
   const [user, setUser] = useState(null);
   const router = useRouter();
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data?.user ?? null);
-    });
-  }, []);
+ useEffect(() => {
+  let alive = true;
+
+  supabase.auth.getUser().then(({ data }) => {
+    const currentUser = data?.user ?? null;
+
+    if (!alive) return;
+
+    if (!currentUser) {
+      router.replace('/auth/login');
+      return;
+    }
+
+    setUser(currentUser);
+  });
+
+  return () => {
+    alive = false;
+  };
+}, [router]);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7fffc_0%,#ffffff_45%,#f8fafc_100%)] px-4 py-6">
@@ -158,9 +173,16 @@ const [showAllSkills, setShowAllSkills] = useState(false);
   // Ciudad
   const [city, setCity] = useState('');
 
-  // Documentación
+    // Documentación
   const [docType, setDocType] = useState('CI');
   const [docNumber, setDocNumber] = useState('');
+
+  // ✅ guardar paths privados en DB
+  const [frontPath, setFrontPath] = useState(null);
+  const [backPath, setBackPath] = useState(null);
+  const [policePath, setPolicePath] = useState(null);
+
+  // ✅ signed URLs solo para mostrar preview temporal
   const [frontUrl, setFrontUrl] = useState(null);
   const [backUrl, setBackUrl] = useState(null);
   const [policeUrl, setPoliceUrl] = useState(null);
@@ -195,9 +217,9 @@ const [showAllSkills, setShowAllSkills] = useState(false);
     (async () => {
       setLoading(true);
       try {
-        const { data: p } = await supabase
+               const { data: p } = await supabase
           .from('profiles')
-          .select('full_name, avatar_url, is_verified, phone')
+          .select('full_name, avatar_url, is_verified, phone, accepted_privacy')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -206,6 +228,7 @@ const [showAllSkills, setShowAllSkills] = useState(false);
           setAvatarUrl(p.avatar_url || null);
           setIsVerified(!!p.is_verified);
           setPhone(p.phone || '');
+          setAcceptedPrivacy(!!p.accepted_privacy);
         }
 
         const { data: reviews } = await supabase
@@ -230,8 +253,11 @@ const [showAllSkills, setShowAllSkills] = useState(false);
           setRadius(wp.radius_km ?? 5);
           setBio(wp.bio ?? '');
           setYearsExp(wp.years_experience ?? '');
-          if (wp.last_lat && wp.last_lon) {
-            setCoords({ lat: wp.last_lat, lon: wp.last_lon });
+                    if (
+            Number.isFinite(Number(wp.last_lat)) &&
+            Number.isFinite(Number(wp.last_lon))
+          ) {
+            setCoords({ lat: Number(wp.last_lat), lon: Number(wp.last_lon) });
           }
           if (wp.skills) {
             setSkills(Array.isArray(wp.skills) ? wp.skills : wp.skills?.split?.(',') || []);
@@ -239,7 +265,7 @@ const [showAllSkills, setShowAllSkills] = useState(false);
           if (wp.city) setCity(wp.city);
         }
 
-        const { data: docs } = await supabase
+               const { data: docs } = await supabase
           .from('documents')
           .select('doc_type, doc_number, front_url, back_url, file_url')
           .eq('user_id', user.id);
@@ -249,12 +275,20 @@ const [showAllSkills, setShowAllSkills] = useState(false);
           if (idDoc) {
             setDocType(idDoc.doc_type);
             setDocNumber(idDoc.doc_number || '');
-            setFrontUrl(idDoc.front_url || null);
-            setBackUrl(idDoc.back_url || null);
+            setFrontPath(idDoc.front_url || null);
+            setBackPath(idDoc.back_url || null);
           }
 
           const police = docs.find((d) => d.doc_type === 'POLICE');
-          if (police) setPoliceUrl(police.file_url || null);
+          if (police) {
+            setPolicePath(police.file_url || null);
+          }
+
+          await refreshDocPreviews({
+            frontPath: idDoc?.front_url || null,
+            backPath: idDoc?.back_url || null,
+            policePath: police?.file_url || null,
+          });
         }
 
         const { data: bank } = await supabase
@@ -286,17 +320,20 @@ const [showAllSkills, setShowAllSkills] = useState(false);
     if (phone?.trim()) count++;
     if (avatarUrl) count++;
     if (skills?.length > 0) count++;
-    if (city?.trim()) count++;
-    if (coords?.lat && coords?.lon) count++;
+       if (city?.trim()) count++;
+    if (
+      Number.isFinite(Number(coords?.lat)) &&
+      Number.isFinite(Number(coords?.lon))
+    ) count++;
     if (bio?.trim()) count++;
     if (yearsExp !== '' && yearsExp !== null) count++;
     if (docNumber?.trim()) count++;
-    if (frontUrl) count++;
-    if (backUrl) count++;
+    if (frontPath) count++;
+    if (backPath) count++;
     if (acceptedPrivacy) count++;
 
     return count;
-  }, [
+    }, [
     fullName,
     phone,
     avatarUrl,
@@ -306,17 +343,24 @@ const [showAllSkills, setShowAllSkills] = useState(false);
     bio,
     yearsExp,
     docNumber,
-    frontUrl,
-    backUrl,
+    frontPath,
+    backPath,
     acceptedPrivacy,
   ]);
 
   const totalSteps = 12;
   const progress = Math.round((completedCount / totalSteps) * 100);
 
-   const canSave = useMemo(() => {
-    return fullName?.trim() && phone?.trim() && skills.length > 0 && city && radius > 0;
-  }, [fullName, phone, skills, city, radius]);
+    const canSave = useMemo(() => {
+    return (
+      fullName?.trim() &&
+      phone?.trim() &&
+      skills.length > 0 &&
+      city &&
+      radius > 0 &&
+      acceptedPrivacy
+    );
+  }, [fullName, phone, skills, city, radius, acceptedPrivacy]);
 
   const normalizedSkillQuery = skillQuery.trim().toLowerCase();
 
@@ -340,17 +384,81 @@ const visibleAvailableSkillItems = useMemo(() => {
   return filteredAvailableSkillItems.slice(0, 12);
 }, [filteredAvailableSkillItems, showAllSkills, normalizedSkillQuery]);
 
+  async function createSignedWorkerDocUrl(path) {
+    if (!path) return null;
+
+    try {
+      const { data, error } = await supabase.storage
+        .from('worker-docs')
+        .createSignedUrl(path, 60 * 30); // 30 min
+
+      if (error) throw error;
+      return data?.signedUrl || null;
+    } catch (e) {
+      console.warn('No se pudo firmar URL privada:', e.message);
+      return null;
+    }
+  }
+
+  async function refreshDocPreviews(next = {}) {
+    const nextFrontPath = next.frontPath ?? frontPath;
+    const nextBackPath = next.backPath ?? backPath;
+    const nextPolicePath = next.policePath ?? policePath;
+
+    const [signedFront, signedBack, signedPolice] = await Promise.all([
+      createSignedWorkerDocUrl(nextFrontPath),
+      createSignedWorkerDocUrl(nextBackPath),
+      createSignedWorkerDocUrl(nextPolicePath),
+    ]);
+
+    setFrontUrl(signedFront);
+    setBackUrl(signedBack);
+    setPoliceUrl(signedPolice);
+  }
+  function validateUploadFile(file, options = {}) {
+    const {
+      maxSizeMb = 8,
+      allowPdf = false,
+    } = options;
+
+    if (!file) {
+      throw new Error('No se seleccionó ningún archivo.');
+    }
+
+    const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const allowedTypes = allowPdf
+      ? [...allowedImageTypes, 'application/pdf']
+      : allowedImageTypes;
+
+    if (!allowedTypes.includes(file.type)) {
+      throw new Error(
+        allowPdf
+          ? 'Formato no permitido. Usá JPG, PNG, WEBP o PDF.'
+          : 'Formato no permitido. Usá JPG, PNG o WEBP.'
+      );
+    }
+
+    const maxBytes = maxSizeMb * 1024 * 1024;
+    if (file.size > maxBytes) {
+      throw new Error(`El archivo supera el límite de ${maxSizeMb} MB.`);
+    }
+
+    return true;
+  }
+
   /* --------- HELPERS --------- */
   async function handleAvatar(fileOrEvent) {
     const file =
       fileOrEvent?.target?.files?.[0] ||
       fileOrEvent;
 
-    if (!file || !user?.id) return;
+        if (!file || !user?.id) return;
 
     try {
       setErr(null);
       setMsg(null);
+
+      validateUploadFile(file, { maxSizeMb: 5, allowPdf: false });
 
       const path = `${user.id}/avatar_${Date.now()}.jpg`;
       const { error } = await supabase.storage
@@ -576,7 +684,7 @@ function getCurrentTrackFacingMode() {
     setErr(null);
   }
 
-  async function saveLocation() {
+    async function saveLocation() {
     try {
       setErr(null);
       setMsg(null);
@@ -585,20 +693,29 @@ function getCurrentTrackFacingMode() {
         navigator.geolocation.getCurrentPosition(
           (p) => res({ lat: p.coords.latitude, lon: p.coords.longitude }),
           rej,
-          { enableHighAccuracy: true }
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         )
       );
 
-      setCoords(pos);
+      const lat = Number(pos?.lat);
+      const lon = Number(pos?.lon);
 
-      await supabase.from('worker_profiles').upsert(
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        throw new Error('No se pudo obtener una ubicación válida.');
+      }
+
+      setCoords({ lat, lon });
+
+      const { error } = await supabase.from('worker_profiles').upsert(
         {
           user_id: user.id,
-          last_lat: pos.lat,
-          last_lon: pos.lon,
+          last_lat: lat,
+          last_lon: lon,
         },
         { onConflict: 'user_id' }
       );
+
+      if (error) throw error;
 
       setMsg('Ubicación guardada correctamente.');
     } catch (e) {
@@ -606,40 +723,57 @@ function getCurrentTrackFacingMode() {
     }
   }
 
-  async function uploadIdentity(side, fileOrEvent) {
+    async function uploadIdentity(side, fileOrEvent) {
     const file =
       fileOrEvent?.target?.files?.[0] ||
       fileOrEvent;
 
-    if (!file || !user?.id) return;
+        if (!file || !user?.id) return;
+
+    if (!docNumber?.trim()) {
+      setErr('Primero completá el número de documento antes de subir las fotos.');
+      return;
+    }
 
     try {
       setErr(null);
       setMsg(null);
 
-      const ext = file.name?.split('.').pop() || 'jpg';
-      const path = `${user.id}/${side}_${Date.now()}.${ext}`;
+      validateUploadFile(file, { maxSizeMb: 8, allowPdf: false });
 
-      const { error } = await supabase.storage.from('worker-docs').upload(path, file);
+      const ext = file.name?.split('.').pop() || 'jpg';
+      const path = `${user.id}/${docType.toLowerCase()}/${side}_${Date.now()}.${ext}`;
+
+      const { error } = await supabase.storage
+        .from('worker-docs')
+        .upload(path, file, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
       if (error) throw error;
 
-      const { data } = supabase.storage.from('worker-docs').getPublicUrl(path);
-      const url = data.publicUrl;
-
-      const patch = side === 'front' ? { front_url: url } : { back_url: url };
+      const patch = side === 'front' ? { front_url: path } : { back_url: path };
 
       await supabase.from('documents').upsert(
         {
           user_id: user.id,
           doc_type: docType,
-          doc_number: docNumber,
+          doc_number: docNumber.trim(),
           ...patch,
         },
         { onConflict: 'user_id,doc_type' }
       );
 
-      if (side === 'front') setFrontUrl(url);
-      else setBackUrl(url);
+      if (side === 'front') {
+        setFrontPath(path);
+        const signed = await createSignedWorkerDocUrl(path);
+        setFrontUrl(signed);
+      } else {
+        setBackPath(path);
+        const signed = await createSignedWorkerDocUrl(path);
+        setBackUrl(signed);
+      }
 
       setMsg(`Documento ${side === 'front' ? 'frontal' : 'trasero'} subido correctamente.`);
     } catch (e) {
@@ -647,32 +781,40 @@ function getCurrentTrackFacingMode() {
     }
   }
 
-   async function uploadPoliceRecord(fileOrEvent) {
+     async function uploadPoliceRecord(fileOrEvent) {
     const file =
       fileOrEvent?.target?.files?.[0] ||
       fileOrEvent;
 
-    if (!file || !user?.id) return;
+       if (!file || !user?.id) return;
 
     try {
       setErr(null);
       setMsg(null);
 
-      const ext = file.name?.split('.').pop() || 'jpg';
-      const path = `${user.id}/police_${Date.now()}.${ext}`;
+      validateUploadFile(file, { maxSizeMb: 10, allowPdf: true });
 
-      const { error } = await supabase.storage.from('worker-docs').upload(path, file);
+      const ext = file.name?.split('.').pop() || 'jpg';
+      const path = `${user.id}/police/police_${Date.now()}.${ext}`;
+
+      const { error } = await supabase.storage
+        .from('worker-docs')
+        .upload(path, file, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
       if (error) throw error;
 
-      const { data } = supabase.storage.from('worker-docs').getPublicUrl(path);
-      const url = data.publicUrl;
-
       await supabase.from('documents').upsert(
-        { user_id: user.id, doc_type: 'POLICE', file_url: url },
+        { user_id: user.id, doc_type: 'POLICE', file_url: path },
         { onConflict: 'user_id,doc_type' }
       );
 
-      setPoliceUrl(url);
+      setPolicePath(path);
+      const signed = await createSignedWorkerDocUrl(path);
+      setPoliceUrl(signed);
+
       setMsg('Antecedente policial subido correctamente.');
     } catch (e) {
       setErr('No se pudo subir el antecedente policial: ' + e.message);
@@ -686,7 +828,18 @@ function getCurrentTrackFacingMode() {
     setBusy(true);
     setMsg(null);
     setErr(null);
+    const hasAnyIdentityData =
+      docNumber?.trim() || frontPath || backPath;
 
+    if (hasAnyIdentityData) {
+      if (!docNumber?.trim()) {
+        throw new Error('Completá el número de documento.');
+      }
+
+      if (!frontPath || !backPath) {
+        throw new Error('Subí la foto del frente y del dorso de tu documento.');
+      }
+    }
     try {
       await supabase
         .from('profiles')
@@ -713,14 +866,14 @@ function getCurrentTrackFacingMode() {
         { onConflict: 'user_id' }
       );
 
-      if (docNumber) {
+            if (docNumber?.trim()) {
         await supabase.from('documents').upsert(
           {
             user_id: user.id,
             doc_type: docType,
-            doc_number: docNumber,
-            front_url: frontUrl,
-            back_url: backUrl,
+            doc_number: docNumber.trim(),
+            front_url: frontPath,
+            back_url: backPath,
           },
           { onConflict: 'user_id,doc_type' }
         );

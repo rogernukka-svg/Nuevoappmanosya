@@ -48,6 +48,7 @@ const supabase = getSupabase();
 function prettyStatus(status) {
   const s = String(status || '').toLowerCase();
   if (s === 'open') return 'Disponible';
+  if (s === 'scheduled') return 'Agendado';
   if (s === 'accepted') return 'En curso';
   if (s === 'completed') return 'Finalizado';
   if (s === 'rejected') return 'Rechazado';
@@ -55,12 +56,14 @@ function prettyStatus(status) {
   if (s === 'assigned') return 'Asignado';
   return status || 'Sin estado';
 }
-
 function jobStatusPill(status) {
   const s = String(status || '').toLowerCase();
 
   if (s === 'open') {
     return 'bg-amber-50 text-amber-700 border border-amber-200';
+  }
+  if (s === 'scheduled') {
+    return 'bg-violet-50 text-violet-700 border border-violet-200';
   }
   if (s === 'accepted') {
     return 'bg-cyan-50 text-cyan-700 border border-cyan-200';
@@ -127,6 +130,26 @@ function parseJobRequestDetails(description) {
   }
 
   return result;
+}
+
+function shouldKeepWorkerAvailable(job) {
+  const details = parseJobRequestDetails(job?.description);
+
+  return details.requestKind === 'booking' || details.requestKind === 'quote';
+}
+
+function matchesWorkerService(job, workerSkills = []) {
+  const details = parseJobRequestDetails(job?.description);
+  const jobService = String(details.serviceLabel || job?.service_type || '')
+    .trim()
+    .toLowerCase();
+
+  if (!jobService) return true;
+  if (!Array.isArray(workerSkills) || workerSkills.length === 0) return true;
+
+  return workerSkills.some((skill) =>
+    String(skill || '').trim().toLowerCase() === jobService
+  );
 }
 function workerModeMeta(status) {
   if (status === 'available') {
@@ -249,11 +272,18 @@ export function AvailabilityCarousel({ value, onChange }) {
       tone: 'emerald',
     },
     {
-      id: 'offline',
-      title: 'No disponible',
-      subtitle: 'Pausás pedidos temporalmente',
+      id: 'paused',
+      title: 'En pausa',
+      subtitle: 'No recibís pedidos temporalmente',
       pill: 'Pausado',
-      tone: 'gray',
+      tone: 'amber',
+    },
+    {
+      id: 'busy',
+      title: 'Ocupado',
+      subtitle: 'Tenés un trabajo en curso',
+      pill: 'Trabajando',
+      tone: 'rose',
     },
   ];
 
@@ -394,7 +424,56 @@ export function AvailabilityCarousel({ value, onChange }) {
   );
 }
 
+function WorkerTabButton({ active, icon, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center justify-center gap-2 rounded-full px-3 py-3 text-[13px] font-black transition active:scale-[0.98] ${
+        active
+          ? 'bg-[#18b8aa] text-white shadow-[0_12px_28px_rgba(98,191,185,0.28)]'
+          : 'bg-transparent text-slate-500 hover:bg-[#62bfb9]/8'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
 
+function MiniMetric({ label, value }) {
+  return (
+    <div className="text-center">
+      <div className="text-[18px] font-black text-slate-950">{value}</div>
+      <div className="mt-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</div>
+    </div>
+  );
+}
+
+function WorkerFeedPlaceholder({ onOpenProfile }) {
+  return (
+    <section className="overflow-hidden rounded-[30px] border border-[#62bfb9]/20 bg-white/86 p-5 shadow-[0_18px_52px_rgba(98,191,185,0.12)] backdrop-blur">
+      <div className="flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#62bfb9]/12 text-[#18b8aa]"><Sparkles size={22} /></div>
+        <div>
+          <h2 className="text-[19px] font-black text-slate-950">Feed profesional</h2>
+          <p className="text-[13px] font-semibold text-slate-500">Mostrá trabajos, fotos y videos.</p>
+        </div>
+      </div>
+     <button
+  type="button"
+  onClick={onOpenProfile}
+  className="mt-5 w-full rounded-full bg-[#18b8aa] px-5 py-4 text-[15px] font-black text-white shadow-[0_16px_34px_rgba(98,191,185,0.26)] active:scale-[0.98]"
+>
+  Ver mi oficio
+</button>
+      <div className="mt-4 rounded-[24px] border border-dashed border-[#62bfb9]/25 bg-[#62bfb9]/6 p-5 text-center">
+        <div className="text-[15px] font-black text-slate-900">Feed listo para conectar</div>
+        <p className="mt-1 text-[13px] font-semibold leading-5 text-slate-500">Mantenemos la función y dejamos la vista limpia para el próximo paso.</p>
+      </div>
+    </section>
+  );
+}
 
 export default function WorkerPage() {
   const router = useRouter();
@@ -416,7 +495,7 @@ const [previewTarget, setPreviewTarget] = useState(null);
 const [previewRoute, setPreviewRoute] = useState(null);
 const [workerLocation, setWorkerLocation] = useState(null);
 const [sheetSnap, setSheetSnap] = useState('mid');
-
+const [workerTab, setWorkerTab] = useState('jobs');
 const inputRef = useRef(null);
 const chatChannelRef = useRef(null);
 const bottomRef = useRef(null);
@@ -492,15 +571,17 @@ async function openGoogleMaps(lat, lng) {
     }
   }
 }
-  const stats = useMemo(() => {
-    
-    const total = jobs.length;
-    const available = jobs.filter((j) => j.status === 'open').length;
-    const inProgress = jobs.filter((j) => j.status === 'accepted').length;
-    const completed = jobs.filter((j) => j.status === 'completed').length;
+const stats = useMemo(() => {
+  const total = jobs.length;
+  const available = jobs.filter((j) => j.status === 'open').length;
+  const inProgress = jobs.filter((j) =>
+    j.status === 'accepted' || j.status === 'assigned'
+  ).length;
+  const scheduled = jobs.filter((j) => j.status === 'scheduled').length;
+  const completed = jobs.filter((j) => j.status === 'completed').length;
 
-    return { total, available, inProgress, completed };
-  }, [jobs]);
+  return { total, available, inProgress, scheduled, completed };
+}, [jobs]);
 const sheetSnapMeta = useMemo(() => {
   if (sheetSnap === 'full') {
     return {
@@ -556,71 +637,87 @@ const sheetSnapMeta = useMemo(() => {
   }, [router]);
 
 
-  /* === GEO === */
-  useEffect(() => {
-    if (!user?.id || !navigator.geolocation) return;
+ /* === GEO FIX REALTIME PRO === */
+useEffect(() => {
+  if (!user?.id || !navigator.geolocation) return;
 
-    let lastSent = 0;
-    let lastLat = null;
-    let lastLng = null;
+  let lastSent = 0;
+  let lastLat = null;
+  let lastLng = null;
 
-    const distance = (a, b, c, d) => {
-      const R = 6371000;
-      const toRad = (x) => (x * Math.PI) / 180;
-      const dLat = toRad(c - a);
-      const dLon = toRad(d - b);
-      const la1 = toRad(a);
-      const la2 = toRad(c);
-      const x =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(la1) * Math.cos(la2);
-      return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-    };
+  const distance = (a, b, c, d) => {
+    const R = 6371000;
+    const toRad = (x) => (x * Math.PI) / 180;
+    const dLat = toRad(c - a);
+    const dLon = toRad(d - b);
+    const la1 = toRad(a);
+    const la2 = toRad(c);
+    const x =
+      Math.sin(dLat / 2) ** 2 +
+      Math.sin(dLon / 2) ** 2 * Math.cos(la1) * Math.cos(la2);
+    return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  };
 
-    const watcher = navigator.geolocation.watchPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setWorkerLocation({ lat, lng });
+  const watcher = navigator.geolocation.watchPosition(
+    async (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
 
-        const now = Date.now();
-        const movedEnough = lastLat === null || distance(lastLat, lastLng, lat, lng) > 25;
-        const timeOk = now - lastSent > 30000;
+      setWorkerLocation({ lat, lng });
 
-        if (!movedEnough && !timeOk) return;
+      const now = Date.now();
+      const movedEnough =
+        lastLat === null || distance(lastLat, lastLng, lat, lng) > 15;
+      const timeOk = now - lastSent > 10000;
 
-        lastLat = lat;
-        lastLng = lng;
-        lastSent = now;
+      if (!movedEnough && !timeOk) return;
 
-        try {
-          const { error } = await supabase.from('worker_profiles').upsert(
-            {
-              user_id: user.id,
-              lat,
-              lng,
-              last_lat: lat,
-              last_lon: lng,
-              status,
-              is_active: status === 'available',
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'user_id' }
-          );
+      lastLat = lat;
+      lastLng = lng;
+      lastSent = now;
 
-          if (error) {
-            console.error('❌ Error al actualizar ubicación:', error.message);
-          }
-        } catch (err) {
-          console.error('⚠️ Error inesperado al guardar ubicación:', err);
-        }
-      },
-      (err) => console.warn('🚫 Error del GPS:', err),
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
-    );
+      try {
+        // 🔥 1. actualizar perfil
+        await supabase.from('worker_profiles').upsert(
+          {
+            user_id: user.id,
+            lat,
+            lng,
+            last_lat: lat,
+            last_lon: lng,
+            status,
+            is_active: status === 'available',
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' }
+        );
 
-    return () => navigator.geolocation.clearWatch(watcher);
-  }, [user?.id, status]);
+        // 🔥 2. guardar en tabla realtime (ESTO FALTABA)
+       await supabase.from('worker_locations').upsert(
+  {
+    user_id: user.id,
+    lat,
+    lng,
+    updated_at: new Date().toISOString(),
+  },
+  { onConflict: 'user_id' }
+);
+
+        console.log('📍 ubicación enviada realtime');
+      } catch (err) {
+        console.error('❌ Error GPS realtime:', err);
+      }
+    },
+    (err) => console.warn('🚫 Error GPS:', err),
+    {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 10000,
+    }
+  );
+
+  return () => navigator.geolocation.clearWatch(watcher);
+}, [user?.id, status]);
 
   /* === CARGAR STATUS === */
   useEffect(() => {
@@ -664,106 +761,107 @@ const sheetSnapMeta = useMemo(() => {
 
   /* === JOBS === */
   async function loadJobs() {
-    const workerId = user?.id;
-    if (!workerId) return;
+  const workerId = user?.id;
+  if (!workerId) return;
 
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      const { data: jobsData, error: jobsErr } = await supabase
-  .from('jobs')
-  .select(`
-    id,
-    title,
-    description,
-    status,
-    client_id,
-    worker_id,
-    client_lat,
-    client_lng,
-    created_at,
-    service_type
-  `)
-  .or(`status.eq.open,worker_id.eq.${workerId}`)
-  .order('created_at', { ascending: false });
+    const { data: workerProfile, error: workerProfileErr } = await supabase
+      .from('worker_profiles')
+      .select('status, skills')
+      .eq('user_id', workerId)
+      .maybeSingle();
 
-      if (jobsErr) throw jobsErr;
+    if (workerProfileErr) throw workerProfileErr;
 
-      const list = jobsData || [];
-      const clientIds = [...new Set(list.map((j) => j.client_id).filter(Boolean))];
+    const workerSkills = Array.isArray(workerProfile?.skills) ? workerProfile.skills : [];
 
-      let profilesMap = {};
-      if (clientIds.length > 0) {
-        const { data: profs, error: profErr } = await supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url')
-          .in('id', clientIds);
+    const { data: jobsData, error: jobsErr } = await supabase
+      .from('jobs')
+      .select(`
+        id,
+        title,
+        description,
+        status,
+        client_id,
+        worker_id,
+        client_lat,
+        client_lng,
+        created_at,
+        service_type
+      `)
+      .or(`status.eq.open,worker_id.eq.${workerId}`)
+      .order('created_at', { ascending: false });
 
-        if (profErr) throw profErr;
+    if (jobsErr) throw jobsErr;
 
-        profilesMap = (profs || []).reduce((acc, p) => {
-          acc[p.id] = p;
-          return acc;
-        }, {});
-      }
+    const rawList = jobsData || [];
 
-      const enriched = list.map((j) => ({
-        ...j,
-        client: profilesMap[j.client_id] || null,
-      }));
+    const filteredList = rawList.filter((job) => {
+      if (job.worker_id === workerId) return true;
+      if (job.status !== 'open') return false;
+      return matchesWorkerService(job, workerSkills);
+    });
 
-      setJobs(enriched);
+    const clientIds = [...new Set(filteredList.map((j) => j.client_id).filter(Boolean))];
 
-      const activeJob = enriched.find(
-        (j) => j.worker_id === workerId && ['accepted', 'assigned'].includes(j.status)
-      );
+    let profilesMap = {};
+    if (clientIds.length > 0) {
+      const { data: profs, error: profErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .in('id', clientIds);
 
-      if (activeJob) {
-        const busyUntil = new Date(Date.now() + 60 * 60000);
+      if (profErr) throw profErr;
 
-        setStatus('busy');
-
-        await supabase
-          .from('worker_profiles')
-          .update({
-            status: 'busy',
-            is_active: true,
-            busy_until: busyUntil.toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('user_id', workerId);
-      } else {
-        const { data: wp, error: wpErr } = await supabase
-          .from('worker_profiles')
-          .select('status')
-          .eq('user_id', workerId)
-          .maybeSingle();
-
-        if (wpErr) throw wpErr;
-
-        const currentStatus = wp?.status || 'available';
-        const finalStatus = currentStatus === 'busy' ? 'available' : currentStatus;
-        const finalIsActive = finalStatus === 'available';
-
-        setStatus(finalStatus);
-
-        await supabase
-          .from('worker_profiles')
-          .update({
-            status: finalStatus,
-            is_active: finalIsActive,
-            busy_until: null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('user_id', workerId);
-      }
-    } catch (err) {
-      console.error('❌ Error cargando trabajos:', err);
-      toast.error('Error al cargar trabajos');
-    } finally {
-      setLoading(false);
+      profilesMap = (profs || []).reduce((acc, p) => {
+        acc[p.id] = p;
+        return acc;
+      }, {});
     }
+
+    const enriched = filteredList.map((j) => ({
+      ...j,
+      client: profilesMap[j.client_id] || null,
+    }));
+
+    setJobs(enriched);
+
+    const activeImmediateJob = enriched.find((j) => {
+      if (j.worker_id !== workerId) return false;
+      if (!['accepted', 'assigned'].includes(String(j.status || '').toLowerCase())) return false;
+      return !shouldKeepWorkerAvailable(j);
+    });
+
+    const currentStatus = workerProfile?.status || 'available';
+    const finalStatus =
+      activeImmediateJob
+        ? 'busy'
+        : currentStatus === 'busy'
+        ? 'available'
+        : currentStatus;
+
+    const finalIsActive = finalStatus === 'available';
+
+    setStatus(finalStatus);
+
+    await supabase
+      .from('worker_profiles')
+      .update({
+        status: finalStatus,
+        is_active: finalIsActive,
+        busy_until: activeImmediateJob ? new Date(Date.now() + 60 * 60000).toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', workerId);
+  } catch (err) {
+    console.error('❌ Error cargando trabajos:', err);
+    toast.error('Error al cargar trabajos');
+  } finally {
+    setLoading(false);
   }
+}
 
 useEffect(() => {
   if (!user?.id) return;
@@ -812,6 +910,8 @@ useEffect(() => {
 useEffect(() => {
   if (!user?.id) return;
 
+  let cancelled = false;
+
   const playNotify = async () => {
     try {
       if (!soundRef.current) return;
@@ -830,20 +930,47 @@ useEffect(() => {
       { event: 'INSERT', schema: 'public', table: 'jobs' },
       async (payload) => {
         const job = payload.new;
-        if (!job) return;
-
+        if (!job || cancelled) return;
         if (job.status !== 'open') return;
+        if (status !== 'available') return;
+
+        const { data: workerProfile, error } = await supabase
+          .from('worker_profiles')
+          .select('skills')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.warn('Error leyendo skills del worker para notificación:', error.message);
+          return;
+        }
+
+        const workerSkills = Array.isArray(workerProfile?.skills)
+          ? workerProfile.skills
+          : [];
+
+        if (!matchesWorkerService(job, workerSkills)) return;
 
         await playNotify();
-        toast('🆕 ¡Nueva solicitud de trabajo disponible!');
+
+        const details = parseJobRequestDetails(job.description);
+        toast(
+          details.requestKind === 'booking'
+            ? '🗓️ Nueva agenda disponible para tu servicio'
+            : details.requestKind === 'quote'
+            ? '💬 Nuevo presupuesto disponible para tu servicio'
+            : '🆕 ¡Nueva solicitud de trabajo disponible!'
+        );
       }
     )
     .subscribe();
 
   return () => {
+    cancelled = true;
     supabase.removeChannel(channel);
   };
-}, [user?.id]);
+}, [user?.id, status]);
+
 
 /* === REALTIME CORE === */
 useEffect(() => {
@@ -856,6 +983,23 @@ useEffect(() => {
           if (data.__source === 'insert' && data.status === 'open') {
             if (status === 'available') {
               (async () => {
+                const { data: workerProfile, error: workerErr } = await supabase
+                  .from('worker_profiles')
+                  .select('skills')
+                  .eq('user_id', user.id)
+                  .maybeSingle();
+
+                if (workerErr) {
+                  console.warn('Error leyendo skills en realtime core:', workerErr.message);
+                  return;
+                }
+
+                const workerSkills = Array.isArray(workerProfile?.skills)
+                  ? workerProfile.skills
+                  : [];
+
+                if (!matchesWorkerService(data, workerSkills)) return;
+
                 let client = null;
 
                 if (data.client_id) {
@@ -877,15 +1021,22 @@ useEffect(() => {
                   return exists ? prev : [enrichedJob, ...prev];
                 });
 
-               try {
-  soundRef.current?.pause?.();
-  if (soundRef.current) soundRef.current.currentTime = 0;
-  soundRef.current?.play?.();
-} catch (err) {
-  console.warn('Error reproduciendo sonido en realtime core:', err);
-}
+                try {
+                  soundRef.current?.pause?.();
+                  if (soundRef.current) soundRef.current.currentTime = 0;
+                  soundRef.current?.play?.();
+                } catch (err) {
+                  console.warn('Error reproduciendo sonido en realtime core:', err);
+                }
 
-toast('🆕 Nuevo pedido disponible cerca tuyo');
+                const details = parseJobRequestDetails(data.description);
+                toast(
+                  details.requestKind === 'booking'
+                    ? '🗓️ Nueva agenda disponible para tu servicio'
+                    : details.requestKind === 'quote'
+                    ? '💬 Nuevo presupuesto disponible para tu servicio'
+                    : '🆕 Nuevo pedido disponible cerca tuyo'
+                );
               })();
             }
             return;
@@ -952,8 +1103,15 @@ toast('🆕 Nuevo pedido disponible cerca tuyo');
               })();
 
               setIsChatOpen(false);
-            } else if (data.status === 'accepted') {
-              setStatus('busy');
+                        } else if (data.status === 'accepted' || data.status === 'scheduled') {
+              const keepAvailable =
+                data.status === 'scheduled' ? true : shouldKeepWorkerAvailable(data);
+
+              if (keepAvailable) {
+                setStatus((prev) => (prev === 'paused' ? 'paused' : 'available'));
+              } else {
+                setStatus('busy');
+              }
             }
           }
 
@@ -963,7 +1121,7 @@ toast('🆕 Nuevo pedido disponible cerca tuyo');
           break;
         }
 
-               case 'message': {
+        case 'message': {
           if (selectedJob?.chat_id === data.chat_id && isChatOpen) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === data.id)) return prev;
@@ -1059,92 +1217,118 @@ useEffect(() => {
   }, [isChatOpen]);
 
   /* === TOGGLE STATUS === */
-  async function toggleStatus() {
-    try {
-      let newStatus;
-      let newIsActive;
+async function toggleStatus() {
+  try {
+    const activeImmediateJob = jobs.find((job) => {
+      const mine = String(job.worker_id || '') === String(user?.id || '');
+      const active = ['accepted', 'assigned'].includes(String(job.status || '').toLowerCase());
+      return mine && active && !shouldKeepWorkerAvailable(job);
+    });
 
-      if (status === 'available') {
-        newStatus = 'paused';
-        newIsActive = false;
-      } else if (status === 'paused') {
-        newStatus = 'available';
-        newIsActive = true;
-      } else {
-        newStatus = 'available';
-        newIsActive = true;
-      }
-
-      setStatus(newStatus);
-
-      const { error } = await supabase
-        .from('worker_profiles')
-        .update({
-          status: newStatus,
-          is_active: newIsActive,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id);
-
-      if (error) throw error;
-
-      toast.success(
-        newStatus === 'available'
-          ? '🟢 Estás disponible'
-          : newStatus === 'paused'
-          ? '⏸️ Estás en pausa'
-          : '🔵 Estás trabajando'
-      );
-    } catch (err) {
-      console.error('Error cambiando estado:', err.message);
-      toast.error('No se pudo cambiar tu estado');
+    if (status === 'busy' && activeImmediateJob) {
+      toast.warning('Tenés un trabajo inmediato en curso. Finalizalo antes de volver a disponible.');
+      return;
     }
-  }
 
-  /* === ACCEPT JOB === */
-  async function acceptJob(job) {
-    try {
-      if (job.status !== 'open') {
-        return toast.warning('Este trabajo ya fue tomado');
-      }
+    let newStatus;
+    let newIsActive;
 
-      const { error: jobError } = await supabase
-        .from('jobs')
-        .update({
-          status: 'accepted',
-          worker_id: user.id,
-          accepted_at: new Date().toISOString(),
-        })
-        .eq('id', job.id);
-
-      if (jobError) throw jobError;
-
-      const busyUntil = new Date(Date.now() + 60 * 60000);
-
-      const { error: workerError } = await supabase
-        .from('worker_profiles')
-        .update({
-          status: 'busy',
-          is_active: true,
-          busy_until: busyUntil.toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id);
-
-      if (workerError) throw workerError;
-
-      setStatus('busy');
-
-      toast.success('✅ Trabajo aceptado correctamente');
-
-      setJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, status: 'accepted', worker_id: user.id } : j))
-      );
-    } catch (err) {
-      toast.error('No se pudo aceptar el trabajo');
-      console.error(err);
+    if (status === 'available') {
+      newStatus = 'paused';
+      newIsActive = false;
+    } else if (status === 'paused') {
+      newStatus = 'available';
+      newIsActive = true;
+    } else {
+      newStatus = 'available';
+      newIsActive = true;
     }
+
+    setStatus(newStatus);
+
+    const { error } = await supabase
+      .from('worker_profiles')
+      .update({
+        status: newStatus,
+        is_active: newIsActive,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+
+    toast.success(
+      newStatus === 'available'
+        ? '🟢 Estás disponible'
+        : newStatus === 'paused'
+        ? '⏸️ Estás en pausa'
+        : '🔵 Estás trabajando'
+    );
+  } catch (err) {
+    console.error('Error cambiando estado:', err.message);
+    toast.error('No se pudo cambiar tu estado');
   }
+}
+
+/* === ACCEPT JOB === */
+async function acceptJob(job) {
+  try {
+    if (job.status !== 'open') {
+      return toast.warning('Este trabajo ya fue tomado');
+    }
+
+    const details = parseJobRequestDetails(job?.description);
+    const isScheduledBooking = details.requestKind === 'booking';
+
+    const nextJobStatus = isScheduledBooking ? 'scheduled' : 'accepted';
+    const nextWorkerStatus = isScheduledBooking ? 'available' : 'busy';
+    const nextBusyUntil = isScheduledBooking
+      ? null
+      : new Date(Date.now() + 60 * 60000).toISOString();
+
+    const { error: jobError } = await supabase
+      .from('jobs')
+      .update({
+        status: nextJobStatus,
+        worker_id: user.id,
+        accepted_at: new Date().toISOString(),
+      })
+      .eq('id', job.id);
+
+    if (jobError) throw jobError;
+
+    const { error: workerError } = await supabase
+      .from('worker_profiles')
+      .update({
+        status: nextWorkerStatus,
+        is_active: nextWorkerStatus === 'available',
+        busy_until: nextBusyUntil,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', user.id);
+
+    if (workerError) throw workerError;
+
+    setStatus(nextWorkerStatus);
+
+    toast.success(
+      isScheduledBooking
+        ? '📅 Agenda aceptada correctamente'
+        : '✅ Trabajo aceptado correctamente'
+    );
+
+    setJobs((prev) =>
+      prev.map((j) =>
+        j.id === job.id
+          ? { ...j, status: nextJobStatus, worker_id: user.id }
+          : j
+      )
+    );
+  } catch (err) {
+    toast.error('No se pudo aceptar el trabajo');
+    console.error(err);
+  }
+}
 
   /* === REJECT JOB === */
   async function rejectJob(job) {
@@ -1329,7 +1513,7 @@ setUnreadCount(0);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[linear-gradient(180deg,#f8fffd_0%,#ffffff_40%,#f8fafc_100%)] flex flex-col items-center justify-center text-emerald-600">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(98,191,185,0.16),transparent_34%),linear-gradient(180deg,#f7fffd_0%,#ffffff_42%,#f8fafc_100%)] flex flex-col items-center justify-center text-emerald-600">
         <Loader2 className="animate-spin w-6 h-6 mb-2" />
         <p className="font-semibold">Cargando trabajos...</p>
       </div>
@@ -1340,425 +1524,169 @@ setUnreadCount(0);
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="min-h-screen bg-[linear-gradient(180deg,#f8fffd_0%,#ffffff_40%,#f8fafc_100%)] text-gray-900 pb-28"
+      className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(98,191,185,0.16),transparent_34%),linear-gradient(180deg,#f7fffd_0%,#ffffff_42%,#f8fafc_100%)] text-gray-900 pb-28"
     >
       <div className="max-w-screen-md mx-auto px-4 pt-5">
-        {/* HEADER PRINCIPAL */}
-        <div className="relative overflow-hidden rounded-[30px] border border-emerald-100 bg-white shadow-[0_20px_60px_rgba(16,185,129,0.08)] mb-5">
-          <div className="absolute -top-16 -right-16 h-40 w-40 rounded-full bg-emerald-300/20 blur-3xl" />
-          <div className="absolute -bottom-16 -left-16 h-40 w-40 rounded-full bg-cyan-300/20 blur-3xl" />
+        {/* TOP SIMPLE - MISMO COLOR DEL LOGIN */}
+        <header className="mb-4 flex items-center justify-between gap-3">
+          <button type="button" onClick={() => router.push('/role-selector')} className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#62bfb9]/25 bg-white/85 text-slate-700 shadow-[0_12px_28px_rgba(98,191,185,0.14)] backdrop-blur active:scale-95" aria-label="Volver">
+            <ChevronLeft size={20} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="text-[20px] font-black leading-none tracking-tight text-slate-950">Manos<span className="text-[#18b8aa]">YA</span></div>
+            <div className="mt-0.5 text-[11px] font-bold text-slate-400">Panel profesional</div>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#62bfb9]/25 bg-white/80 px-3 py-2 text-[12px] font-black text-slate-700 shadow-[0_12px_26px_rgba(98,191,185,0.12)] backdrop-blur">
+            <span className={`h-2.5 w-2.5 rounded-full ${status === 'available' ? 'bg-[#18b8aa]' : status === 'paused' ? 'bg-slate-400' : 'bg-cyan-500'}`} />
+            Trabajador
+          </div>
+        </header>
 
-          <div className="relative z-10 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <button
-  type="button"
-  onClick={() => router.push('/role-selector')}
-  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-[15px] font-semibold text-slate-700 shadow-[0_10px_28px_rgba(15,23,42,0.10)] transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:text-emerald-700 hover:shadow-[0_16px_34px_rgba(16,185,129,0.14)] active:scale-[0.98]"
->
-  <ChevronLeft size={18} className="opacity-80" />
-  <span>Volver</span>
-</button>
-
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-bold text-emerald-700">
-                <Sparkles size={14} />
-                ManosYA Worker
-              </div>
-            </div>
-
-            <div className="mt-5 flex items-start gap-4">
-              <div
-                className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${meta.banner} text-white ${meta.glow}`}
-              >
-                <Briefcase size={28} />
-              </div>
-
+        {/* HERO OPERATIVO */}
+        <section className="mb-4 overflow-hidden rounded-[34px] border border-[#62bfb9]/20 bg-white/86 shadow-[0_24px_70px_rgba(98,191,185,0.16)] backdrop-blur-xl">
+          <div className="relative p-5">
+            <div className="absolute -right-16 -top-16 h-44 w-44 rounded-full bg-[#62bfb9]/18 blur-3xl" />
+            <div className="absolute -bottom-20 -left-20 h-52 w-52 rounded-full bg-cyan-300/18 blur-3xl" />
+            <div className="relative flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">
-                  Panel del profesional
-                </h1>
-                <p className="mt-1 text-sm text-gray-500 leading-relaxed">
-                  Gestioná solicitudes, respondé rápido, seguí tus chats y mantené tu estado actualizado.
+                <div className="inline-flex items-center gap-2 rounded-full bg-[#62bfb9]/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-[#128f86]">
+                  <span className={`h-2 w-2 rounded-full ${status === 'available' ? 'bg-[#18b8aa]' : status === 'paused' ? 'bg-slate-400' : 'bg-cyan-500'}`} />
+                  {meta.pill}
+                </div>
+                <h1 className="mt-3 text-[28px] font-black tracking-tight text-slate-950">{meta.title}</h1>
+                <p className="mt-1 max-w-[320px] text-[14px] font-semibold leading-6 text-slate-500">
+                  {status === 'available'
+                    ? `${stats.available} pedido${stats.available === 1 ? '' : 's'} esperando. Respondé cuando puedas.`
+                    : status === 'paused'
+                    ? 'Estás en pausa. Activá cuando quieras recibir nuevos pedidos.'
+                    : 'Servicio en curso. Seguimos desde chat o ruta.'}
                 </p>
               </div>
-            </div>
-
-            {/* STATS */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
-              <StatCard label="Disponibles" value={stats.available} tone="emerald" />
-              <StatCard label="En curso" value={stats.inProgress} tone="cyan" />
-              <StatCard label="Finalizados" value={stats.completed} tone="emerald" />
-              <StatCard label="Total" value={stats.total} tone="gray" />
-            </div>
-          </div>
-        </div>
-
-        {/* ESTADO */}
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="mb-5">
-          <div className="rounded-[28px] border border-gray-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.08)] overflow-hidden">
-            <div className={`px-5 py-4 bg-gradient-to-r ${meta.banner} text-white`}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 rounded-full bg-white`} />
-                    <span className="text-lg font-extrabold">{meta.title}</span>
-                  </div>
-                  <p className="text-white/85 text-sm mt-1">{meta.subtitle}</p>
-                </div>
-
-                <div className="flex flex-col items-end gap-2">
-  <span className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-white/15 border border-white/20">
-    {meta.pill}
-  </span>
-
-  {!isConnected && (
-    <span className="text-[11px] font-bold px-3 py-1.5 rounded-full border bg-red-500/20 text-white border-red-200/20">
-      Sin internet
-    </span>
-  )}
-</div>
-              </div>
-            </div>
-
-            <div className="p-4">
-              <button
-                onClick={toggleStatus}
-                disabled={status === 'busy'}
-                className={`relative w-full h-14 rounded-2xl border overflow-hidden shadow-[0_10px_30px_rgba(16,24,40,0.10)] transition ${
-                  status === 'busy'
-                    ? 'bg-gray-100 border-gray-200 opacity-70 cursor-not-allowed'
-                    : 'bg-white border-gray-200'
-                }`}
-              >
-                <motion.div
-                  className="absolute inset-0"
-                  initial={false}
-                  animate={{
-                    opacity: status === 'available' ? 1 : 0,
-                    scale: status === 'available' ? 1 : 0.98,
-                  }}
-                  transition={{ type: 'spring', stiffness: 260, damping: 22 }}
-                  style={{
-                    background:
-                      'radial-gradient(circle at 30% 20%, rgba(16,185,129,0.28), transparent 55%), linear-gradient(90deg, rgba(16,185,129,0.18), rgba(34,211,238,0.08))',
-                  }}
-                />
-
-                <div className="absolute inset-0 flex items-center justify-between px-4 text-[12px] font-semibold">
-                  <span className={`${status === 'available' ? 'text-gray-400' : 'text-gray-900'} transition`}>
-                    Pausa
-                  </span>
-                  <span className={`${status === 'available' ? 'text-emerald-700' : 'text-gray-400'} transition`}>
-                    Disponible
-                  </span>
-                </div>
-
-                <motion.div
-                  className={`absolute top-1 bottom-1 w-[132px] rounded-2xl flex items-center justify-center gap-2 shadow-[0_12px_28px_rgba(16,24,40,0.18)] ${
-                    status === 'available' ? 'bg-emerald-600 text-white' : 'bg-gray-900 text-white'
-                  }`}
-                  initial={false}
-                  animate={{
-                    left: status === 'available' ? 'calc(100% - 136px)' : '4px',
-                    rotate: status === 'available' ? 0 : -2,
-                    scale: 1,
-                  }}
-                  transition={{
-                    left: { type: 'spring', stiffness: 420, damping: 28 },
-                    rotate: { type: 'spring', stiffness: 420, damping: 28 },
-                    scale: { type: 'tween', duration: 0.18 },
-                  }}
-                  whileTap={{ scale: 0.98 }}
-                  whileHover={{ scale: 1.01 }}
-                >
-                  <motion.div
-                    initial={false}
-                    animate={{ rotate: status === 'available' ? 0 : -25 }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                    className="flex items-center"
-                  >
-                    <Power size={16} />
-                  </motion.div>
-
-                  <span className="text-[12px] font-extrabold tracking-tight">
-                    {status === 'available' ? 'ON' : 'OFF'}
-                  </span>
+              <button onClick={toggleStatus} className={`relative h-[64px] w-[118px] shrink-0 overflow-hidden rounded-full border p-1 transition active:scale-95 ${status === 'available' ? 'border-[#62bfb9]/35 bg-[#62bfb9]/18 shadow-[0_16px_34px_rgba(98,191,185,0.22)]' : 'border-slate-200 bg-slate-100 shadow-[0_12px_26px_rgba(15,23,42,0.08)]'}`}>
+                <motion.div className={`absolute top-1 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] ${status === 'available' ? 'bg-[#18b8aa]' : 'bg-slate-900'}`} animate={{ left: status === 'available' ? 58 : 4 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}>
+                  <Power size={20} />
                 </motion.div>
+                <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-[11px] font-black ${status === 'available' ? 'text-[#128f86]' : 'text-transparent'}`}>ON</span>
+                <span className={`absolute right-4 top-1/2 -translate-y-1/2 text-[11px] font-black ${status === 'available' ? 'text-transparent' : 'text-slate-500'}`}>OFF</span>
               </button>
-
-              <p className="mt-3 text-[12px] text-gray-500 text-center">
-                {status === 'available'
-                  ? 'Estás visible para recibir solicitudes.'
-                  : status === 'paused'
-                  ? 'No recibirás nuevos pedidos hasta reactivarte.'
-                  : 'Finalizá el trabajo actual para volver a recibir pedidos.'}
-              </p>
             </div>
-          </div>
-        </motion.div>
-
-        {/* LISTA DE TRABAJOS */}
-        {jobs.length === 0 ? (
-          <div className="mt-10 rounded-[28px] border border-dashed border-emerald-200 bg-white p-8 text-center shadow-sm">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-              <Briefcase size={28} />
+            <div className="relative mt-5 flex items-center justify-between rounded-[24px] border border-slate-100 bg-white/78 px-4 py-3 shadow-[0_14px_36px_rgba(15,23,42,0.05)]">
+              <MiniMetric label="Disponibles" value={stats.available} />
+              <MiniMetric label="En curso" value={stats.inProgress} />
+              <MiniMetric label="Finalizados" value={stats.completed} />
             </div>
-
-            <h3 className="mt-4 text-xl font-bold text-gray-800">Aún no tenés solicitudes disponibles</h3>
-            <p className="mt-2 text-sm text-gray-500 max-w-md mx-auto">
-              Cuando lleguen nuevos trabajos, van a aparecer acá para que puedas aceptarlos rápidamente.
-            </p>
+            {!isConnected && <div className="relative mt-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-center text-[12px] font-black text-red-600">Sin internet</div>}
           </div>
-        ) : (
-          <section className="grid gap-4 mt-5">
-            {jobs.map((job, index) => {
-  const details = parseJobRequestDetails(job.description);
+        </section>
 
-  return (
-    <motion.div
-      key={job.id}
-      initial={{ opacity: 0, y: 18 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.04 }}
-      whileHover={{ y: -2 }}
-      className="relative overflow-hidden rounded-[28px] border border-gray-200 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.06)]"
-    >
-      <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
-
-      <div className="relative z-10">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-              <span className="text-[12px] font-semibold text-gray-400 uppercase tracking-wide">
-                {prettyStatus(job.status)}
-              </span>
-
-              {details.requestKind === 'booking' && (
-                <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-cyan-700 border border-cyan-200">
-                  Con agenda
-                </span>
-              )}
-
-              {details.requestKind === 'quote' && (
-                <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-amber-700 border border-amber-200">
-                  Presupuesto
-                </span>
-              )}
-            </div>
-
-            <h3 className="text-lg font-extrabold text-gray-800 leading-tight">
-              {job?.client?.full_name
-                ? `Trabajo con ${job.client.full_name}`
-                : job.title || 'Trabajo de servicio'}
-            </h3>
-
-            <p className="mt-1 text-sm font-semibold text-emerald-700">
-              {details.serviceLabel || job.service_type || 'Servicio general'}
-            </p>
-
-            {details.summary.length > 0 && (
-              <p className="mt-2 text-sm text-gray-500 leading-relaxed">
-                {details.summary.join(' · ')}
-              </p>
-            )}
-          </div>
-
-          <span className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-bold ${jobStatusPill(job.status)}`}>
-            {prettyStatus(job.status)}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-          <MiniInfo
-            icon={<BadgeCheck size={14} />}
-            label="Servicio"
-            value={details.serviceLabel || job.service_type || 'Servicio general'}
-          />
-          <MiniInfo
-  icon={<Clock3 size={14} />}
-  label="Tarifa"
-  value={
-    details.requestKind === 'quote'
-      ? 'A presupuestar'
-      : details.requestKind === 'booking'
-      ? 'Agendado por cliente'
-      : 'A definir'
-  }
+        {/* NAVEGACIÓN SIMPLE */}
+        <div className="sticky top-2 z-30 mb-4 rounded-full border border-[#62bfb9]/18 bg-white/82 p-1.5 shadow-[0_18px_46px_rgba(98,191,185,0.13)] backdrop-blur-xl">
+  <div className="grid grid-cols-3 gap-1.5">
+    <WorkerTabButton active={workerTab === 'jobs'} icon={<Briefcase size={15} />} label="Pedidos" onClick={() => setWorkerTab('jobs')} />
+    <WorkerTabButton
+  active={false}
+  icon={<Sparkles size={15} />}
+  label="Feed"
+  onClick={() => router.push('/worker/feed')}
 />
-        </div>
 
-        {(details.requestedDate || details.requestedTime) && (
-          <div className="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4">
-            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-cyan-700">
-              Agenda solicitada
+<WorkerTabButton
+  active={false}
+  icon={<User2 size={15} />}
+  label="Mi oficio"
+  onClick={() => router.push('/worker/onboard')}
+/>
+  </div>
+</div>
+
+        {/* CONTENIDO SIMPLE */}
+        {workerTab === 'jobs' && (
+          jobs.length === 0 ? (
+            <div className="mt-6 rounded-[30px] border border-dashed border-[#62bfb9]/35 bg-white/82 p-8 text-center shadow-[0_18px_50px_rgba(98,191,185,0.10)] backdrop-blur">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[24px] bg-[#62bfb9]/12 text-[#18b8aa]"><Briefcase size={28} /></div>
+              <h3 className="mt-4 text-[21px] font-black text-slate-950">Todavía no hay pedidos</h3>
+              <p className="mx-auto mt-2 max-w-sm text-[14px] font-semibold leading-6 text-slate-500">Cuando entre una solicitud compatible con tus rubros, aparece acá al instante.</p>
             </div>
+          ) : (
+            <section className="grid gap-3">
+              {jobs.map((job, index) => {
+                const details = parseJobRequestDetails(job.description);
+                const isOpen = job.status === 'open';
+                const isActiveJob = job.status === 'accepted' || job.status === 'assigned' || job.status === 'scheduled';
+                const clientName = job?.client?.full_name || 'Cliente';
 
-            <div className="mt-2 flex flex-wrap gap-2">
-              {details.requestedDate && (
-                <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-[12px] font-bold text-cyan-700">
-                  📅 {details.requestedDate}
-                </span>
-              )}
-
-              {details.requestedTime && (
-                <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-[12px] font-bold text-cyan-700">
-                  ⏰ {details.requestedTime}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {details.notes && (
-          <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
-            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-emerald-700">
-              Detalles del cliente
-            </div>
-            <p className="mt-2 text-sm leading-6 text-gray-700">
-              {details.notes}
-            </p>
-          </div>
-        )}
-
-        {job.client && (
-          <div className="mt-4 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-cyan-50/50 p-3">
-            <div className="flex items-center gap-3">
-              <img
-                src={job.client?.avatar_url || '/avatar-fallback.png'}
-                onError={(e) => {
-                  e.currentTarget.src = '/avatar-fallback.png';
-                }}
-                alt={job.client?.full_name || 'Cliente'}
-                className="w-12 h-12 rounded-full border-2 border-emerald-400 object-cover"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="font-bold text-gray-800 truncate">
-                  {job.client?.full_name || 'Cliente'}
-                </div>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  Cliente asignado al servicio
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {job.status === 'open' && (
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            <button
-              onClick={() => acceptJob(job)}
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-400 text-white py-3 font-extrabold shadow-[0_16px_34px_rgba(16,185,129,0.20)] hover:from-emerald-600 hover:to-cyan-500 transition"
-            >
-              {details.requestKind === 'booking'
-                ? '📅 Aceptar agenda'
-                : '✅ Aceptar'}
-            </button>
-            <button
-              onClick={() => rejectJob(job)}
-              className="rounded-2xl bg-gray-100 text-gray-700 py-3 font-bold hover:bg-gray-200 transition"
-            >
-              Rechazar
-            </button>
-          </div>
-        )}
-
-        {job.status === 'accepted' && (
-          <div className="mt-5">
-            <div className="overflow-hidden rounded-[28px] border border-gray-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(248,250,252,0.98)_100%)] shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-              <div className="px-4 pt-4 pb-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">
-                      Acción principal
-                    </div>
-                    <div className="mt-1 text-[15px] font-extrabold text-gray-900">
-                      Seguimiento del servicio
-                    </div>
-                  </div>
-
-                  <div className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-[11px] font-bold text-cyan-700">
-                    En curso
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => {
-                    setSelectedJob(job);
-                    openGoogleMaps(job.client_lat, job.client_lng);
-                  }}
-                  className="group mt-4 relative w-full overflow-hidden rounded-[24px] bg-gradient-to-r from-slate-900 via-emerald-700 to-cyan-500 px-4 py-4 text-left text-white shadow-[0_18px_40px_rgba(16,185,129,0.22)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_24px_46px_rgba(16,185,129,0.28)] active:scale-[0.99]"
-                >
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.18),transparent_38%)] opacity-80" />
-
-                  <div className="relative flex items-center gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/16 backdrop-blur-md ring-1 ring-white/20">
-                      <Map size={20} />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[16px] font-extrabold tracking-tight">
-                        Ver ruta y detalles
-                      </div>
-                      <div className="mt-0.5 text-[12px] text-white/80">
-                        Abrí la vista premium del servicio dentro de ManosYA
+                return (
+                  <motion.article key={job.id} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.035 }} className="overflow-hidden rounded-[30px] border border-slate-100 bg-white/90 p-4 shadow-[0_18px_52px_rgba(15,23,42,0.07)] backdrop-blur">
+                    <div className="flex items-start gap-3">
+                      <img src={job.client?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={clientName} className="h-12 w-12 shrink-0 rounded-2xl border border-[#62bfb9]/25 object-cover" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="truncate text-[16px] font-black text-slate-950">{clientName}</h3>
+                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${jobStatusPill(job.status)}`}>{prettyStatus(job.status)}</span>
+                        </div>
+                        <p className="mt-1 text-[14px] font-black text-[#128f86]">{details.serviceLabel || job.service_type || 'Servicio general'}</p>
+                        <p className="mt-1 line-clamp-2 text-[13px] font-semibold leading-5 text-slate-500">{details.notes || details.summary.join(' · ') || job.title || 'Solicitud creada desde ManosYA.'}</p>
+                        {(details.requestedDate || details.requestedTime || details.requestKind === 'quote') && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {details.requestKind === 'quote' && <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-black text-amber-700 ring-1 ring-amber-100">Presupuesto</span>}
+                            {details.requestedDate && <span className="rounded-full bg-cyan-50 px-3 py-1 text-[11px] font-black text-cyan-700 ring-1 ring-cyan-100">{details.requestedDate}</span>}
+                            {details.requestedTime && <span className="rounded-full bg-cyan-50 px-3 py-1 text-[11px] font-black text-cyan-700 ring-1 ring-cyan-100">{details.requestedTime}</span>}
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    <div className="text-white/80 transition-transform duration-200 group-hover:translate-x-0.5">
-                      <MapPin size={18} />
-                    </div>
-                  </div>
-                </button>
-              </div>
+                    {isOpen && (
+                      <div className="mt-4 grid grid-cols-[1fr_0.72fr] gap-2">
+                        <button onClick={() => acceptJob(job)} className="rounded-full bg-[#18b8aa] py-3 text-[14px] font-black text-white shadow-[0_16px_34px_rgba(98,191,185,0.26)] transition active:scale-[0.98]">{details.requestKind === 'booking' ? 'Aceptar agenda' : 'Aceptar'}</button>
+                        <button onClick={() => rejectJob(job)} className="rounded-full border border-slate-200 bg-white py-3 text-[14px] font-black text-slate-600 transition active:scale-[0.98]">Rechazar</button>
+                      </div>
+                    )}
 
-              <div className="grid grid-cols-2 gap-3 border-t border-gray-100 px-4 py-4">
-                <button
-                  onClick={() => openChat(job)}
-                  className="group relative rounded-[22px] border border-gray-200 bg-white px-4 py-3.5 text-gray-800 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:bg-emerald-50/60 active:scale-[0.99]"
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="relative">
-                      <MessageCircle
-                        size={17}
-                        className="text-gray-600 transition-colors group-hover:text-emerald-700"
-                      />
+                    {isActiveJob && (
+                      <div className="mt-4 grid grid-cols-3 gap-2">
+                        <button onClick={() => { setSelectedJob(job); openGoogleMaps(job.client_lat, job.client_lng); }} className="rounded-full bg-slate-950 px-3 py-3 text-[13px] font-black text-white shadow-[0_14px_30px_rgba(15,23,42,0.14)] active:scale-[0.98]">Ruta</button>
+                        <button onClick={() => openChat(job)} className="relative rounded-full border border-[#62bfb9]/25 bg-white px-3 py-3 text-[13px] font-black text-slate-700 active:scale-[0.98]">Chat{hasUnread && unreadCount > 0 && (<span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white ring-2 ring-white">{unreadCount > 99 ? '99+' : unreadCount}</span>)}</button>
+                        <button onClick={() => { if (job.status === 'scheduled') { toast.info('Este servicio está agendado. Todavía no corresponde finalizarlo.'); return; } completeJob(job); }} className="rounded-full bg-[#18b8aa] px-3 py-3 text-[13px] font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.22)] active:scale-[0.98]">{job.status === 'scheduled' ? 'Agenda' : 'Finalizar'}</button>
+                      </div>
+                    )}
 
-                      {hasUnread && unreadCount > 0 && (
-                        <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-extrabold text-white shadow-[0_8px_18px_rgba(239,68,68,0.35)] ring-2 ring-white">
-                          {unreadCount > 99 ? '99+' : unreadCount}
-                        </span>
-                      )}
-                    </div>
-
-                    <span className="text-[14px] font-extrabold">Chat</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => completeJob(job)}
-                  className="group rounded-[22px] border border-emerald-200 bg-emerald-600 px-4 py-3.5 text-white shadow-[0_14px_30px_rgba(16,185,129,0.20)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-emerald-700 hover:shadow-[0_18px_36px_rgba(16,185,129,0.24)] active:scale-[0.99]"
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    <CheckSquare size={17} className="text-white" />
-                    <span className="text-[14px] font-extrabold">Finalizar</span>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
+                    {job.status === 'completed' && <div className="mt-4 rounded-full bg-[#62bfb9]/10 py-3 text-center text-[13px] font-black text-[#128f86]">Trabajo finalizado</div>}
+                  </motion.article>
+                );
+              })}
+            </section>
+          )
         )}
 
-        {job.status === 'completed' && (
-          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 py-3 text-center text-emerald-700 font-bold">
-            ✅ Trabajo finalizado
-          </div>
-        )}
+       {workerTab === 'feed' && (
+  <WorkerFeedPlaceholder onOpenProfile={() => setWorkerTab('profile')} />
+)}
+
+        {workerTab === 'profile' && (
+  <section className="rounded-[30px] border border-[#62bfb9]/20 bg-white/86 p-5 shadow-[0_18px_52px_rgba(98,191,185,0.12)] backdrop-blur">
+    <div className="flex items-center gap-3">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#62bfb9]/12 text-[#18b8aa]">
+        <User2 size={22} />
       </div>
-    </motion.div>
-  );
-})}
-          </section>
-        )}
+
+      <div>
+        <h2 className="text-[19px] font-black text-slate-950">Mi oficio profesional</h2>
+        <p className="text-[13px] font-semibold text-slate-500">
+          Editá foto, rubros, radio de cobertura y presentación laboral.
+        </p>
+      </div>
+    </div>
+
+    <button
+      type="button"
+      onClick={() => router.push('/worker/onboard')}
+      className="mt-5 w-full rounded-full bg-[#18b8aa] px-5 py-4 text-[15px] font-black text-white shadow-[0_16px_34px_rgba(98,191,185,0.26)] active:scale-[0.98]"
+    >
+      Editar mi oficio
+    </button>
+  </section>
+)}
 
         {/* CHAT MODAL */}
         <AnimatePresence>
@@ -1785,12 +1713,23 @@ setUnreadCount(0);
                       <ChevronLeft size={18} /> Volver
                     </button>
 
-                    <div className="text-center">
-                      <h2 className="font-extrabold text-gray-800">
-                        {selectedJob?.client?.full_name || 'Cliente'}
-                      </h2>
-                      <div className="text-[11px] text-emerald-600 font-semibold">Canal activo</div>
-                    </div>
+                    <div className="flex items-center gap-3">
+  <img
+    src={selectedJob?.client?.avatar_url || '/avatar-fallback.png'}
+    onError={(e) => {
+      e.currentTarget.src = '/avatar-fallback.png';
+    }}
+    alt={selectedJob?.client?.full_name || 'Cliente'}
+    className="h-11 w-11 rounded-full object-cover border-2 border-emerald-100 shadow-sm"
+  />
+
+  <div className="text-left">
+    <h2 className="font-extrabold text-gray-800 leading-tight">
+      {selectedJob?.client?.full_name || 'Cliente'}
+    </h2>
+    <div className="text-[11px] text-emerald-600 font-semibold">Canal activo</div>
+  </div>
+</div>
 
                     <button
   onClick={() => {
@@ -2112,9 +2051,15 @@ setUnreadCount(0);
           </div>
 
           <div className="mt-2 flex items-center gap-2">
-            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-              Servicio activo
-            </span>
+            {selectedJob?.status === 'scheduled' ? (
+  <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700">
+    Agendamiento activo
+  </span>
+) : (
+  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+    Servicio activo
+  </span>
+)}
 
             <span className="inline-flex items-center rounded-full border border-white/60 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-gray-600 backdrop-blur">
               Vista interna
@@ -2177,8 +2122,8 @@ setUnreadCount(0);
             Estado
           </div>
           <div className="mt-1 text-sm font-extrabold text-gray-800">
-            En camino al cliente
-          </div>
+  {selectedJob?.status === 'scheduled' ? 'Agenda aceptada' : 'En camino al cliente'}
+</div>
         </div>
 
         <div className="rounded-[22px] border border-white/60 bg-white/62 px-3 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
@@ -2282,8 +2227,8 @@ setUnreadCount(0);
                 Modalidad
               </div>
               <div className="mt-1 text-sm font-extrabold text-gray-800">
-                Atención inmediata
-              </div>
+  {selectedJob?.status === 'scheduled' ? 'Servicio agendado' : 'Atención inmediata'}
+</div>
             </div>
 
             <div className="rounded-[22px] border border-white/60 bg-white/62 p-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur">
@@ -2319,7 +2264,10 @@ setUnreadCount(0);
                 setUnreadCount(0);
 
                 if (!selectedJob) {
-                  const activeJob = jobs.find((j) => j.status === 'accepted') || jobs[0];
+                  const activeJob =
+  jobs.find((j) => j.status === 'accepted' || j.status === 'assigned') ||
+  jobs.find((j) => j.status === 'scheduled') ||
+  jobs[0];
                   if (activeJob) {
                     await openChat(activeJob);
                   } else {
@@ -2356,7 +2304,7 @@ setUnreadCount(0);
       {/* BOTÓN MAPA */}
       <button
         onClick={() => setMapOpen(true)}
-        className="fixed bottom-24 left-4 z-50 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-600 to-cyan-500 text-white px-4 py-3 shadow-[0_16px_34px_rgba(16,185,129,0.24)] font-bold"
+        className="fixed bottom-24 left-4 z-50 inline-flex items-center gap-2 rounded-full bg-[#18b8aa] text-white px-4 py-3 shadow-[0_16px_34px_rgba(16,185,129,0.24)] font-bold"
       >
         <Map size={18} />
         Zonas

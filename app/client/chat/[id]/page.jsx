@@ -1,13 +1,62 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase } from '@/lib/supabase';
-import { ChevronLeft, SendHorizontal } from 'lucide-react';
+import {
+  ChevronLeft,
+  SendHorizontal,
+  Sparkles,
+  MapPin,
+  ShieldCheck,
+  MessageCircle,
+  BriefcaseBusiness,
+  WalletCards,
+  Wrench,
+} from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 
 const supabase = getSupabase();
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function normalizeSlug(value) {
+  return normalizeText(value)
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
+
+function splitWorkerServices(worker) {
+  const raw = [];
+
+  if (Array.isArray(worker?.skills)) raw.push(...worker.skills);
+  else if (typeof worker?.skills === 'string') raw.push(...worker.skills.split(','));
+
+  if (worker?.main_skill) raw.push(worker.main_skill);
+  if (worker?.service_type) raw.push(worker.service_type);
+
+  return raw.map((v) => String(v || '').trim()).filter(Boolean);
+}
+
+function serviceLabelForWorker(worker) {
+  return splitWorkerServices(worker)[0] || 'Servicio general';
+}
+
+function formatTime(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 export default function ChatPage() {
   const router = useRouter();
@@ -15,116 +64,424 @@ export default function ChatPage() {
   const chatId = params?.id;
 
   const [user, setUser] = useState(null);
+  const [chatMeta, setChatMeta] = useState(null);
+  const [workerProfile, setWorkerProfile] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const inputRef = useRef(null);
-  const channelRef = useRef(null);
+  const [loadingMessages, setLoadingMessages] = useState(true);
+  const [activeJob, setActiveJob] = useState(null);
+  const [requesting, setRequesting] = useState(false);
+
+  const messagesWrapRef = useRef(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (data?.user) setUser(data.user);
+      else router.replace('/login');
     });
-  }, []);
+  }, [router]);
 
-  // Cargar mensajes
   useEffect(() => {
-    if (!chatId || !user) return;
+    if (!chatId || !user?.id) return;
 
-    const load = async () => {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: true });
-      if (error) console.error(error);
-      else setMessages(data || []);
+    let alive = true;
+
+    async function loadContext() {
+      try {
+        const { data: chat, error: chatError } = await supabase
+          .from('chats')
+          .select('*')
+          .eq('id', chatId)
+          .single();
+
+        if (chatError) throw chatError;
+        if (!alive) return;
+
+        setChatMeta(chat || null);
+
+        if (chat?.worker_id) {
+          const { data: worker } = await supabase
+            .from('map_workers_view')
+            .select('*')
+            .eq('user_id', chat.worker_id)
+            .maybeSingle();
+
+          if (alive) setWorkerProfile(worker || null);
+
+          const { data: jobs } = await supabase
+            .from('jobs')
+            .select('*')
+            .eq('client_id', user.id)
+            .eq('worker_id', chat.worker_id)
+            .in('status', ['open', 'accepted', 'assigned'])
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (alive) setActiveJob(jobs?.[0] || null);
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error('No pudimos cargar el chat');
+      }
+    }
+
+    loadContext();
+
+    return () => {
+      alive = false;
     };
-    load();
+  }, [chatId, user?.id]);
 
-    // Realtime
+  useEffect(() => {
+    if (!chatId || !user?.id) return;
+
+    let alive = true;
+
+    async function loadMessages() {
+      try {
+        setLoadingMessages(true);
+
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('chat_id', chatId)
+          .order('created_at', { ascending: true });
+
+        if (error) throw error;
+        if (alive) setMessages(data || []);
+      } catch (err) {
+        console.error(err);
+        toast.error('No pudimos cargar mensajes');
+      } finally {
+        if (alive) setLoadingMessages(false);
+      }
+    }
+
+    loadMessages();
+
     const channel = supabase
-      .channel(`chat-${chatId}`)
+      .channel(`client-chat-${chatId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` },
-        (payload) => setMessages((prev) => [...prev, payload.new])
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${chatId}`,
+        },
+        (payload) => {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
+          });
+        }
       )
       .subscribe();
 
-    channelRef.current = channel;
-    return () => supabase.removeChannel(channel);
-  }, [chatId, user]);
+    return () => {
+      alive = false;
+      supabase.removeChannel(channel);
+    };
+  }, [chatId, user?.id]);
+
+  useEffect(() => {
+    messagesWrapRef.current?.scrollTo({
+      top: messagesWrapRef.current.scrollHeight,
+      behavior: 'smooth',
+    });
+  }, [messages]);
+
+  const workerName = workerProfile?.full_name || 'Trabajador';
+  const workerAvatar = workerProfile?.avatar_url || '/avatar-fallback.png';
+  const workerService = serviceLabelForWorker(workerProfile);
+
+  const suggestionChips = useMemo(
+    () => [
+      `Hola, ¿seguís disponible para ${workerService.toLowerCase()}?`,
+      'Necesito este servicio hoy',
+      '¿Cuánto tardás en llegar?',
+    ],
+    [workerService]
+  );
 
   async function sendMessage(e) {
     e.preventDefault();
-    const text = inputRef.current?.value.trim();
-    if (!text) return;
+
+    const text = input.trim();
+    if (!text || !user?.id || !chatId) return;
 
     try {
       setSending(true);
-      await supabase.from('messages').insert([
-        { chat_id: chatId, sender_id: user.id, content: text },
+
+      const { error } = await supabase.from('messages').insert([
+        {
+          chat_id: chatId,
+          sender_id: user.id,
+          text,
+        },
       ]);
-      inputRef.current.value = '';
+
+      if (error) throw error;
+      setInput('');
     } catch (err) {
+      console.error(err);
       toast.error('Error enviando mensaje');
     } finally {
       setSending(false);
     }
   }
 
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex flex-col h-screen bg-white"
-    >
-      {/* Header */}
-      <header className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
-        <button onClick={() => router.back()} className="text-gray-600 flex items-center gap-1">
-          <ChevronLeft size={18} /> Volver
-        </button>
-        <h1 className="font-semibold text-gray-800">Chat</h1>
-        <div className="w-6" />
+  async function requestWorkerFromChat() {
+    if (!user?.id || !chatMeta?.worker_id) return;
+
+    if (activeJob) {
+      router.push('/client/jobs');
+      return;
+    }
+
+    try {
+      setRequesting(true);
+
+      const chosenService = normalizeSlug(
+        splitWorkerServices(workerProfile)[0] || workerProfile?.service_type || ''
+      );
+
+      const { data: job, error } = await supabase
+        .from('jobs')
+        .insert([
+          {
+            client_id: user.id,
+            worker_id: chatMeta.worker_id,
+            service_type: chosenService || null,
+            status: 'open',
+            description: `Servicio: ${workerService} · Solicitado desde chat`,
+          },
+        ])
+        .select('*')
+        .single();
+
+      if (error) throw error;
+
+      await supabase.from('chats').update({ job_id: job.id }).eq('id', chatId);
+
+      try {
+        localStorage.setItem(
+          'activeJobChat',
+          JSON.stringify({
+            jid: job.id,
+            jstatus: job.status,
+            cid: chatId,
+            selectedWorker: workerProfile || null,
+          })
+        );
+      } catch {}
+
+      setActiveJob(job);
+      toast.success('Solicitud enviada');
+      router.push('/client/jobs');
+    } catch (err) {
+      console.error(err);
+      toast.error('No pudimos solicitar');
+    } finally {
+      setRequesting(false);
+    }
+  }
+
+ return (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    className="h-[100dvh] overflow-hidden bg-[#63c0ba] text-[#123437]"
+  >
+    <div className="mx-auto flex h-full max-w-3xl flex-col bg-[#63c0ba]">
+      <header className="z-20 border-b border-white/35 bg-[#63c0ba]/95 px-3 py-2 shadow-[0_10px_28px_rgba(18,52,55,0.10)] backdrop-blur-xl">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/18 text-white active:bg-white/28"
+          >
+            <ChevronLeft size={24} />
+          </button>
+
+          <img
+            src={workerAvatar}
+            onError={(e) => {
+              e.currentTarget.src = '/avatar-fallback.png';
+            }}
+            alt={workerName}
+            className="h-11 w-11 rounded-full border-2 border-white object-cover"
+          />
+
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[17px] font-black text-white">
+              {workerName}
+            </div>
+
+            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[12px] font-bold text-white/82">
+              <span className="truncate">{workerService}</span>
+
+              {workerProfile?._distKm != null && (
+                <span className="inline-flex shrink-0 items-center gap-1">
+                  <MapPin size={11} />
+                  {Number(workerProfile._distKm).toFixed(1)} km
+                </span>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={requestWorkerFromChat}
+            disabled={requesting}
+            className="rounded-full bg-white px-4 py-2 text-[12px] font-black text-[#1e4e53] shadow-[0_10px_24px_rgba(18,52,55,0.12)] disabled:opacity-60"
+          >
+            {activeJob ? 'Ver pedido' : 'Solicitar'}
+          </button>
+        </div>
       </header>
 
-      {/* Mensajes */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
-        {messages.map((m) => {
-          const mine = m.sender_id === user?.id;
-          return (
-            <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm shadow-sm ${
-                  mine ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-800'
-                }`}
-              >
-                {m.content}
-                <div className={`text-[10px] mt-1 opacity-70 ${mine ? 'text-white' : 'text-gray-500'}`}>
-                  {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </div>
+      <main
+        ref={messagesWrapRef}
+        className="relative flex-1 overflow-y-auto px-3 py-4"
+      >
+        <div className="pointer-events-none absolute inset-0 opacity-[0.18]">
+          <div
+            className="h-full w-full"
+            style={{
+              backgroundImage: `
+                radial-gradient(circle at 16px 16px, rgba(255,255,255,.55) 1.2px, transparent 1.4px),
+                linear-gradient(135deg, transparent 0 44%, rgba(255,255,255,.26) 45% 46%, transparent 47% 100%)
+              `,
+              backgroundSize: '82px 82px, 118px 118px',
+            }}
+          />
+        </div>
+
+        <div className="pointer-events-none absolute inset-0 opacity-[0.12]">
+          <div className="grid grid-cols-4 gap-12 p-8 text-white">
+            {Array.from({ length: 36 }).map((_, i) => {
+              const icons = [Wrench, BriefcaseBusiness, WalletCards, Sparkles];
+              const Icon = icons[i % icons.length];
+
+              return (
+                <Icon
+                  key={i}
+                  size={28 + (i % 3) * 8}
+                  className="rotate-[-18deg]"
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="relative z-10">
+          <div className="mx-auto mb-4 w-fit rounded-lg bg-white/28 px-3 py-1 text-[12px] font-black text-[#1e4e53] backdrop-blur-md">
+            Hoy
+          </div>
+
+          {!loadingMessages && messages.length > 0 && (
+            <div className="mx-auto mb-5 max-w-[330px] rounded-xl bg-white/72 px-4 py-3 text-center text-[12px] font-bold leading-5 text-[#1e4e53] shadow-sm backdrop-blur-md">
+              <ShieldCheck size={14} className="mb-1 inline text-[#1e4e53]" /> Los mensajes están protegidos dentro de ManosYA. Solicitá cuando ya te cierre el trabajo.
+            </div>
+          )}
+
+          {loadingMessages ? (
+            <div className="flex h-[60vh] items-center justify-center text-sm font-black text-white/85">
+              Cargando conversación...
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="flex h-[60vh] flex-col items-center justify-center text-center text-white/90">
+              <div className="rounded-full bg-white/22 p-4">
+                <MessageCircle size={28} />
+              </div>
+              <div className="mt-4 text-lg font-black text-white">
+                Arrancá la conversación
+              </div>
+              <div className="mt-2 max-w-[280px] text-sm font-semibold text-white/80">
+                Preguntá disponibilidad, precio o tiempo antes de solicitar.
               </div>
             </div>
-          );
-        })}
-      </div>
+          ) : (
+            <div className="space-y-2">
+              {messages.map((m) => {
+                const mine = m.sender_id === user?.id;
 
-      {/* Input */}
-      <form onSubmit={sendMessage} className="p-3 border-t border-gray-200 flex gap-2">
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder="Escribí un mensaje..."
-          className="flex-1 bg-gray-100 rounded-xl px-3 py-3 outline-none focus:ring-2 focus:ring-emerald-400 border border-gray-200"
-        />
-        <button
-          disabled={sending}
-          className="px-4 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition disabled:opacity-60"
-        >
-          <SendHorizontal size={18} />
-        </button>
+                return (
+                  <div
+                    key={m.id}
+                    className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`relative max-w-[82%] rounded-[18px] px-3 py-2 text-[14px] leading-5 shadow-sm ${
+                        mine
+                          ? 'rounded-tr-[4px] bg-white text-[#123437]'
+                          : 'rounded-tl-[4px] bg-[#dff7f5] text-[#123437]'
+                      }`}
+                    >
+                      <div className="whitespace-pre-wrap break-words font-semibold">
+                        {m.text || ''}
+                      </div>
+
+                      <div className="mt-1 text-right text-[10px] font-bold text-[#1e4e53]/55">
+                        {formatTime(m.created_at)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </main>
+
+      {!messages.length && !loadingMessages && (
+        <div className="bg-[#63c0ba] px-3 pb-2">
+          <div className="flex gap-2 rounded-xl bg-white/28 p-3 text-[12px] font-bold leading-5 text-[#1e4e53] backdrop-blur-md">
+            <ShieldCheck size={15} className="mt-0.5 shrink-0 text-[#1e4e53]" />
+            Primero conversá. Cuando ya esté claro el trabajo, tocá Solicitar.
+          </div>
+        </div>
+      )}
+
+      <form
+        onSubmit={sendMessage}
+        className="border-t border-white/30 bg-[#63c0ba] px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2"
+      >
+        <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+          {suggestionChips.map((chip) => (
+            <button
+              key={chip}
+              type="button"
+              onClick={() => setInput(chip)}
+              className="whitespace-nowrap rounded-full bg-white/28 px-3 py-2 text-[11px] font-black text-[#1e4e53] backdrop-blur-md active:bg-white/45"
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-end gap-2">
+          <div className="flex min-h-[48px] flex-1 items-center rounded-[24px] bg-white/38 px-4 shadow-[0_10px_28px_rgba(18,52,55,0.10)] backdrop-blur-md">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Escribí un mensaje"
+              className="h-12 flex-1 bg-transparent text-[15px] font-bold text-[#123437] outline-none placeholder:text-[#1e4e53]/55"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={sending || !input.trim()}
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#1e4e53] shadow-[0_10px_26px_rgba(18,52,55,0.16)] disabled:opacity-45"
+          >
+            <SendHorizontal size={19} strokeWidth={2.7} />
+          </button>
+        </div>
       </form>
-    </motion.div>
-  );
+    </div>
+  </motion.div>
+);
 }
-

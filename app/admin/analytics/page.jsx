@@ -331,58 +331,66 @@ export default function AdminAnalyticsPage() {
     status: 'issued',
     notes: '',
   });
-  async function checkAdminAccess() {
-    try {
-      const ALLOWED_EMAILS = [
-        'mirian@manosya.com',
-        'maria@manosya.com',
-        'roger@manosya.com',
-      ];
+ async function checkAdminAccess() {
+  try {
+    const ALLOWED_EMAILS = [
+      'mirian@manosya.com',
+      'maria@manosya.com',
+      'roger@manosya.com',
+    ];
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-      if (!user) {
-        toast.error('Tenés que iniciar sesión');
-        window.location.href = '/auth/login';
-        return false;
-      }
+    if (!user) {
+      toast.error('Tenés que iniciar sesión');
+      window.location.href = '/auth/login';
+      return false;
+    }
 
-      const userEmail = (user.email || '').trim().toLowerCase();
+    const userEmail = (user.email || '').trim().toLowerCase();
 
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('role, email, full_name')
-        .eq('id', user.id)
-        .maybeSingle();
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('role, admin_role, email, full_name')
+      .eq('id', user.id)
+      .maybeSingle();
 
-      if (error) throw error;
+    if (error) throw error;
 
-      const profileEmail = (profile?.email || '').trim().toLowerCase();
-
-      const isAllowedEmail =
-        ALLOWED_EMAILS.includes(userEmail) || ALLOWED_EMAILS.includes(profileEmail);
-
-      const isAllowedRole = ['admin', 'superadmin'].includes(profile?.role || '');
-
-      if (!isAllowedEmail || !isAllowedRole) {
-        toast.error('No tenés permiso para entrar a este panel');
-        window.location.href = '/';
-        return false;
-      }
-
-      setHasAccess(true);
-      return true;
-    } catch (err) {
-      console.error(err);
-      toast.error('No se pudo validar el acceso');
+    if (!profile) {
+      toast.error('Perfil no encontrado');
       window.location.href = '/';
       return false;
-    } finally {
-      setAccessChecked(true);
     }
+
+    const profileEmail = (profile?.email || '').trim().toLowerCase();
+
+    const isAllowedEmail =
+      ALLOWED_EMAILS.includes(userEmail) || ALLOWED_EMAILS.includes(profileEmail);
+
+    const isAllowedAdminRole = ['admin', 'superadmin'].includes(
+      (profile?.admin_role || '').trim().toLowerCase()
+    );
+
+    if (!isAllowedEmail || !isAllowedAdminRole) {
+      toast.error('No tenés permiso para entrar a este panel');
+      window.location.href = '/';
+      return false;
+    }
+
+    setHasAccess(true);
+    return true;
+  } catch (err) {
+    console.error(err);
+    toast.error('No se pudo validar el acceso');
+    window.location.href = '/';
+    return false;
+  } finally {
+    setAccessChecked(true);
   }
+}
     useEffect(() => {
     let alive = true;
     let channel = null;

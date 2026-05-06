@@ -93,11 +93,12 @@ export default function ClientRoot({ children }) {
   const isClient = pathname?.startsWith("/client");
   const isAdmin = pathname?.startsWith("/admin");
 
-  // === Ocultar header en auth y cliente ===
+  // === Ocultar header en auth, cliente, role selector y settings ===
   const hideHeader =
     pathname?.startsWith("/auth") ||
     pathname?.startsWith("/role-selector") ||
-    pathname?.startsWith("/client");
+    pathname?.startsWith("/client") ||
+    pathname?.startsWith("/settings");
 
   const homeLink = isWorker
     ? "/worker/onboard"
@@ -150,14 +151,16 @@ export default function ClientRoot({ children }) {
       <main className="relative z-10 flex-1 animate-fadeIn">{children}</main>
 
       {/* ===== FOOTER ===== */}
-      {!pathname?.startsWith("/client") && !pathname?.startsWith("/worker") && (
-        <footer className="border-t border-white/70 bg-white/70 py-4 text-center text-sm text-slate-600 backdrop-blur-md">
-          © {new Date().getFullYear()}{" "}
-          <span className="font-semibold text-emerald-600">ManosYA</span> · Alto Paraná 🇵🇾
-          <DynamicFooterMessage />
-          <div className="mt-1 text-xs text-slate-500">Tu ayuda al instante ⚡</div>
-        </footer>
-      )}
+      {!pathname?.startsWith("/client") &&
+        !pathname?.startsWith("/worker") &&
+        !pathname?.startsWith("/settings") && (
+          <footer className="border-t border-white/70 bg-white/70 py-4 text-center text-sm text-slate-600 backdrop-blur-md">
+            © {new Date().getFullYear()}{" "}
+            <span className="font-semibold text-emerald-600">ManosYA</span> · Alto Paraná 🇵🇾
+            <DynamicFooterMessage />
+            <div className="mt-1 text-xs text-slate-500">Tu ayuda al instante ⚡</div>
+          </footer>
+        )}
 
       {/* ===== TOASTER ===== */}
       <Toaster
