@@ -37,6 +37,7 @@ const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer)
 const Circle = dynamic(() => import('react-leaflet').then((m) => m.Circle), { ssr: false });
 const CircleMarker = dynamic(() => import('react-leaflet').then((m) => m.CircleMarker), { ssr: false });
 const Popup = dynamic(() => import('react-leaflet').then((m) => m.Popup), { ssr: false });
+const Marker = dynamic(() => import('react-leaflet').then((m) => m.Marker), { ssr: false });
 const Polyline = dynamic(() => import('react-leaflet').then((m) => m.Polyline), { ssr: false });
 
 const supabase = getSupabase();
@@ -55,6 +56,67 @@ function prettyStatus(status) {
   if (s === 'cancelled') return 'Cancelado';
   if (s === 'assigned') return 'Asignado';
   return status || 'Sin estado';
+}
+
+function formatTime(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function makeAvatarMarkerIcon({ avatarUrl, name, borderColor = '#18b8aa' }) {
+  if (typeof window === 'undefined') return null;
+
+  const L = require('leaflet');
+
+  const safeAvatar = avatarUrl || '/avatar-fallback.png';
+  const safeName = String(name || 'Usuario').replace(/"/g, '');
+
+  return L.divIcon({
+    className: '',
+    html: `
+      <div style="
+        width:56px;
+        height:56px;
+        border-radius:999px;
+        border:4px solid white;
+        background:${borderColor};
+        box-shadow:0 12px 30px rgba(0,0,0,.28);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        position:relative;
+      ">
+        <img
+          src="${safeAvatar}"
+          alt="${safeName}"
+          style="
+            width:44px;
+            height:44px;
+            border-radius:999px;
+            object-fit:cover;
+            border:2px solid ${borderColor};
+            background:white;
+          "
+        />
+        <span style="
+          position:absolute;
+          bottom:-4px;
+          right:-2px;
+          width:16px;
+          height:16px;
+          border-radius:999px;
+          background:${borderColor};
+          border:3px solid white;
+        "></span>
+      </div>
+    `,
+    iconSize: [56, 56],
+    iconAnchor: [28, 28],
+    popupAnchor: [0, -26],
+  });
 }
 function jobStatusPill(status) {
   const s = String(status || '').toLowerCase();
@@ -138,18 +200,39 @@ function shouldKeepWorkerAvailable(job) {
   return details.requestKind === 'booking' || details.requestKind === 'quote';
 }
 
+function normalizeServiceKey(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
+
 function matchesWorkerService(job, workerSkills = []) {
   const details = parseJobRequestDetails(job?.description);
-  const jobService = String(details.serviceLabel || job?.service_type || '')
-    .trim()
-    .toLowerCase();
 
-  if (!jobService) return true;
-  if (!Array.isArray(workerSkills) || workerSkills.length === 0) return true;
-
-  return workerSkills.some((skill) =>
-    String(skill || '').trim().toLowerCase() === jobService
+  const jobService = normalizeServiceKey(
+    job?.service_type || details.serviceLabel || ''
   );
+
+  if (!jobService) return false;
+
+  if (!Array.isArray(workerSkills) || workerSkills.length === 0) {
+    return false;
+  }
+
+  return workerSkills.some((skill) => {
+    const normalizedSkill = normalizeServiceKey(skill);
+
+    return (
+      normalizedSkill === jobService ||
+      normalizedSkill.includes(jobService) ||
+      jobService.includes(normalizedSkill)
+    );
+  });
 }
 function workerModeMeta(status) {
   if (status === 'available') {
@@ -431,8 +514,10 @@ function WorkerTabButton({ active, icon, label, onClick }) {
       onClick={onClick}
       className={`flex items-center justify-center gap-2 rounded-full px-3 py-3 text-[13px] font-black transition active:scale-[0.98] ${
         active
-          ? 'bg-[#18b8aa] text-white shadow-[0_12px_28px_rgba(98,191,185,0.28)]'
-          : 'bg-transparent text-slate-500 hover:bg-[#62bfb9]/8'
+  ? 'bg-[#18b8aa] text-white shadow-[0_12px_28px_rgba(98,191,185,0.28)]'
+  : label === 'Ganar clientes'
+  ? 'bg-[#18b8aa]/8 text-[#18b8aa] border border-[#18b8aa]/15 animate-pulse'
+  : 'bg-transparent text-slate-500 hover:bg-[#62bfb9]/8'
       }`}
     >
       {icon}
@@ -483,12 +568,16 @@ export default function WorkerPage() {
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [clientProfile, setClientProfile] = useState(null);
+  const [jobLastMessages, setJobLastMessages] = useState({});
+  const [workerSelfProfile, setWorkerSelfProfile] = useState(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [sending, setSending] = useState(false);
    const [isActive, setIsActive] = useState(true);
   const [hasUnread, setHasUnread] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [clientTyping, setClientTyping] = useState(false);
+const [unreadCount, setUnreadCount] = useState(0);
+const [workerUnreadByJob, setWorkerUnreadByJob] = useState({});
+const [clientTyping, setClientTyping] = useState(false);
  const [mapOpen, setMapOpen] = useState(false);
 const [previewMapOpen, setPreviewMapOpen] = useState(false);
 const [previewTarget, setPreviewTarget] = useState(null);
@@ -501,6 +590,7 @@ const chatChannelRef = useRef(null);
 const bottomRef = useRef(null);
 const soundRef = useRef(null);
 const typingTimeoutRef = useRef(null);
+const workerChatIdsRef = useRef(new Set());
 
   const [status, setStatus] = useState(() => {
     if (typeof window === 'undefined') return 'available';
@@ -510,7 +600,57 @@ const typingTimeoutRef = useRef(null);
   const [isConnected, setIsConnected] = useState(true);
 
   const meta = workerModeMeta(status);
+  useEffect(() => {
+  if (!selectedJob?.client_id) return;
 
+  let active = true;
+
+  async function loadClientProfile() {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('full_name, avatar_url')
+      .eq('id', selectedJob.client_id)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Error cargando perfil cliente:', error.message);
+      return;
+    }
+
+    if (active) {
+      setClientProfile(data || null);
+    }
+  }
+
+  loadClientProfile();
+
+  return () => {
+    active = false;
+  };
+}, [selectedJob?.client_id]);
+useEffect(() => {
+  if (!user?.id) return;
+
+  let active = true;
+
+  async function loadWorkerSelfProfile() {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('full_name, avatar_url')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (!error && active) {
+      setWorkerSelfProfile(data || null);
+    }
+  }
+
+  loadWorkerSelfProfile();
+
+  return () => {
+    active = false;
+  };
+}, [user?.id]);
 async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
   try {
     const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`;
@@ -536,7 +676,7 @@ async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
 
 async function openGoogleMaps(lat, lng) {
   if (lat == null || lng == null) {
-    toast.error('Ubicación no disponible');
+    toast.error('El cliente todavía no compartió ubicación');
     return;
   }
 
@@ -570,6 +710,21 @@ async function openGoogleMaps(lat, lng) {
       ]);
     }
   }
+}
+
+function openExternalNavigation(lat, lng) {
+  const la = Number(lat);
+  const lo = Number(lng);
+
+  if (Number.isNaN(la) || Number.isNaN(lo)) {
+    toast.error('Ubicación inválida');
+    return;
+  }
+
+  window.open(
+    `https://www.google.com/maps/dir/?api=1&destination=${la},${lo}&travelmode=driving`,
+    '_blank'
+  );
 }
 const stats = useMemo(() => {
   const total = jobs.length;
@@ -765,7 +920,7 @@ useEffect(() => {
   if (!workerId) return;
 
   try {
-    setLoading(true);
+    setLoading((prev) => (jobs.length === 0 ? true : prev));
 
     const { data: workerProfile, error: workerProfileErr } = await supabase
       .from('worker_profiles')
@@ -798,11 +953,20 @@ useEffect(() => {
 
     const rawList = jobsData || [];
 
-    const filteredList = rawList.filter((job) => {
-      if (job.worker_id === workerId) return true;
-      if (job.status !== 'open') return false;
-      return matchesWorkerService(job, workerSkills);
-    });
+   const filteredList = rawList.filter((job) => {
+  const assignedToMe = String(job.worker_id || '') === String(workerId);
+  const isOpen = String(job.status || '').toLowerCase() === 'open';
+
+  // ✅ Si el pedido ya viene dirigido a este trabajador,
+  // debe aparecer sí o sí.
+  if (assignedToMe) return true;
+
+  // 🚫 Si no está abierto y no es mío, no se muestra.
+  if (!isOpen) return false;
+
+  // ✅ Pedidos generales: filtrar por rubro/skills.
+  return matchesWorkerService(job, workerSkills);
+});
 
     const clientIds = [...new Set(filteredList.map((j) => j.client_id).filter(Boolean))];
 
@@ -866,12 +1030,79 @@ useEffect(() => {
 useEffect(() => {
   if (!user?.id) return;
 
-  // ✅ carga inicial una sola vez
   loadJobs();
-
-  // ✅ sin polling agresivo cada 15s
-  // dejamos que realtime haga la mayor parte del trabajo
 }, [user?.id]);
+
+async function refreshWorkerUnreadBadges() {
+  if (!user?.id) return;
+
+  try {
+    const seenRaw = localStorage.getItem('manosya_worker_chat_seen_map');
+    const seenMap = seenRaw ? JSON.parse(seenRaw) : {};
+
+    const { data: chats, error: chatsError } = await supabase
+      .from('chats')
+      .select('id, job_id')
+      .eq('worker_id', user.id);
+
+    if (chatsError) throw chatsError;
+
+    const chatIds = (chats || []).map((c) => c.id).filter(Boolean);
+
+    if (!chatIds.length) {
+      setWorkerUnreadByJob({});
+      setUnreadCount(0);
+      setHasUnread(false);
+      return;
+    }
+
+    const { data: msgs, error: msgsError } = await supabase
+      .from('messages')
+      .select('id, chat_id, sender_id, created_at')
+      .in('chat_id', chatIds)
+      .neq('sender_id', user.id);
+
+    if (msgsError) throw msgsError;
+
+    const chatToJob = (chats || []).reduce((acc, chat) => {
+      if (chat.id && chat.job_id) acc[String(chat.id)] = String(chat.job_id);
+      return acc;
+    }, {});
+
+    const nextByJob = {};
+
+    (msgs || []).forEach((msg) => {
+      const chatId = String(msg.chat_id);
+      const jobId = chatToJob[chatId];
+      if (!jobId) return;
+
+      const seenAt = Number(seenMap[chatId] || 0);
+      const msgTime = new Date(msg.created_at).getTime();
+
+      if (msgTime > seenAt) {
+        nextByJob[jobId] = (nextByJob[jobId] || 0) + 1;
+      }
+    });
+
+    const total = Object.values(nextByJob).reduce((sum, n) => sum + Number(n || 0), 0);
+
+    setWorkerUnreadByJob(nextByJob);
+    setUnreadCount(total);
+    setHasUnread(total > 0);
+  } catch (err) {
+    console.warn('Error refrescando badges trabajador:', err);
+  }
+}
+
+useEffect(() => {
+  if (!user?.id) return;
+
+  refreshWorkerUnreadBadges();
+
+  const timer = setInterval(refreshWorkerUnreadBadges, 8000);
+
+  return () => clearInterval(timer);
+}, [user?.id, jobs.length]);
 
   useEffect(() => {
     if (mapOpen) {
@@ -891,14 +1122,17 @@ useEffect(() => {
     String(fresh.status || '').toLowerCase()
   );
 
-  if (!ended) return;
+ if (!ended) return;
 
-  setPreviewMapOpen(false);
-  setPreviewTarget(null);
-  setPreviewRoute(null);
-  setMapOpen(false);
+setPreviewMapOpen(false);
+setPreviewTarget(null);
+setPreviewRoute(null);
+setMapOpen(false);
+
+if (String(fresh.status || '').toLowerCase() === 'cancelled') {
   setSelectedJob(null);
   setIsChatOpen(false);
+}
 
   toast(
     fresh.status === 'cancelled'
@@ -930,8 +1164,9 @@ useEffect(() => {
       { event: 'INSERT', schema: 'public', table: 'jobs' },
       async (payload) => {
         const job = payload.new;
+
         if (!job || cancelled) return;
-        if (job.status !== 'open') return;
+        if (String(job.status || '').toLowerCase() !== 'open') return;
         if (status !== 'available') return;
 
         const { data: workerProfile, error } = await supabase
@@ -949,11 +1184,38 @@ useEffect(() => {
           ? workerProfile.skills
           : [];
 
-        if (!matchesWorkerService(job, workerSkills)) return;
+        const assignedToMe = String(job.worker_id || '') === String(user.id);
+
+        if (!assignedToMe && !matchesWorkerService(job, workerSkills)) return;
+
+        let client = null;
+
+        if (job.client_id) {
+          const { data: profile, error: profileErr } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url')
+            .eq('id', job.client_id)
+            .maybeSingle();
+
+          if (!profileErr) {
+            client = profile || null;
+          }
+        }
+
+        const enrichedJob = {
+          ...job,
+          client,
+        };
+
+        setJobs((prev) => {
+          const exists = prev.some((j) => String(j.id) === String(enrichedJob.id));
+          return exists ? prev : [enrichedJob, ...prev];
+        });
 
         await playNotify();
 
         const details = parseJobRequestDetails(job.description);
+
         toast(
           details.requestKind === 'booking'
             ? '🗓️ Nueva agenda disponible para tu servicio'
@@ -975,6 +1237,33 @@ useEffect(() => {
 /* === REALTIME CORE === */
 useEffect(() => {
   if (!user?.id) return;
+
+  async function messageBelongsToThisWorker(message) {
+    if (!message?.chat_id) return false;
+
+    const chatId = String(message.chat_id);
+
+    if (workerChatIdsRef.current.has(chatId)) {
+      return true;
+    }
+
+    const { data: chat, error } = await supabase
+      .from('chats')
+      .select('id, worker_id')
+      .eq('id', message.chat_id)
+      .eq('worker_id', user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('No se pudo validar el chat del trabajador:', error.message);
+      return false;
+    }
+
+    if (!chat?.id) return false;
+
+    workerChatIdsRef.current.add(String(chat.id));
+    return true;
+  }
 
   const stop = startRealtimeCore((type, data) => {
     try {
@@ -998,7 +1287,11 @@ useEffect(() => {
                   ? workerProfile.skills
                   : [];
 
-                if (!matchesWorkerService(data, workerSkills)) return;
+                const assignedToMe = String(data.worker_id || '') === String(user.id);
+
+// ✅ Pedido directo al trabajador: entra siempre.
+// ✅ Pedido general: entra solo si matchea rubro.
+if (!assignedToMe && !matchesWorkerService(data, workerSkills)) return;
 
                 let client = null;
 
@@ -1103,7 +1396,7 @@ useEffect(() => {
               })();
 
               setIsChatOpen(false);
-                        } else if (data.status === 'accepted' || data.status === 'scheduled') {
+            } else if (data.status === 'accepted' || data.status === 'scheduled') {
               const keepAvailable =
                 data.status === 'scheduled' ? true : shouldKeepWorkerAvailable(data);
 
@@ -1122,27 +1415,24 @@ useEffect(() => {
         }
 
         case 'message': {
-          if (selectedJob?.chat_id === data.chat_id && isChatOpen) {
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === data.id)) return prev;
-              return [...prev, data];
-            });
+          (async () => {
+            const belongs = await messageBelongsToThisWorker(data);
 
-            if (data.sender_id !== user.id) {
+            if (!belongs) return;
+            if (data.sender_id === user.id) return;
+
+            if (selectedJob?.chat_id === data.chat_id && isChatOpen) {
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === data.id)) return prev;
+                return [...prev, data];
+              });
+
               setHasUnread(false);
               setUnreadCount(0);
-
-              try {
-                soundRef.current?.pause?.();
-                if (soundRef.current) soundRef.current.currentTime = 0;
-                soundRef.current?.play?.();
-              } catch (err) {
-                console.warn('Error reproduciendo sonido mensaje:', err);
-              }
+            } else {
+              setHasUnread(true);
+              setUnreadCount((prev) => prev + 1);
             }
-          } else if (data.sender_id !== user.id) {
-            setHasUnread(true);
-            setUnreadCount((prev) => prev + 1);
 
             try {
               soundRef.current?.pause?.();
@@ -1151,7 +1441,7 @@ useEffect(() => {
             } catch (err) {
               console.warn('Error reproduciendo sonido mensaje:', err);
             }
-          }
+          })();
           break;
         }
 
@@ -1170,44 +1460,11 @@ useEffect(() => {
     }
   });
 
-  return () => stopRealtimeCore();
-}, [user?.id, selectedJob?.chat_id, status, isChatOpen]);
-
-/* === MENSAJES GLOBALES === */
-useEffect(() => {
-  if (!user?.id) return;
-
-  const globalMessagesChannel = supabase
-    .channel('global-message-listener')
-    .on(
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'messages' },
-      async (payload) => {
-        const msg = payload.new;
-
-        if (msg.sender_id === user.id) return;
-
-        if (!isChatOpen || msg.chat_id !== selectedJob?.chat_id) {
-          setHasUnread(true);
-          setUnreadCount((prev) => prev + 1);
-
-          try {
-            if (soundRef.current) {
-              soundRef.current.currentTime = 0;
-              await soundRef.current.play();
-            }
-          } catch (err) {
-            console.warn('Error reproduciendo sonido global:', err);
-          }
-        }
-      }
-    )
-    .subscribe();
-
   return () => {
-    supabase.removeChannel(globalMessagesChannel);
+    if (typeof stop === 'function') stop();
+    else stopRealtimeCore();
   };
-}, [user?.id, isChatOpen, selectedJob?.chat_id]);
+}, [user?.id, selectedJob?.chat_id, selectedJob?.id, status, isChatOpen]);
 
    useEffect(() => {
     if (isChatOpen) {
@@ -1396,120 +1653,202 @@ async function acceptJob(job) {
   }
 
   /* === OPEN CHAT === */
-  async function openChat(job) {
-    try {
-      const { data: chatIdData, error: chatErr } = await supabase.rpc('ensure_chat_for_job', {
-        p_job_id: job.id,
-      });
-      if (chatErr) throw chatErr;
-      const cid = chatIdData;
+async function openChat(job) {
+  try {
+    if (!job?.id || !job?.client_id || !user?.id) {
+      toast.error('Faltan datos para abrir el chat');
+      return;
+    }
 
-      const { data: msgs, error: msgErr } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', cid)
-        .order('created_at', { ascending: true });
-      if (msgErr) throw msgErr;
+    let cid = null;
 
-      setMessages(msgs || []);
+    const { data: chatByJob, error: chatByJobError } = await supabase
+      .from('chats')
+      .select('id')
+      .eq('job_id', job.id)
+      .eq('client_id', job.client_id)
+      .eq('worker_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (chatByJobError) throw chatByJobError;
+
+    if (chatByJob?.id) {
+      cid = chatByJob.id;
+    } else {
+      const { data: chatByPair, error: chatByPairError } = await supabase
+        .from('chats')
+        .select('id')
+        .eq('client_id', job.client_id)
+        .eq('worker_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (chatByPairError) throw chatByPairError;
+
+      if (chatByPair?.id) {
+        cid = chatByPair.id;
+
+        await supabase
+          .from('chats')
+          .update({ job_id: job.id })
+          .eq('id', cid);
+      } else {
+        const { data: newChat, error: newChatError } = await supabase
+          .from('chats')
+          .insert([
+            {
+              job_id: job.id,
+              client_id: job.client_id,
+              worker_id: user.id,
+            },
+          ])
+          .select('id')
+          .single();
+
+        if (newChatError) throw newChatError;
+        cid = newChat.id;
+      }
+    }
+
+    workerChatIdsRef.current.add(String(cid));
+
+    const { data: msgs, error: msgErr } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('chat_id', cid)
+      .order('created_at', { ascending: true });
+
+    if (msgErr) throw msgErr;
+
+    setMessages(msgs || []);
 setSelectedJob({ ...job, chat_id: cid });
 setIsChatOpen(true);
-setHasUnread(false);
-setUnreadCount(0);
 
-      if (chatChannelRef.current) supabase.removeChannel(chatChannelRef.current);
+try {
+  const seenRaw = localStorage.getItem('manosya_worker_chat_seen_map');
+  const seenMap = seenRaw ? JSON.parse(seenRaw) : {};
+  seenMap[String(cid)] = Date.now();
+  localStorage.setItem('manosya_worker_chat_seen_map', JSON.stringify(seenMap));
+} catch {}
 
-      const ch = supabase
-  .channel(`chat-${cid}`)
-  .on(
-    'postgres_changes',
-    {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'messages',
-      filter: `chat_id=eq.${String(cid)}`,
-    },
-    (payload) => {
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === payload.new.id)) return prev;
-        return [...prev, payload.new];
-      });
+setWorkerUnreadByJob((prev) => {
+  const next = { ...prev };
+  delete next[String(job.id)];
 
-      if (payload.new.sender_id !== user.id) {
-        setClientTyping(false);
+  const total = Object.values(next).reduce((sum, n) => sum + Number(n || 0), 0);
+  setUnreadCount(total);
+  setHasUnread(total > 0);
 
-        if (typingTimeoutRef.current) {
-          clearTimeout(typingTimeoutRef.current);
-          typingTimeoutRef.current = null;
+  return next;
+});
+
+    if (chatChannelRef.current) {
+      supabase.removeChannel(chatChannelRef.current);
+    }
+
+    const ch = supabase
+      .channel(`chat-${cid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${String(cid)}`,
+        },
+        (payload) => {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
+          });
+
+          if (payload.new.sender_id !== user.id) {
+            setClientTyping(false);
+
+            if (typingTimeoutRef.current) {
+              clearTimeout(typingTimeoutRef.current);
+              typingTimeoutRef.current = null;
+            }
+
+            try {
+              soundRef.current?.pause?.();
+              if (soundRef.current) soundRef.current.currentTime = 0;
+              soundRef.current?.play?.();
+            } catch (err) {
+              console.warn('Error reproduciendo sonido mensaje:', err);
+            }
+          }
+
+          setTimeout(() => {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }, 200);
         }
+      )
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        if (payload?.sender_id !== user.id) {
+          setClientTyping(true);
 
-        soundRef.current?.play?.();
-      }
+          if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+          }
 
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-    }
-  )
-  .on('broadcast', { event: 'typing' }, (payload) => {
-    if (payload?.sender_id !== user.id) {
-      setClientTyping(true);
+          typingTimeoutRef.current = setTimeout(() => {
+            setClientTyping(false);
+            typingTimeoutRef.current = null;
+          }, 2000);
+        }
+      })
+      .subscribe();
 
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
+    chatChannelRef.current = ch;
+  } catch (err) {
+    console.error('❌ Error abriendo chat:', err);
+    toast.error('No se pudo abrir el chat');
+  }
+}
 
-      typingTimeoutRef.current = setTimeout(() => {
-        setClientTyping(false);
-        typingTimeoutRef.current = null;
-      }, 2000);
-    }
-  })
-  .subscribe();
+/* === SEND MESSAGE === */
+async function sendMessage() {
+  const text = inputRef.current?.value?.trim();
+  if (!text) return;
 
-      chatChannelRef.current = ch;
-    } catch (err) {
-      console.error('❌ Error abriendo chat:', err);
-      toast.error('No se pudo abrir el chat');
-    }
+  if (!selectedJob?.chat_id) {
+    toast.error('No hay chat activo');
+    return;
   }
 
-  /* === SEND MESSAGE === */
-  async function sendMessage() {
-    const text = inputRef.current?.value?.trim();
-    if (!text) return;
-
-    if (!selectedJob?.chat_id) {
-      toast.error('No hay chat activo');
-      return;
-    }
-
-    if (selectedJob?.status === 'completed') {
-      toast.info('✅ Este trabajo ya fue finalizado. No se pueden enviar más mensajes.');
-      return;
-    }
-
-    try {
-      setSending(true);
-      const { data, error } = await supabase
-        .from('messages')
-        .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, text }])
-        .select();
-
-      if (error) throw error;
-
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === data[0]?.id)) return prev;
-        return [...prev, data[0]];
-      });
-
-      inputRef.current.value = '';
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
-    } catch (err) {
-      console.error('❌ Error enviando mensaje:', err);
-      toast.error('No se pudo enviar el mensaje');
-    } finally {
-      setSending(false);
-    }
+  if (selectedJob?.status === 'completed') {
+    toast.info('✅ Este trabajo ya fue finalizado. No se pueden enviar más mensajes.');
+    return;
   }
+
+  try {
+    setSending(true);
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, text }])
+      .select();
+
+    if (error) throw error;
+
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === data?.[0]?.id)) return prev;
+      return [...prev, data[0]];
+    });
+
+    inputRef.current.value = '';
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+  } catch (err) {
+    console.error('❌ Error enviando mensaje:', err);
+    toast.error('No se pudo enviar el mensaje');
+  } finally {
+    setSending(false);
+  }
+}
 
   if (loading) {
     return (
@@ -1527,78 +1866,142 @@ setUnreadCount(0);
       className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(98,191,185,0.16),transparent_34%),linear-gradient(180deg,#f7fffd_0%,#ffffff_42%,#f8fafc_100%)] text-gray-900 pb-28"
     >
       <div className="max-w-screen-md mx-auto px-4 pt-5">
-        {/* TOP SIMPLE - MISMO COLOR DEL LOGIN */}
-        <header className="mb-4 flex items-center justify-between gap-3">
-          <button type="button" onClick={() => router.push('/role-selector')} className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#62bfb9]/25 bg-white/85 text-slate-700 shadow-[0_12px_28px_rgba(98,191,185,0.14)] backdrop-blur active:scale-95" aria-label="Volver">
-            <ChevronLeft size={20} />
-          </button>
-          <div className="min-w-0 flex-1">
-            <div className="text-[20px] font-black leading-none tracking-tight text-slate-950">Manos<span className="text-[#18b8aa]">YA</span></div>
-            <div className="mt-0.5 text-[11px] font-bold text-slate-400">Panel profesional</div>
-          </div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-[#62bfb9]/25 bg-white/80 px-3 py-2 text-[12px] font-black text-slate-700 shadow-[0_12px_26px_rgba(98,191,185,0.12)] backdrop-blur">
-            <span className={`h-2.5 w-2.5 rounded-full ${status === 'available' ? 'bg-[#18b8aa]' : status === 'paused' ? 'bg-slate-400' : 'bg-cyan-500'}`} />
-            Trabajador
-          </div>
-        </header>
+        {/* HEADER SOCIAL SIMPLE */}
+<header className="mb-4 flex items-center justify-between">
+  <button
+    type="button"
+    onClick={() => router.push('/role-selector')}
+    className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm active:scale-95"
+  >
+    <ChevronLeft size={21} />
+  </button>
 
-        {/* HERO OPERATIVO */}
-        <section className="mb-4 overflow-hidden rounded-[34px] border border-[#62bfb9]/20 bg-white/86 shadow-[0_24px_70px_rgba(98,191,185,0.16)] backdrop-blur-xl">
-          <div className="relative p-5">
-            <div className="absolute -right-16 -top-16 h-44 w-44 rounded-full bg-[#62bfb9]/18 blur-3xl" />
-            <div className="absolute -bottom-20 -left-20 h-52 w-52 rounded-full bg-cyan-300/18 blur-3xl" />
-            <div className="relative flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="inline-flex items-center gap-2 rounded-full bg-[#62bfb9]/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-[#128f86]">
-                  <span className={`h-2 w-2 rounded-full ${status === 'available' ? 'bg-[#18b8aa]' : status === 'paused' ? 'bg-slate-400' : 'bg-cyan-500'}`} />
-                  {meta.pill}
-                </div>
-                <h1 className="mt-3 text-[28px] font-black tracking-tight text-slate-950">{meta.title}</h1>
-                <p className="mt-1 max-w-[320px] text-[14px] font-semibold leading-6 text-slate-500">
-                  {status === 'available'
-                    ? `${stats.available} pedido${stats.available === 1 ? '' : 's'} esperando. Respondé cuando puedas.`
-                    : status === 'paused'
-                    ? 'Estás en pausa. Activá cuando quieras recibir nuevos pedidos.'
-                    : 'Servicio en curso. Seguimos desde chat o ruta.'}
-                </p>
-              </div>
-              <button onClick={toggleStatus} className={`relative h-[64px] w-[118px] shrink-0 overflow-hidden rounded-full border p-1 transition active:scale-95 ${status === 'available' ? 'border-[#62bfb9]/35 bg-[#62bfb9]/18 shadow-[0_16px_34px_rgba(98,191,185,0.22)]' : 'border-slate-200 bg-slate-100 shadow-[0_12px_26px_rgba(15,23,42,0.08)]'}`}>
-                <motion.div className={`absolute top-1 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] ${status === 'available' ? 'bg-[#18b8aa]' : 'bg-slate-900'}`} animate={{ left: status === 'available' ? 58 : 4 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}>
-                  <Power size={20} />
-                </motion.div>
-                <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-[11px] font-black ${status === 'available' ? 'text-[#128f86]' : 'text-transparent'}`}>ON</span>
-                <span className={`absolute right-4 top-1/2 -translate-y-1/2 text-[11px] font-black ${status === 'available' ? 'text-transparent' : 'text-slate-500'}`}>OFF</span>
-              </button>
-            </div>
-            <div className="relative mt-5 flex items-center justify-between rounded-[24px] border border-slate-100 bg-white/78 px-4 py-3 shadow-[0_14px_36px_rgba(15,23,42,0.05)]">
-              <MiniMetric label="Disponibles" value={stats.available} />
-              <MiniMetric label="En curso" value={stats.inProgress} />
-              <MiniMetric label="Finalizados" value={stats.completed} />
-            </div>
-            {!isConnected && <div className="relative mt-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-center text-[12px] font-black text-red-600">Sin internet</div>}
-          </div>
-        </section>
+  <div className="text-center">
+    <div className="text-[20px] font-black text-slate-950">
+      Manos<span className="text-[#18b8aa]">YA</span>
+    </div>
+    <div className="text-[11px] font-bold text-slate-400">
+      Mi espacio de trabajo
+    </div>
+  </div>
 
-        {/* NAVEGACIÓN SIMPLE */}
-        <div className="sticky top-2 z-30 mb-4 rounded-full border border-[#62bfb9]/18 bg-white/82 p-1.5 shadow-[0_18px_46px_rgba(98,191,185,0.13)] backdrop-blur-xl">
-  <div className="grid grid-cols-3 gap-1.5">
-    <WorkerTabButton active={workerTab === 'jobs'} icon={<Briefcase size={15} />} label="Pedidos" onClick={() => setWorkerTab('jobs')} />
+  <button
+    type="button"
+    onClick={toggleStatus}
+    className={`flex h-11 w-11 items-center justify-center rounded-full text-white shadow-sm active:scale-95 ${
+      status === 'available' ? 'bg-[#18b8aa]' : 'bg-slate-900'
+    }`}
+  >
+    <Power size={19} />
+  </button>
+</header>
+
+{/* CARD SOCIAL DEL TRABAJADOR */}
+<section className="mb-4 rounded-[32px] bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+  <div className="flex items-center gap-4">
+    <div className="relative">
+      <img
+  src={workerSelfProfile?.avatar_url || '/avatar-fallback.png'}
+  onError={(e) => {
+    e.currentTarget.src = '/avatar-fallback.png';
+  }}
+  alt={workerSelfProfile?.full_name || 'Trabajador'}
+  className="h-16 w-16 rounded-full border-2 border-white object-cover shadow-sm"
+/>
+
+      <span
+        className={`absolute bottom-0 right-0 h-4 w-4 rounded-full border-2 border-white ${
+          status === 'available'
+            ? 'bg-[#18b8aa]'
+            : status === 'paused'
+            ? 'bg-slate-400'
+            : 'bg-cyan-500'
+        }`}
+      />
+    </div>
+
+    <div className="min-w-0 flex-1">
+      <h1 className="truncate text-[22px] font-black text-slate-950">
+        {meta.title}
+      </h1>
+
+      <p className="mt-1 text-[13px] font-semibold leading-5 text-slate-500">
+        {status === 'available'
+          ? 'Estás visible para recibir pedidos.'
+          : status === 'paused'
+          ? 'Estás en pausa. Nadie te verá disponible.'
+          : 'Tenés un servicio en curso.'}
+      </p>
+    </div>
+  </div>
+
+  <div className="mt-5 grid grid-cols-3 gap-2">
+    <div className="rounded-2xl bg-[#63c0ba]/10 p-3 text-center">
+      <div className="text-[20px] font-black text-slate-950">{stats.available}</div>
+      <div className="text-[10px] font-black uppercase text-slate-400">Nuevos</div>
+    </div>
+
+    <div className="rounded-2xl bg-[#63c0ba]/10 p-3 text-center">
+      <div className="text-[20px] font-black text-slate-950">{stats.inProgress}</div>
+      <div className="text-[10px] font-black uppercase text-slate-400">Activos</div>
+    </div>
+
+    <div className="rounded-2xl bg-[#63c0ba]/10 p-3 text-center">
+      <div className="text-[20px] font-black text-slate-950">{stats.completed}</div>
+      <div className="text-[10px] font-black uppercase text-slate-400">Hechos</div>
+    </div>
+  </div>
+
+  <button
+    type="button"
+    onClick={toggleStatus}
+    className={`mt-5 w-full rounded-full px-5 py-4 text-[15px] font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.22)] active:scale-[0.98] ${
+      status === 'available' ? 'bg-[#18b8aa]' : 'bg-slate-900'
+    }`}
+  >
+    {status === 'available'
+      ? 'Estoy disponible'
+      : status === 'paused'
+      ? 'Volver a estar disponible'
+      : 'Estoy trabajando'}
+  </button>
+</section>
+
+{/* TABS SOCIAL LIMPIO */}
+<div className="sticky top-2 z-30 mb-4 rounded-full bg-white p-1.5 shadow-[0_14px_38px_rgba(15,23,42,0.08)]">
+  <div className="grid grid-cols-2 gap-1.5">
     <WorkerTabButton
-  active={false}
-  icon={<Sparkles size={15} />}
-  label="Feed"
-  onClick={() => router.push('/worker/feed')}
-/>
+      active={workerTab === 'jobs'}
+      icon={<Briefcase size={15} />}
+      label="Pedidos"
+      onClick={() => setWorkerTab('jobs')}
+    />
 
-<WorkerTabButton
-  active={false}
-  icon={<User2 size={15} />}
-  label="Mi oficio"
-  onClick={() => router.push('/worker/onboard')}
-/>
+    <WorkerTabButton
+      active={false}
+      icon={<User2 size={15} />}
+      label="Perfil"
+      onClick={() => router.push('/worker/onboard')}
+    />
   </div>
 </div>
-
+{/* CTA PRINCIPAL FEED */}
+<button
+  type="button"
+  onClick={() => router.push('/worker/feed')}
+  className="
+    fixed bottom-[84px] left-1/2 z-[60]
+    flex -translate-x-1/2 items-center gap-2
+    rounded-full bg-[#18b8aa]
+    px-6 py-4
+    text-[14px]font-black text-white
+    shadow-[0_18px_45px_rgba(24,184,170,0.34)]
+    active:scale-[0.97]
+  "
+>
+  <Sparkles size={17} />
+  Mostrar mi trabajo
+</button>
         {/* CONTENIDO SIMPLE */}
         {workerTab === 'jobs' && (
           jobs.length === 0 ? (
@@ -1609,53 +2012,182 @@ setUnreadCount(0);
             </div>
           ) : (
             <section className="grid gap-3">
-              {jobs.map((job, index) => {
-                const details = parseJobRequestDetails(job.description);
-                const isOpen = job.status === 'open';
-                const isActiveJob = job.status === 'accepted' || job.status === 'assigned' || job.status === 'scheduled';
-                const clientName = job?.client?.full_name || 'Cliente';
+  {jobs.map((job, index) => {
+    const details = parseJobRequestDetails(job.description);
 
-                return (
-                  <motion.article key={job.id} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.035 }} className="overflow-hidden rounded-[30px] border border-slate-100 bg-white/90 p-4 shadow-[0_18px_52px_rgba(15,23,42,0.07)] backdrop-blur">
-                    <div className="flex items-start gap-3">
-                      <img src={job.client?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={clientName} className="h-12 w-12 shrink-0 rounded-2xl border border-[#62bfb9]/25 object-cover" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <h3 className="truncate text-[16px] font-black text-slate-950">{clientName}</h3>
-                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${jobStatusPill(job.status)}`}>{prettyStatus(job.status)}</span>
-                        </div>
-                        <p className="mt-1 text-[14px] font-black text-[#128f86]">{details.serviceLabel || job.service_type || 'Servicio general'}</p>
-                        <p className="mt-1 line-clamp-2 text-[13px] font-semibold leading-5 text-slate-500">{details.notes || details.summary.join(' · ') || job.title || 'Solicitud creada desde ManosYA.'}</p>
-                        {(details.requestedDate || details.requestedTime || details.requestKind === 'quote') && (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {details.requestKind === 'quote' && <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-black text-amber-700 ring-1 ring-amber-100">Presupuesto</span>}
-                            {details.requestedDate && <span className="rounded-full bg-cyan-50 px-3 py-1 text-[11px] font-black text-cyan-700 ring-1 ring-cyan-100">{details.requestedDate}</span>}
-                            {details.requestedTime && <span className="rounded-full bg-cyan-50 px-3 py-1 text-[11px] font-black text-cyan-700 ring-1 ring-cyan-100">{details.requestedTime}</span>}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+    const isOpen = job.status === 'open';
 
-                    {isOpen && (
-                      <div className="mt-4 grid grid-cols-[1fr_0.72fr] gap-2">
-                        <button onClick={() => acceptJob(job)} className="rounded-full bg-[#18b8aa] py-3 text-[14px] font-black text-white shadow-[0_16px_34px_rgba(98,191,185,0.26)] transition active:scale-[0.98]">{details.requestKind === 'booking' ? 'Aceptar agenda' : 'Aceptar'}</button>
-                        <button onClick={() => rejectJob(job)} className="rounded-full border border-slate-200 bg-white py-3 text-[14px] font-black text-slate-600 transition active:scale-[0.98]">Rechazar</button>
-                      </div>
-                    )}
+    const isActiveJob =
+      job.status === 'accepted' ||
+      job.status === 'assigned' ||
+      job.status === 'scheduled';
 
-                    {isActiveJob && (
-                      <div className="mt-4 grid grid-cols-3 gap-2">
-                        <button onClick={() => { setSelectedJob(job); openGoogleMaps(job.client_lat, job.client_lng); }} className="rounded-full bg-slate-950 px-3 py-3 text-[13px] font-black text-white shadow-[0_14px_30px_rgba(15,23,42,0.14)] active:scale-[0.98]">Ruta</button>
-                        <button onClick={() => openChat(job)} className="relative rounded-full border border-[#62bfb9]/25 bg-white px-3 py-3 text-[13px] font-black text-slate-700 active:scale-[0.98]">Chat{hasUnread && unreadCount > 0 && (<span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white ring-2 ring-white">{unreadCount > 99 ? '99+' : unreadCount}</span>)}</button>
-                        <button onClick={() => { if (job.status === 'scheduled') { toast.info('Este servicio está agendado. Todavía no corresponde finalizarlo.'); return; } completeJob(job); }} className="rounded-full bg-[#18b8aa] px-3 py-3 text-[13px] font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.22)] active:scale-[0.98]">{job.status === 'scheduled' ? 'Agenda' : 'Finalizar'}</button>
-                      </div>
-                    )}
+    const clientName =
+  job?.client?.full_name?.trim() ||
+  'Cliente ManosYA';
 
-                    {job.status === 'completed' && <div className="mt-4 rounded-full bg-[#62bfb9]/10 py-3 text-center text-[13px] font-black text-[#128f86]">Trabajo finalizado</div>}
-                  </motion.article>
-                );
-              })}
-            </section>
+const lastMessage =
+  jobLastMessages?.[job.id];
+
+const clientMessage =
+  lastMessage?.text?.trim() ||
+  details.notes ||
+  details.summary.join(' · ') ||
+  job.title ||
+  'Consulta desde feed cliente';
+
+const isThisJobSelected =
+  selectedJob?.id && String(selectedJob.id) === String(job.id);
+
+const unreadMessages =
+  Number(workerUnreadByJob?.[String(job.id)] || 0);
+
+    return (
+     <motion.article
+  key={job.id}
+  initial={{ opacity: 0, y: 6 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ delay: index * 0.02 }}
+  onClick={() => openChat(job)}
+  className="
+    group relative overflow-hidden
+    rounded-[18px]
+    border border-[#63c0ba]/10
+    bg-white/96
+    px-3 py-2.5
+    shadow-[0_4px_14px_rgba(15,23,42,0.04)]
+    active:scale-[0.99]
+  "
+>
+ <div className="flex items-center gap-3">
+    <div className="relative shrink-0">
+      <img
+        src={job?.client?.avatar_url || '/avatar-fallback.png'}
+        alt={clientName}
+        className="
+          h-10 w-10 rounded-xl
+          border border-[#63c0ba]/15
+          object-cover
+        "
+      />
+
+      <span className="
+        absolute -bottom-1 -right-1
+        flex h-5 w-5 items-center justify-center
+        rounded-full bg-[#18b8aa]
+        text-white shadow-sm
+      ">
+        <MessageCircle size={11} />
+      </span>
+    </div>
+
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="truncate text-[15px] font-black text-slate-950">
+          {clientName}
+        </h3>
+
+        <span
+          className={`
+            shrink-0 rounded-full px-2.5 py-1
+            text-[10px] font-black
+            ${jobStatusPill(job.status)}
+          `}
+        >
+          {prettyStatus(job.status)}
+        </span>
+      </div>
+
+      <div className="mt-1 flex items-center gap-2">
+        <span className="
+          rounded-full bg-[#63c0ba]/10
+          px-2 py-1 text-[10px]
+          font-black text-[#128f86]
+        ">
+          {details.serviceLabel || job.service_type || 'Servicio'}
+        </span>
+
+        <span className="truncate text-[11px] font-bold text-slate-400">
+          Cliente conectado
+        </span>
+      </div>
+
+     <p className="
+        mt-1 line-clamp-1
+        text-[12px] font-semibold
+        leading-4 text-slate-500
+      ">
+        {clientMessage}
+      </p>
+    </div>
+  </div>
+
+<div className="ml-[52px] mt-2 flex items-center justify-between">
+  <div className="flex items-center gap-1">
+    <span className="h-2 w-2 rounded-full bg-[#18b8aa]" />
+
+    <span className="text-[10px] font-black uppercase tracking-[0.08em] text-[#18b8aa]">
+      Chat activo
+    </span>
+  </div>
+
+  <div className="flex items-center gap-2">
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        openGoogleMaps(job.client_lat, job.client_lng);
+      }}
+      className="
+        relative flex h-9 w-9 items-center justify-center
+        rounded-full bg-red-50 text-red-500
+        shadow-sm
+        active:scale-95
+      "
+    >
+      <MapPin size={16} />
+    </button>
+
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        openChat(job);
+      }}
+      className="
+        relative flex h-9 w-9 items-center justify-center
+        rounded-full bg-[#18b8aa]/10
+        text-[#18b8aa]
+        transition-all duration-200
+        hover:bg-[#18b8aa]/18
+        active:scale-95
+      "
+    >
+      <MessageCircle size={16} />
+
+      {unreadMessages > 0 && (
+        <span
+          key={unreadMessages}
+          className="
+            absolute -right-1.5 -top-1.5
+            flex h-5 min-w-[20px] items-center justify-center
+            rounded-full bg-red-500 px-1
+            text-[10px] font-black leading-none text-white
+            shadow-[0_10px_24px_rgba(239,68,68,0.42)]
+            ring-2 ring-white
+            animate-pulse
+          "
+        >
+          {unreadMessages > 9 ? '9+' : unreadMessages}
+        </span>
+      )}
+    </button>
+  </div>
+</div>
+</motion.article>
+    );
+  })}
+</section>
           )
         )}
 
@@ -1688,159 +2220,310 @@ setUnreadCount(0);
   </section>
 )}
 
-        {/* CHAT MODAL */}
-        <AnimatePresence>
-          {isChatOpen && selectedJob && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-end z-[80]"
+        {/* CHAT MODAL - MISMO ESTILO CLIENTE */}
+<AnimatePresence>
+  {isChatOpen && selectedJob && (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[90] overflow-hidden bg-[#63c0ba] text-[#123437]"
+    >
+      <div className="mx-auto flex h-[100dvh] max-w-3xl flex-col bg-[#63c0ba]">
+        <header className="z-20 border-b border-white/35 bg-[#63c0ba]/95 px-3 py-2 shadow-[0_10px_28px_rgba(18,52,55,0.10)] backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsChatOpen(false)}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/18 text-white active:bg-white/28"
             >
-              <motion.div
-                initial={{ y: '100%' }}
-                animate={{ y: 0 }}
-                exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 18 }}
-                className="bg-white rounded-t-[32px] w-full max-w-md shadow-[0_-20px_60px_rgba(0,0,0,0.20)] overflow-hidden"
-              >
-                <div className="px-4 py-4 border-b border-gray-100 bg-white">
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={() => setIsChatOpen(false)}
-                      className="flex items-center gap-1 text-gray-600 hover:text-red-500"
-                    >
-                      <ChevronLeft size={18} /> Volver
-                    </button>
+              <ChevronLeft size={24} />
+            </button>
 
-                    <div className="flex items-center gap-3">
-  <img
-    src={selectedJob?.client?.avatar_url || '/avatar-fallback.png'}
-    onError={(e) => {
-      e.currentTarget.src = '/avatar-fallback.png';
-    }}
-    alt={selectedJob?.client?.full_name || 'Cliente'}
-    className="h-11 w-11 rounded-full object-cover border-2 border-emerald-100 shadow-sm"
-  />
+            <img
+              src={selectedJob?.client?.avatar_url || '/avatar-fallback.png'}
+              onError={(e) => {
+                e.currentTarget.src = '/avatar-fallback.png';
+              }}
+              alt={selectedJob?.client?.full_name || 'Cliente'}
+              className="h-11 w-11 rounded-full border-2 border-white object-cover"
+            />
 
-  <div className="text-left">
-    <h2 className="font-extrabold text-gray-800 leading-tight">
-      {selectedJob?.client?.full_name || 'Cliente'}
-    </h2>
-    <div className="text-[11px] text-emerald-600 font-semibold">Canal activo</div>
+           <div className="flex items-center gap-3">
+ <div className="min-w-0 flex-1">
+  <div className="truncate text-[17px] font-black text-white">
+    {clientProfile?.full_name ||
+      selectedJob?.client?.full_name ||
+      'Cliente'}
+  </div>
+
+  <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[12px] font-bold text-white/82">
+    <span className="truncate">
+      {parseJobRequestDetails(selectedJob?.description).serviceLabel ||
+        selectedJob?.service_type ||
+        'Servicio'}
+    </span>
   </div>
 </div>
+</div>
 
-                    <button
-  onClick={() => {
-    openGoogleMaps(selectedJob.client_lat, selectedJob.client_lng);
-  }}
-  className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800 text-sm font-semibold"
+<button
+  type="button"
+  onClick={() => openGoogleMaps(selectedJob.client_lat, selectedJob.client_lng)}
+  className="
+    flex h-10 w-10 shrink-0 items-center justify-center
+    rounded-full bg-white/18 text-white
+    shadow-sm active:scale-95
+  "
 >
-  <Map size={16} /> Mapa
+  <MapPin size={20} />
 </button>
-                  </div>
 
-                  {clientTyping && (
-  <div className="mt-2 flex items-center justify-center gap-2 text-xs text-emerald-600 font-semibold animate-pulse">
-    <span className="inline-flex gap-1">
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-    </span>
-    <span>{selectedJob?.client?.full_name || 'El cliente'} está escribiendo…</span>
-  </div>
-)}
+    
+          </div>
+
+          {clientTyping && (
+            <div className="mt-2 flex items-center justify-center gap-2 text-xs font-bold text-white/90 animate-pulse">
+              <span className="inline-flex gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                <span className="h-1.5 w-1.5 rounded-full bg-white" />
+              </span>
+              <span>{selectedJob?.client?.full_name || 'El cliente'} está escribiendo…</span>
+            </div>
+          )}
+        </header>
+
+        <main className="relative flex-1 overflow-y-auto px-3 py-4">
+          <div className="pointer-events-none absolute inset-0 opacity-[0.18]">
+            <div
+              className="h-full w-full"
+              style={{
+                backgroundImage: `
+                  radial-gradient(circle at 16px 16px, rgba(255,255,255,.55) 1.2px, transparent 1.4px),
+                  linear-gradient(135deg, transparent 0 44%, rgba(255,255,255,.26) 45% 46%, transparent 47% 100%)
+                `,
+                backgroundSize: '82px 82px, 118px 118px',
+              }}
+            />
+          </div>
+
+          <div className="pointer-events-none absolute inset-0 opacity-[0.12]">
+            <div className="grid grid-cols-4 gap-12 p-8 text-white">
+              {Array.from({ length: 36 }).map((_, i) => {
+                const icons = [Briefcase, Sparkles, ShieldCheck];
+                const Icon = icons[i % icons.length];
+
+                return (
+                  <Icon
+                    key={i}
+                    size={28 + (i % 3) * 8}
+                    className="rotate-[-18deg]"
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="relative z-10">
+            <div className="mx-auto mb-4 w-fit rounded-lg bg-white/28 px-3 py-1 text-[12px] font-black text-[#1e4e53] backdrop-blur-md">
+              Hoy
+            </div>
+
+            {messages.length > 0 && (
+              <div className="mx-auto mb-5 max-w-[330px] rounded-xl bg-white/72 px-4 py-3 text-center text-[12px] font-bold leading-5 text-[#1e4e53] shadow-sm backdrop-blur-md">
+                <ShieldCheck size={14} className="mb-1 inline text-[#1e4e53]" /> Los mensajes están protegidos dentro de ManosYA.
+              </div>
+            )}
+
+            {messages.length === 0 ? (
+              <div className="flex h-[60vh] flex-col items-center justify-center text-center text-white/90">
+                <div className="rounded-full bg-white/22 p-4">
+                  <MessageCircle size={28} />
                 </div>
-{selectedJob && (() => {
-  const details = parseJobRequestDetails(selectedJob.description);
+                <div className="mt-4 text-lg font-black text-white">
+                  Conversación iniciada
+                </div>
+                <div className="mt-2 max-w-[280px] text-sm font-semibold text-white/80">
+                  Respondé disponibilidad, precio o tiempo de llegada.
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {messages.map((m) => {
+                  const mine = m.sender_id === user?.id;
 
-  return (
-    <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-emerald-50 to-cyan-50 text-sm text-gray-700">
-      <div className="font-extrabold text-emerald-700">
-        {details.serviceLabel || selectedJob?.service_type || 'Servicio'}
+                  return (
+                    <div
+                      key={m.id}
+                      className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`relative max-w-[82%] rounded-[18px] px-3 py-2 text-[14px] leading-5 shadow-sm ${
+                          mine
+                            ? 'rounded-tr-[4px] bg-white text-[#123437]'
+                            : 'rounded-tl-[4px] bg-[#dff7f5] text-[#123437]'
+                        }`}
+                      >
+                        {String(m.text || '').includes('📍 Te compartí mi ubicación.') ? (
+  <button
+    type="button"
+    onClick={() => {
+      if (
+        selectedJob?.client_lat != null &&
+        selectedJob?.client_lng != null
+      ) {
+        openGoogleMaps(
+          selectedJob.client_lat,
+          selectedJob.client_lng
+        );
+      } else {
+        toast.error('Ubicación no disponible todavía');
+      }
+    }}
+    className="
+      w-[260px] overflow-hidden
+      rounded-[22px]
+      bg-white
+      text-left
+      shadow-[0_10px_28px_rgba(15,23,42,0.10)]
+      transition-all
+      active:scale-[0.98]
+    "
+  >
+    <div className="relative h-[118px] overflow-hidden bg-[#dff7f5]">
+      <div
+        className="absolute inset-0 opacity-80"
+        style={{
+          backgroundImage: `
+            linear-gradient(90deg, rgba(24,184,170,.18) 1px, transparent 1px),
+            linear-gradient(rgba(24,184,170,.18) 1px, transparent 1px)
+          `,
+          backgroundSize: '26px 26px',
+        }}
+      />
+
+      <div className="absolute left-[-18px] top-8 h-7 w-[130%] rotate-[-10deg] rounded-full bg-white/70" />
+      <div className="absolute left-[-22px] top-14 h-6 w-[130%] rotate-[16deg] rounded-full bg-white/80" />
+
+      <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center">
+        <div className="relative">
+          <img
+            src={selectedJob?.client?.avatar_url || clientProfile?.avatar_url || '/avatar-fallback.png'}
+            onError={(e) => {
+              e.currentTarget.src = '/avatar-fallback.png';
+            }}
+            alt={selectedJob?.client?.full_name || clientProfile?.full_name || 'Cliente'}
+            className="h-16 w-16 rounded-full border-[4px] border-white object-cover shadow-[0_12px_30px_rgba(15,23,42,0.25)]"
+          />
+
+          <span className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border-[3px] border-white bg-[#18b8aa] text-white shadow-md">
+            <MapPin size={14} />
+          </span>
+        </div>
       </div>
 
-      {(details.requestedDate || details.requestedTime) && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {details.requestedDate && (
-            <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-[11px] font-bold text-cyan-700">
-              📅 {details.requestedDate}
-            </span>
-          )}
-          {details.requestedTime && (
-            <span className="rounded-full border border-cyan-200 bg-white px-3 py-1 text-[11px] font-bold text-cyan-700">
-              ⏰ {details.requestedTime}
-            </span>
-          )}
-        </div>
-      )}
-
-      {details.notes && (
-        <p className="mt-2 text-[12px] leading-5 text-gray-600">
-          {details.notes}
-        </p>
-      )}
+      <div className="absolute bottom-2 left-2 rounded-full bg-white/92 px-2.5 py-1 text-[10px] font-black text-[#123437] shadow-sm">
+        Mapa del cliente
+      </div>
     </div>
-  );
-})()}
 
-                <div className="flex flex-col h-[70vh] bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]">
-                  <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-                    {messages.map((m) => {
-                      const mine = m.sender_id === user?.id;
-                      return (
-                        <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                          <div
-                            className={`max-w-[82%] px-4 py-3 rounded-2xl text-sm shadow-sm ${
-                              mine
-                                ? 'bg-gradient-to-r from-emerald-500 to-cyan-400 text-white rounded-br-md'
-                                : 'bg-white text-gray-800 border border-gray-200 rounded-bl-md'
-                            }`}
-                          >
-                            {m.text}
-                            <div
-                              className={`text-[10px] mt-1 opacity-75 ${
-                                mine ? 'text-white' : 'text-gray-500'
-                              }`}
-                            >
-                              {new Date(m.created_at).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </div>
-                          </div>
+    <div className="p-3">
+      <div className="text-[14px] font-black text-[#123437]">
+        Ubicación compartida
+      </div>
+
+      <div className="mt-1 text-[12px] font-semibold text-[#123437]/60">
+        Tocá la tarjeta para abrir el mapa
+      </div>
+
+      <div className="mt-3 flex items-center justify-center gap-2 rounded-full bg-[#18b8aa] px-3 py-2.5 text-[12px] font-black text-white shadow-[0_10px_24px_rgba(24,184,170,0.24)]">
+        <MapPin size={14} />
+        Ir a ubicación
+      </div>
+    </div>
+  </button>
+) : (
+  <div className="whitespace-pre-wrap break-words font-semibold">
+    {m.text || ''}
+  </div>
+)}
+
+                        <div className="mt-1 text-right text-[10px] font-bold text-[#1e4e53]/55">
+                          {formatTime(m.created_at)}
                         </div>
-                      );
-                    })}
-                    <div ref={bottomRef} />
-                  </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={bottomRef} />
+              </div>
+            )}
+          </div>
+        </main>
 
-                  <form
-                    className="p-3 border-t border-gray-100 bg-white flex gap-2"
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      await sendMessage();
-                    }}
-                  >
-                    <input
-                      ref={inputRef}
-                      type="text"
-                      placeholder="Escribí un mensaje…"
-                      className="flex-1 bg-gray-100 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-400 border border-gray-200"
-                    />
-                    <button
-                      disabled={sending}
-                      className="h-12 w-12 flex items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-400 text-white font-semibold hover:from-emerald-600 hover:to-cyan-500 transition disabled:opacity-60"
-                    >
-                      <SendHorizontal size={18} />
-                    </button>
-                  </form>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            sendMessage();
+          }}
+          className="border-t border-white/30 bg-[#63c0ba] px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2"
+        >
+          <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+            {['Hola, sí estoy disponible', '¿Para qué hora necesitás?', 'Te paso el precio ahora'].map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                onClick={() => {
+                  if (inputRef.current) inputRef.current.value = chip;
+                }}
+                className="whitespace-nowrap rounded-full bg-white/28 px-3 py-2 text-[11px] font-black text-[#1e4e53] backdrop-blur-md active:bg-white/45"
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-end gap-2">
+  <button
+    type="button"
+    onClick={() =>
+      openGoogleMaps(
+        selectedJob?.client_lat,
+        selectedJob?.client_lng
+      )
+    }
+    className="
+      flex h-12 w-12 shrink-0 items-center justify-center
+      rounded-full bg-white/38 text-[#1e4e53]
+      shadow-[0_10px_26px_rgba(18,52,55,0.14)]
+      backdrop-blur-md active:scale-95
+    "
+  >
+    <MapPin size={20} strokeWidth={2.7} />
+  </button>
+
+  <div className="flex min-h-[48px] flex-1 items-center rounded-[24px] bg-white/38 px-4 shadow-[0_10px_28px_rgba(18,52,55,0.10)] backdrop-blur-md">
+    <input
+      ref={inputRef}
+      placeholder="Escribí un mensaje"
+      className="h-12 flex-1 bg-transparent text-[15px] font-bold text-[#123437] outline-none placeholder:text-[#1e4e53]/55"
+    />
+  </div>
+
+  <button
+    type="submit"
+    disabled={sending}
+    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#1e4e53] shadow-[0_10px_26px_rgba(18,52,55,0.16)] disabled:opacity-45"
+  >
+    <SendHorizontal size={19} strokeWidth={2.7} />
+  </button>
+</div>
+        </form>
+      </div>
+    </motion.div>
+  )}
+</AnimatePresence>
       </div>
             {/* PREVIEW MAP MODAL PRO */}
       <AnimatePresence>
@@ -1914,47 +2597,47 @@ setUnreadCount(0);
     </>
   )}
 
-  <CircleMarker
-    center={[previewTarget.lat, previewTarget.lng]}
-    radius={13}
-    pathOptions={{
-      color: '#ffffff',
-      weight: 4,
-      fillColor: '#ef4444',
-      fillOpacity: 1,
-    }}
-  >
-    <Popup>
-      <div className="min-w-[180px]">
-        <div className="font-extrabold text-gray-800">Cliente</div>
-        <div className="text-sm text-gray-500 mt-1">
-          {selectedJob?.client?.full_name || 'Ubicación del cliente'}
-        </div>
+ <Marker
+  position={[previewTarget.lat, previewTarget.lng]}
+  icon={makeAvatarMarkerIcon({
+    avatarUrl: selectedJob?.client?.avatar_url || clientProfile?.avatar_url,
+    name: selectedJob?.client?.full_name || clientProfile?.full_name || 'Cliente',
+    borderColor: '#ef4444',
+  })}
+>
+  <Popup>
+    <div className="min-w-[190px]">
+      <div className="font-extrabold text-gray-800">
+        {selectedJob?.client?.full_name || clientProfile?.full_name || 'Cliente'}
       </div>
-    </Popup>
-  </CircleMarker>
+      <div className="mt-1 text-sm text-gray-500">
+        Ubicación compartida del cliente
+      </div>
+    </div>
+  </Popup>
+</Marker>
 
   {workerLocation?.lat != null && workerLocation?.lng != null && (
     <>
-      <CircleMarker
-        center={[Number(workerLocation.lat), Number(workerLocation.lng)]}
-        radius={11}
-        pathOptions={{
-          color: '#ffffff',
-          weight: 4,
-          fillColor: '#10b981',
-          fillOpacity: 1,
-        }}
-      >
-        <Popup>
-          <div className="min-w-[180px]">
-            <div className="font-extrabold text-gray-800">Tu ubicación</div>
-            <div className="text-sm text-gray-500 mt-1">
-              Posición actual del trabajador
-            </div>
-          </div>
-        </Popup>
-      </CircleMarker>
+      <Marker
+  position={[Number(workerLocation.lat), Number(workerLocation.lng)]}
+  icon={makeAvatarMarkerIcon({
+    avatarUrl: workerSelfProfile?.avatar_url,
+    name: workerSelfProfile?.full_name || 'Trabajador',
+    borderColor: '#10b981',
+  })}
+>
+  <Popup>
+    <div className="min-w-[190px]">
+      <div className="font-extrabold text-gray-800">
+        {workerSelfProfile?.full_name || 'Tu ubicación'}
+      </div>
+      <div className="mt-1 text-sm text-gray-500">
+        Posición actual del trabajador
+      </div>
+    </div>
+  </Popup>
+</Marker>
 
       <Circle
         center={[Number(workerLocation.lat), Number(workerLocation.lng)]}
@@ -1973,26 +2656,38 @@ setUnreadCount(0);
 
                            {/* TOP ACTIONS */}
               <div className="pointer-events-none absolute inset-x-0 top-0 z-[1200]">
-                <div className="flex items-start justify-between p-4">
-                  <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.20)] backdrop-blur">
-                    <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-                    <span className="text-[13px] font-bold text-gray-800">
-                      Ubicación del cliente
-                    </span>
-                  </div>
+  <div className="flex items-start justify-between gap-3 p-4">
+    <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.20)] backdrop-blur">
+      <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+      <span className="text-[13px] font-bold text-gray-800">
+        Ubicación del cliente
+      </span>
+    </div>
 
-                 <button
-  onClick={() => {
-    setPreviewMapOpen(false);
-    setPreviewTarget(null);
-    setPreviewRoute(null);
-  }}
-                    className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-gray-700 shadow-[0_10px_30px_rgba(0,0,0,0.20)] backdrop-blur hover:bg-white"
-                  >
-                    <XCircle size={22} />
-                  </button>
-                </div>
-              </div>
+    <div className="pointer-events-auto flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => openExternalNavigation(previewTarget.lat, previewTarget.lng)}
+        className="inline-flex h-11 items-center gap-2 rounded-full bg-[#18b8aa] px-4 text-[13px] font-black text-white shadow-[0_10px_30px_rgba(0,0,0,0.20)] active:scale-95"
+      >
+        <MapPin size={17} />
+        Abrir GPS
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setPreviewMapOpen(false);
+          setPreviewTarget(null);
+          setPreviewRoute(null);
+        }}
+        className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-gray-700 shadow-[0_10px_30px_rgba(0,0,0,0.20)] backdrop-blur hover:bg-white"
+      >
+        <XCircle size={22} />
+      </button>
+    </div>
+  </div>
+</div>
 
                            {/* GRADIENTE INFERIOR */}
               <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/55 via-black/20 to-transparent z-[1150]" />
@@ -2035,7 +2730,11 @@ setUnreadCount(0);
         <div className="relative">
           <div className="absolute inset-0 rounded-full bg-emerald-400/20 blur-md" />
           <img
-            src={selectedJob?.client?.avatar_url || '/avatar-fallback.png'}
+  src={
+    clientProfile?.avatar_url ||
+    selectedJob?.client?.avatar_url ||
+    '/avatar-fallback.png'
+  }
             alt={selectedJob?.client?.full_name || 'Cliente'}
             className="relative h-14 w-14 rounded-full border-2 border-emerald-200 object-cover shadow-[0_10px_24px_rgba(16,185,129,0.18)]"
           />
@@ -2143,7 +2842,9 @@ setUnreadCount(0);
               Cliente
             </div>
             <div className="mt-1 text-sm font-extrabold text-gray-800">
-              {selectedJob?.client?.full_name || 'Cliente'}
+              {clientProfile?.full_name ||
+  selectedJob?.client?.full_name ||
+  'Cliente'}
             </div>
           </div>
 
@@ -2301,15 +3002,6 @@ setUnreadCount(0);
         </div>
       </div>
 
-      {/* BOTÓN MAPA */}
-      <button
-        onClick={() => setMapOpen(true)}
-        className="fixed bottom-24 left-4 z-50 inline-flex items-center gap-2 rounded-full bg-[#18b8aa] text-white px-4 py-3 shadow-[0_16px_34px_rgba(16,185,129,0.24)] font-bold"
-      >
-        <Map size={18} />
-        Zonas
-      </button>
-
       {/* MAP MODAL */}
       <AnimatePresence>
         {mapOpen && (
@@ -2408,14 +3100,7 @@ setUnreadCount(0);
         )}
       </AnimatePresence>
 
-      <Bot360
-        stats={{
-          totalWorkers: jobs.length,
-          jobsCompleted: jobs.filter((j) => j.status === 'completed').length,
-          efficiency: jobs.length > 0 ? jobs.filter((j) => j.status === 'completed').length / jobs.length : 0,
-        }}
-        workerStatus={status}
-      />
+    
     </motion.div>
   );
 }
@@ -2665,86 +3350,5 @@ function Bot360({ stats = {}, workerStatus = 'available' }) {
     }
   }, [open, stats]);
 
-  return (
-    <div className="fixed bottom-24 right-5 z-[60]">
-      {showParty && (
-        <div className="fixed inset-0 bg-emerald-100/70 backdrop-blur-sm flex flex-col items-center justify-center z-[70] animate-fade-in">
-          <motion.div
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
-            transition={{ duration: 0.6 }}
-            className="text-center"
-          >
-            <div className="text-5xl mb-2">🎊</div>
-            <div className="text-2xl font-bold text-emerald-700">¡Excelente trabajo!</div>
-            <p className="text-emerald-600 font-medium mt-1">
-              Tu esfuerzo deja huella. Seguí así 💚
-            </p>
-          </motion.div>
-        </div>
-      )}
-
-      {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          className="bg-gradient-to-r from-emerald-500 to-cyan-400 text-white rounded-full px-4 py-4 shadow-[0_18px_34px_rgba(16,185,129,0.28)] hover:scale-105 transition flex items-center gap-2 font-extrabold"
-        >
-          <motion.span animate={{ rotate: [0, 10, 0, -10, 0] }} transition={{ repeat: Infinity, duration: 2 }}>
-            <Bot size={18} />
-          </motion.span>
-          <span>360Bot</span>
-        </button>
-      )}
-
-      {open && (
-        <div className="bg-white rounded-[28px] shadow-[0_24px_70px_rgba(0,0,0,0.18)] border border-gray-200 w-80 h-[500px] flex flex-col overflow-hidden">
-          <div
-            className={`p-4 bg-gradient-to-r ${COLORS[mode]} text-white font-semibold rounded-t-[28px] flex justify-between items-center`}
-          >
-            <div className="flex items-center gap-2">
-              <motion.span animate={{ rotate: [0, 10, 0, -10, 0] }} transition={{ repeat: Infinity, duration: 3 }}>
-                <Bot size={18} />
-              </motion.span>
-              <span className="font-extrabold">360Bot</span>
-            </div>
-            <button onClick={() => setOpen(false)} className="hover:opacity-80">
-              ✕
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-3 bg-[linear-gradient(180deg,#f8fffd_0%,#ffffff_100%)] space-y-2 text-sm">
-            {messages.map((m, i) => (
-              <div
-                key={i}
-                className={`px-3 py-2 rounded-2xl max-w-[88%] ${
-                  m.from === 'bot'
-                    ? 'bg-emerald-50 text-gray-800 border border-emerald-100'
-                    : 'bg-gradient-to-r from-emerald-500 to-cyan-400 text-white self-end ml-auto'
-                }`}
-              >
-                {m.text}
-              </div>
-            ))}
-            {typing && <div className="italic text-gray-400 text-xs animate-pulse">Rodolfo está escribiendo...</div>}
-          </div>
-
-          <div className="flex items-center border-t bg-white p-3 gap-2">
-            <input
-              className="flex-1 text-sm border rounded-2xl px-3 py-3 outline-none focus:ring-2 focus:ring-emerald-400 bg-gray-50"
-              placeholder="Decile algo a Rodolfo..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleInput()}
-            />
-            <button
-              onClick={handleInput}
-              className="bg-gradient-to-r from-emerald-500 to-cyan-400 text-white rounded-2xl p-3 hover:from-emerald-600 hover:to-cyan-500"
-            >
-              <SendHorizontal size={16} />
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+ 
 }

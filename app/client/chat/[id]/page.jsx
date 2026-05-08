@@ -66,12 +66,14 @@ export default function ChatPage() {
   const [user, setUser] = useState(null);
   const [chatMeta, setChatMeta] = useState(null);
   const [workerProfile, setWorkerProfile] = useState(null);
+  const [workerUserProfile, setWorkerUserProfile] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [activeJob, setActiveJob] = useState(null);
   const [requesting, setRequesting] = useState(false);
+  const [sharingLocation, setSharingLocation] = useState(false);
 
   const messagesWrapRef = useRef(null);
 
@@ -103,20 +105,34 @@ export default function ChatPage() {
         if (chat?.worker_id) {
           const { data: worker } = await supabase
             .from('map_workers_view')
-            .select('*')
+.select('*')
             .eq('user_id', chat.worker_id)
             .maybeSingle();
+if (alive) setWorkerProfile(worker || null);
 
-          if (alive) setWorkerProfile(worker || null);
+const { data: userProfile } = await supabase
+  .from('profiles')
+  .select('full_name, avatar_url')
+  .eq('id', chat.worker_id)
+  .maybeSingle();
 
-          const { data: jobs } = await supabase
-            .from('jobs')
-            .select('*')
-            .eq('client_id', user.id)
-            .eq('worker_id', chat.worker_id)
-            .in('status', ['open', 'accepted', 'assigned'])
-            .order('created_at', { ascending: false })
-            .limit(1);
+if (alive) {
+  setWorkerUserProfile(userProfile || null);
+}
+
+         const { data: jobs } = await supabase
+  .from('jobs')
+  .select('*')
+  .eq('client_id', user.id)
+  .eq('worker_id', chat.worker_id)
+ .in('status', [
+  'open',
+  'scheduled',
+  'accepted',
+  'assigned',
+])
+  .order('created_at', { ascending: false })
+  .limit(1);
 
           if (alive) setActiveJob(jobs?.[0] || null);
         }
@@ -192,8 +208,14 @@ export default function ChatPage() {
     });
   }, [messages]);
 
-  const workerName = workerProfile?.full_name || 'Trabajador';
-  const workerAvatar = workerProfile?.avatar_url || '/avatar-fallback.png';
+  const workerName =
+  workerUserProfile?.full_name ||
+  workerProfile?.full_name ||
+  'Trabajador';
+ const workerAvatar =
+  workerUserProfile?.avatar_url ||
+  workerProfile?.avatar_url ||
+  '/avatar-fallback.png';
   const workerService = serviceLabelForWorker(workerProfile);
 
   const suggestionChips = useMemo(
@@ -205,88 +227,201 @@ export default function ChatPage() {
     [workerService]
   );
 
-  async function sendMessage(e) {
-    e.preventDefault();
+async function sendMessage(e) {
+  e.preventDefault();
 
-    const text = input.trim();
-    if (!text || !user?.id || !chatId) return;
+  const text = input.trim();
+  if (!text || !user?.id || !chatId) return;
 
-    try {
-      setSending(true);
+  try {
+    setSending(true);
 
-      const { error } = await supabase.from('messages').insert([
+    const { data, error } = await supabase
+      .from('messages')
+      .insert([
         {
           chat_id: chatId,
           sender_id: user.id,
           text,
         },
-      ]);
+      ])
+      .select()
+      .single();
 
-      if (error) throw error;
-      setInput('');
-    } catch (err) {
-      console.error(err);
-      toast.error('Error enviando mensaje');
-    } finally {
-      setSending(false);
-    }
+    if (error) throw error;
+
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === data.id)) return prev;
+      return [...prev, data];
+    });
+
+    setInput('');
+  } catch (err) {
+    console.error('Error enviando mensaje:', err);
+    toast.error('Error enviando mensaje');
+  } finally {
+    setSending(false);
+  }
+}
+async function shareClientLocation() {
+  if (!user?.id || !chatId) return;
+
+  if (!navigator.geolocation) {
+    toast.error('Tu navegador no permite compartir ubicación');
+    return;
   }
 
-  async function requestWorkerFromChat() {
-    if (!user?.id || !chatMeta?.worker_id) return;
+  try {
+    setSharingLocation(true);
 
-    if (activeJob) {
-      router.push('/client/jobs');
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      });
+    });
+
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+
+    let job = activeJob;
+
+    if (!job?.id) {
+      await requestWorkerFromChat('Te comparto mi ubicación para que puedas venir.');
       return;
     }
 
-    try {
-      setRequesting(true);
+    const { error: jobError } = await supabase
+  .from('jobs')
+  .update({
+    client_lat: lat,
+    client_lng: lng,
+  })
+  .eq('id', job.id);
 
-      const chosenService = normalizeSlug(
-        splitWorkerServices(workerProfile)[0] || workerProfile?.service_type || ''
-      );
+    if (jobError) throw jobError;
 
-      const { data: job, error } = await supabase
-        .from('jobs')
-        .insert([
-          {
-            client_id: user.id,
-            worker_id: chatMeta.worker_id,
-            service_type: chosenService || null,
-            status: 'open',
-            description: `Servicio: ${workerService} · Solicitado desde chat`,
-          },
-        ])
-        .select('*')
-        .single();
+    await supabase.from('messages').insert([
+      {
+        chat_id: chatId,
+        sender_id: user.id,
+        text: '📍 Te compartí mi ubicación.',
+      },
+    ]);
 
-      if (error) throw error;
+    setActiveJob((prev) =>
+      prev
+        ? {
+            ...prev,
+            client_lat: lat,
+            client_lng: lng,
+          }
+        : prev
+    );
 
-      await supabase.from('chats').update({ job_id: job.id }).eq('id', chatId);
-
-      try {
-        localStorage.setItem(
-          'activeJobChat',
-          JSON.stringify({
-            jid: job.id,
-            jstatus: job.status,
-            cid: chatId,
-            selectedWorker: workerProfile || null,
-          })
-        );
-      } catch {}
-
-      setActiveJob(job);
-      toast.success('Solicitud enviada');
-      router.push('/client/jobs');
-    } catch (err) {
-      console.error(err);
-      toast.error('No pudimos solicitar');
-    } finally {
-      setRequesting(false);
-    }
+    toast.success('Ubicación compartida con el trabajador');
+  } catch (err) {
+    console.error('Error compartiendo ubicación:', err);
+    toast.error('No pudimos compartir tu ubicación');
+  } finally {
+    setSharingLocation(false);
   }
+}
+
+function openSharedLocationFromChat() {
+  const lat = activeJob?.client_lat;
+  const lng = activeJob?.client_lng;
+
+  if (lat == null || lng == null) {
+    toast.error('Ubicación no disponible todavía');
+    return;
+  }
+
+  window.open(
+    `https://www.google.com/maps/search/?api=1&query=${Number(lat)},${Number(lng)}`,
+    '_blank'
+  );
+}
+async function requestWorkerFromChat(customText = '') {
+  if (!user?.id || !chatMeta?.worker_id || !chatId) return;
+
+  if (
+    activeJob &&
+    ['open', 'scheduled', 'accepted', 'assigned'].includes(
+      String(activeJob.status || '').toLowerCase()
+    )
+  ) {
+    toast.info('Ya tenés una solicitud activa con este trabajador');
+    return;
+  }
+
+  try {
+    setRequesting(true);
+
+    const chosenService = normalizeSlug(
+      splitWorkerServices(workerProfile)[0] || workerProfile?.service_type || ''
+    );
+
+    const serviceLabel = workerService || serviceLabelForWorker(workerProfile);
+
+    const { data: job, error: jobError } = await supabase
+      .from('jobs')
+      .insert([
+        {
+          client_id: user.id,
+          worker_id: chatMeta.worker_id,
+          service_type: chosenService || null,
+          status: 'open',
+          description: `Servicio: ${serviceLabel} · Solicitado desde chat`,
+        },
+      ])
+      .select('*')
+      .single();
+
+    if (jobError) throw jobError;
+
+    const { error: chatError } = await supabase
+      .from('chats')
+      .update({ job_id: job.id })
+      .eq('id', chatId);
+
+    if (chatError) throw chatError;
+
+    const finalText =
+      customText ||
+      `Hola, quiero solicitar tu servicio de ${String(serviceLabel).toLowerCase()}.`;
+
+    await supabase.from('messages').insert([
+      {
+        chat_id: chatId,
+        sender_id: user.id,
+        text: finalText,
+      },
+    ]);
+
+    try {
+      localStorage.setItem(
+        'activeJobChat',
+        JSON.stringify({
+          jid: job.id,
+          jstatus: job.status,
+          cid: chatId,
+          selectedWorker: workerProfile || null,
+        })
+      );
+    } catch {}
+
+    setActiveJob(job);
+    setInput('');
+    toast.success('Solicitud enviada al trabajador');
+  } catch (err) {
+    console.error('requestWorkerFromChat error', err);
+    toast.error(err?.message || 'No pudimos solicitar');
+  } finally {
+    setRequesting(false);
+  }
+}
 
  return (
   <motion.div
@@ -420,9 +555,77 @@ export default function ChatPage() {
                           : 'rounded-tl-[4px] bg-[#dff7f5] text-[#123437]'
                       }`}
                     >
-                      <div className="whitespace-pre-wrap break-words font-semibold">
-                        {m.text || ''}
-                      </div>
+                    {String(m.text || '').includes('📍 Te compartí mi ubicación.') ? (
+  <button
+    type="button"
+    onClick={openSharedLocationFromChat}
+    className="
+      w-[260px] overflow-hidden
+      rounded-[22px]
+      bg-white
+      text-left
+      shadow-[0_10px_28px_rgba(15,23,42,0.10)]
+      transition-all
+      active:scale-[0.98]
+    "
+  >
+    <div className="relative h-[118px] overflow-hidden bg-[#dff7f5]">
+      <div
+        className="absolute inset-0 opacity-80"
+        style={{
+          backgroundImage: `
+            linear-gradient(90deg, rgba(24,184,170,.18) 1px, transparent 1px),
+            linear-gradient(rgba(24,184,170,.18) 1px, transparent 1px)
+          `,
+          backgroundSize: '26px 26px',
+        }}
+      />
+
+      <div className="absolute left-[-18px] top-8 h-7 w-[130%] rotate-[-10deg] rounded-full bg-white/70" />
+      <div className="absolute left-[-22px] top-14 h-6 w-[130%] rotate-[16deg] rounded-full bg-white/80" />
+
+      <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center">
+        <div className="relative">
+          <img
+            src={workerAvatar || '/avatar-fallback.png'}
+            onError={(e) => {
+              e.currentTarget.src = '/avatar-fallback.png';
+            }}
+            alt={workerName || 'Trabajador'}
+            className="h-16 w-16 rounded-full border-[4px] border-white object-cover shadow-[0_12px_30px_rgba(15,23,42,0.25)]"
+          />
+
+          <span className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border-[3px] border-white bg-[#18b8aa] text-white shadow-md">
+            <MapPin size={14} />
+          </span>
+        </div>
+      </div>
+
+      <div className="absolute bottom-2 left-2 rounded-full bg-white/92 px-2.5 py-1 text-[10px] font-black text-[#123437] shadow-sm">
+        Mapa compartido
+      </div>
+    </div>
+
+    <div className="p-3">
+      <div className="text-[14px] font-black text-[#123437]">
+        Ubicación compartida
+      </div>
+
+      <div className="mt-1 text-[12px] font-semibold text-[#123437]/60">
+        Tocá la tarjeta para abrir el mapa
+      </div>
+
+      <div className="mt-3 flex items-center justify-center gap-2 rounded-full bg-[#18b8aa] px-3 py-2.5 text-[12px] font-black text-white shadow-[0_10px_24px_rgba(24,184,170,0.24)]">
+        <MapPin size={14} />
+        Ver ubicación
+      </div>
+    </div>
+  </button>
+) : (
+  <div className="whitespace-pre-wrap break-words font-semibold">
+    {m.text || ''}
+  </div>
+)}
 
                       <div className="mt-1 text-right text-[10px] font-bold text-[#1e4e53]/55">
                         {formatTime(m.created_at)}
@@ -450,36 +653,63 @@ export default function ChatPage() {
         className="border-t border-white/30 bg-[#63c0ba] px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2"
       >
         <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
-          {suggestionChips.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              onClick={() => setInput(chip)}
-              className="whitespace-nowrap rounded-full bg-white/28 px-3 py-2 text-[11px] font-black text-[#1e4e53] backdrop-blur-md active:bg-white/45"
-            >
-              {chip}
-            </button>
-          ))}
-        </div>
+  {suggestionChips.map((chip) => {
+    const isRequestChip = normalizeText(chip).includes('necesito este servicio');
+
+    return (
+      <button
+        key={chip}
+        type="button"
+        onClick={() => {
+         if (isRequestChip) {
+  setInput(chip);
+  return;
+}
+
+          setInput(chip);
+        }}
+        disabled={requesting}
+        className="whitespace-nowrap rounded-full bg-white/28 px-3 py-2 text-[11px] font-black text-[#1e4e53] backdrop-blur-md active:bg-white/45 disabled:opacity-60"
+      >
+        {chip}
+      </button>
+    );
+  })}
+</div>
 
         <div className="flex items-end gap-2">
-          <div className="flex min-h-[48px] flex-1 items-center rounded-[24px] bg-white/38 px-4 shadow-[0_10px_28px_rgba(18,52,55,0.10)] backdrop-blur-md">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Escribí un mensaje"
-              className="h-12 flex-1 bg-transparent text-[15px] font-bold text-[#123437] outline-none placeholder:text-[#1e4e53]/55"
-            />
-          </div>
+  <button
+    type="button"
+    onClick={shareClientLocation}
+    disabled={sharingLocation}
+    className="
+      flex h-12 w-12 shrink-0 items-center justify-center
+      rounded-full bg-white/38 text-[#1e4e53]
+      shadow-[0_10px_26px_rgba(18,52,55,0.14)]
+      backdrop-blur-md active:scale-95
+      disabled:opacity-50
+    "
+  >
+    <MapPin size={20} strokeWidth={2.7} />
+  </button>
 
-          <button
-            type="submit"
-            disabled={sending || !input.trim()}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#1e4e53] shadow-[0_10px_26px_rgba(18,52,55,0.16)] disabled:opacity-45"
-          >
-            <SendHorizontal size={19} strokeWidth={2.7} />
-          </button>
-        </div>
+  <div className="flex min-h-[48px] flex-1 items-center rounded-[24px] bg-white/38 px-4 shadow-[0_10px_28px_rgba(18,52,55,0.10)] backdrop-blur-md">
+    <input
+      value={input}
+      onChange={(e) => setInput(e.target.value)}
+      placeholder="Escribí un mensaje"
+      className="h-12 flex-1 bg-transparent text-[15px] font-bold text-[#123437] outline-none placeholder:text-[#1e4e53]/55"
+    />
+  </div>
+
+  <button
+    type="submit"
+    disabled={sending || !input.trim()}
+    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#1e4e53] shadow-[0_10px_26px_rgba(18,52,55,0.16)] disabled:opacity-45"
+  >
+    <SendHorizontal size={19} strokeWidth={2.7} />
+  </button>
+</div>
       </form>
     </div>
   </motion.div>

@@ -812,6 +812,7 @@ function MainInput({
   onSubmit,
   icon = null,
   rightIcon = null,
+  showPassword = false,
 }) {
   const autoCompleteValue =
     type === 'password' ? 'new-password' : type === 'email' ? 'off' : 'off';
@@ -822,7 +823,7 @@ function MainInput({
 
       <input
   ref={inputRef}
-  type={type}
+  type={type === 'password' ? (showPassword ? 'text' : 'password') : type}
   value={value}
   onChange={(e) => {
     onChange(e.target.value);
@@ -972,6 +973,7 @@ const [selectedNeed, setSelectedNeed] = useState(null);
 const [selectedTiming, setSelectedTiming] = useState('');
 const [email, setEmail] = useState('');
 const [password, setPassword] = useState('');
+const [showPassword, setShowPassword] = useState(false);
 
 const [assistantInput, setAssistantInput] = useState('');
 const [serviceSuggestions, setServiceSuggestions] = useState([]);
@@ -1338,7 +1340,7 @@ function startWorkerFlow() {
       }
 
       toast.success('Entrando...');
-      await redirectByRealProfile(data.user.id);
+router.replace('/role-selector');
     } catch (err) {
       console.error(err);
       toast.error(err?.message || 'No se pudo iniciar sesión');
@@ -1618,11 +1620,11 @@ const roleToSave = finalFlow === 'worker' ? 'worker' : 'client';
         const remembered = readLastIntent();
         if (mounted) setRememberedIntent(remembered || null);
 
-        if (user?.email) {
-          if (mounted) setSavedSessionEmail(normalizeEmail(user.email));
-          await redirectByRealProfile(user.id);
-          return;
-        }
+       if (user?.email) {
+  if (mounted) setSavedSessionEmail(normalizeEmail(user.email));
+  router.replace('/role-selector');
+  return;
+}
 
         if (!user && rememberedEmail) {
           const profile = await getProfileByEmail(rememberedEmail);
@@ -2018,16 +2020,23 @@ function handleMainContinue(latestValue = '') {
     />
 
     <MainInput
-      value={password}
-      onChange={setPassword}
-      type="password"
-      placeholder="Contraseña"
-      disabled={busy}
-      showSend={false}
-      onSubmit={() => {}}
-      icon={<LockIcon />}
-      rightIcon={<EyeIcon />}
-    />
+  value={password}
+  onChange={setPassword}
+  placeholder="Contraseña"
+  type="password"
+  inputRef={inputRef}
+  icon={<LockIcon />}
+  showPassword={showPassword}
+  rightIcon={
+    <button
+      type="button"
+      onClick={() => setShowPassword((prev) => !prev)}
+      className="transition-opacity hover:opacity-70"
+    >
+      <EyeIcon />
+    </button>
+  }
+/>
 
     <button
       type="button"

@@ -357,7 +357,7 @@ async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
 
 function FeedCard({ worker, onOpen, onMessage, onRequest, onNearbyMap, onComments, onLike }) {
   const [bioOpen, setBioOpen] = useState(false);
-
+  const videoRef = useRef(null);
   const primaryService = serviceLabelForWorker(worker);
   const mediaUrl = worker?.media_url || worker?.cover_url || worker?.video_thumb_url || worker?.avatar_url || '/avatar-fallback.png';
   const isVideo = worker?.media_type === 'video';
@@ -369,7 +369,29 @@ function FeedCard({ worker, onOpen, onMessage, onRequest, onNearbyMap, onComment
   const postText = worker?.post_description || worker?.caption || worker?.bio || 'Mirá trabajos reales, consultá por chat y solicitá directo desde ManosYA.';
   const isLongBio = postText.length > 95;
   const shortBio = isLongBio ? `${postText.slice(0, 95).trim()}...` : postText;
+useEffect(() => {
+  const video = videoRef.current;
+  if (!video) return;
 
+  video.pause();
+  video.currentTime = 0;
+
+  const playVideo = async () => {
+    try {
+      video.muted = true;
+      await video.play();
+    } catch (error) {
+      console.warn('Autoplay bloqueado:', error);
+    }
+  };
+
+  playVideo();
+
+  return () => {
+    video.pause();
+    video.currentTime = 0;
+  };
+}, [mediaUrl]);
   const shareWorker = async () => {
     const text = `Mirá este trabajo en ManosYA: ${workerName} · ${primaryService}`;
     try {
@@ -390,8 +412,9 @@ function FeedCard({ worker, onOpen, onMessage, onRequest, onNearbyMap, onComment
       layout
       className="relative h-[calc(var(--real-vh,100dvh)-74px)] w-full snap-start overflow-hidden bg-black"
     >
-     {isVideo && mediaUrl ? (
+    {isVideo && mediaUrl ? (
   <video
+    ref={videoRef}
     key={mediaUrl}
     src={mediaUrl}
     autoPlay
@@ -399,10 +422,15 @@ function FeedCard({ worker, onOpen, onMessage, onRequest, onNearbyMap, onComment
     loop
     playsInline
     controls={false}
-    preload="auto"
+    preload="metadata"
     className="absolute inset-0 h-full w-full bg-black object-cover"
-    onCanPlay={(e) => {
-      e.currentTarget.play().catch(() => {});
+    onPlay={(e) => {
+      document.querySelectorAll('video').forEach((video) => {
+        if (video !== e.currentTarget) {
+          video.pause();
+          video.currentTime = 0;
+        }
+      });
     }}
     onError={(e) => {
       console.warn('No se pudo reproducir video del feed:', mediaUrl, e);
@@ -1495,7 +1523,19 @@ async function fetchWorkers(serviceFilter = '') {
 useEffect(() => {
   if (!me?.id) return;
 
-  refreshClientBadges();
+  let mounted = true;
+
+  const safeRefresh = async () => {
+    if (!mounted) return;
+
+    try {
+      await refreshClientBadges();
+    } catch (err) {
+      console.warn('refreshClientBadges error', err);
+    }
+  };
+
+  safeRefresh();
 
   const channel = supabase
     .channel(`client-notifications-${me.id}`)
@@ -1506,8 +1546,8 @@ useEffect(() => {
         schema: 'public',
         table: 'messages',
       },
-      () => {
-        refreshClientBadges();
+      async () => {
+        await safeRefresh();
       }
     )
     .on(
@@ -1518,13 +1558,16 @@ useEffect(() => {
         table: 'worker_comments',
         filter: `client_id=eq.${me.id}`,
       },
-      () => {
-        refreshClientBadges();
+      async () => {
+        await safeRefresh();
       }
     )
-    .subscribe();
+    .subscribe((status) => {
+      console.log('client notification channel:', status);
+    });
 
   return () => {
+    mounted = false;
     supabase.removeChannel(channel);
   };
 }, [me?.id]);
@@ -1704,12 +1747,15 @@ async function openClientMessages() {
   let messagesRaw = [];
   if (chatIds.length) {
     const { data: msgs } = await supabase
-      .from('messages')
-      .select('id, chat_id, text, created_at, sender_id')
-      .in('chat_id', chatIds)
-      .order('created_at', { ascending: false });
+  .from('messages')
+  .select('id, chat_id, text, content, created_at, sender_id')
+  .in('chat_id', chatIds)
+  .order('created_at', { ascending: false });
 
-    messagesRaw = msgs || [];
+messagesRaw = (msgs || []).map((m) => ({
+  ...m,
+  text: m.text || m.content || '',
+}));
   }
 
   const workerIds = [
@@ -1813,7 +1859,6 @@ async function openCommentNotifications() {
   setCommentNotifications(data || []);
   setCommentNotificationsOpen(true);
 }
-
 async function openMessage(worker, presetMessage = '') {
   const target = worker || selected || currentWorker;
   if (!target || !me?.id) return;
@@ -1821,23 +1866,74 @@ async function openMessage(worker, presetMessage = '') {
   try {
     const workerId = String(target.user_id);
 
-    const { data: existingChats, error: existingError } = await supabase
+    const chosenService =
+      selectedService ||
+      normalizeSlug(splitWorkerServices(target)[0] || target?.service_type || '');
+
+    const serviceLabel =
+      serviceMetaBySlug(chosenService)?.name || serviceLabelForWorker(target);
+
+    const messageText =
+      presetMessage?.trim() ||
+      `Hola ${target.full_name || ''}, ¿estás disponible para ${String(serviceLabel).toLowerCase()}?`;
+
+    const { data: activeJob, error: activeJobError } = await supabase
+      .from('jobs')
+      .select('id, status')
+      .eq('client_id', me.id)
+      .eq('worker_id', workerId)
+      .in('status', ['open', 'accepted', 'assigned', 'scheduled'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (activeJobError) throw activeJobError;
+
+    let jobId = activeJob?.id || null;
+
+    if (!jobId) {
+      const { data: newJob, error: jobError } = await supabase
+        .from('jobs')
+        .insert([
+          {
+            client_id: me.id,
+            worker_id: workerId,
+            service_type: chosenService || null,
+            status: 'open',
+            description: `Servicio: ${serviceLabel} · Consulta desde feed cliente`,
+          },
+        ])
+        .select('id, status')
+        .single();
+
+      if (jobError) throw jobError;
+      jobId = newJob.id;
+    }
+
+    const { data: existingChat, error: existingChatError } = await supabase
       .from('chats')
-      .select('id, client_id, worker_id, created_at')
+      .select('id, job_id')
       .eq('client_id', me.id)
       .eq('worker_id', workerId)
       .order('created_at', { ascending: false })
-      .limit(1);
+      .limit(1)
+      .maybeSingle();
 
-    if (existingError) throw existingError;
+    if (existingChatError) throw existingChatError;
 
-    let nextChatId = existingChats?.[0]?.id || null;
+    let nextChatId = existingChat?.id || null;
 
-    if (!nextChatId) {
-      const { data: newChat, error: newChatError } = await supabase
+    if (nextChatId) {
+      await supabase
+        .from('chats')
+        .update({ job_id: jobId })
+        .eq('id', nextChatId);
+    } else {
+      const { data: newChat, error: chatError } = await supabase
         .from('chats')
         .insert([
           {
+            job_id: jobId,
             client_id: me.id,
             worker_id: workerId,
           },
@@ -1845,128 +1941,144 @@ async function openMessage(worker, presetMessage = '') {
         .select('id')
         .single();
 
-      if (newChatError) throw newChatError;
-      if (!newChat?.id) throw new Error('No se pudo crear el chat');
-
+      if (chatError) throw chatError;
       nextChatId = newChat.id;
     }
 
+    const { error: messageError } = await supabase.from('messages').insert([
+      {
+        chat_id: nextChatId,
+        sender_id: me.id,
+        text: messageText,
+      },
+    ]);
+
+    if (messageError) throw messageError;
+
+    setJobId(jobId);
     setChatId(nextChatId);
 
-    if (presetMessage?.trim()) {
-  const { error: messageError } = await supabase.from('messages').insert([
-    {
-      chat_id: nextChatId,
-      sender_id: me.id,
-      text: presetMessage.trim(),
-    },
-  ]);
-
-  if (messageError) throw messageError;
-}
-
+    toast.success('Mensaje enviado al trabajador');
     router.push(`/client/chat/${nextChatId}`);
   } catch (error) {
     console.error('openMessage error', error);
-    toast.error(error?.message || 'No pudimos abrir la mensajería');
+    toast.error(error?.message || 'No pudimos enviar el mensaje');
   }
 }
+ async function requestWorker(worker) {
+  const activeWorker = worker || selected || currentWorker;
+  if (!activeWorker || !me?.id) return;
 
-  async function requestWorker(worker) {
-    const activeWorker = worker || selected || currentWorker;
-    if (!activeWorker || !me?.id) return;
+  try {
+    const workerId = String(activeWorker.user_id);
 
-    try {
-      const chosenService =
-        selectedService ||
-        normalizeSlug(splitWorkerServices(activeWorker)[0] || activeWorker?.service_type || '');
+    const chosenService =
+      selectedService ||
+      normalizeSlug(splitWorkerServices(activeWorker)[0] || activeWorker?.service_type || '');
 
-      const serviceLabel = serviceMetaBySlug(chosenService)?.name || serviceLabelForWorker(activeWorker);
-      const descriptionParts = [`Servicio: ${serviceLabel}`];
-      if (bookingTime) descriptionParts.push(`Hora solicitada: ${bookingTime}`);
-      descriptionParts.push('Solicitado desde feed cliente');
+    const serviceLabel =
+      serviceMetaBySlug(chosenService)?.name || serviceLabelForWorker(activeWorker);
 
-      const { data: job, error: jobError } = await supabase
-        .from('jobs')
+    const descriptionParts = [`Servicio: ${serviceLabel}`];
+    if (bookingTime) descriptionParts.push(`Hora solicitada: ${bookingTime}`);
+    descriptionParts.push('Solicitado desde feed cliente');
+
+    const { data: job, error: jobError } = await supabase
+      .from('jobs')
+      .insert([
+        {
+          client_id: me.id,
+          worker_id: workerId,
+          service_type: chosenService || null,
+          status: 'open',
+          description: descriptionParts.join(' · '),
+        },
+      ])
+      .select('*')
+      .single();
+
+    if (jobError) throw jobError;
+
+    const { data: existingChat, error: existingChatError } = await supabase
+      .from('chats')
+      .select('id, job_id')
+      .eq('client_id', me.id)
+      .eq('worker_id', workerId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingChatError) throw existingChatError;
+
+    let nextChatId = existingChat?.id || null;
+
+    if (nextChatId) {
+      await supabase
+        .from('chats')
+        .update({ job_id: job.id })
+        .eq('id', nextChatId);
+    } else {
+      const { data: chat, error: chatError } = await supabase
+        .from('chats')
         .insert([
           {
+            job_id: job.id,
             client_id: me.id,
-            worker_id: activeWorker.user_id,
-            service_type: chosenService || null,
-            status: 'open',
-            description: descriptionParts.join(' · '),
+            worker_id: workerId,
           },
         ])
-        .select('*')
+        .select('id')
         .single();
 
-      if (jobError) throw jobError;
-
-      let nextChatId = null;
-
-      try {
-        const { data: chat, error: chatError } = await supabase
-          .from('chats')
-          .insert([
-            {
-              job_id: job.id,
-              client_id: me.id,
-              worker_id: activeWorker.user_id,
-            },
-          ])
-          .select('id')
-          .single();
-
-        if (!chatError) nextChatId = chat?.id || null;
-      } catch (chatErr) {
-        console.warn('No se pudo crear chat al vuelo', chatErr);
-      }
-
-      setJobId(job.id);
-      setJobStatus(job.status);
-      setChatId(nextChatId);
-      setTrackingWorker(activeWorker);
-      setTrackingOpen(true);
-      setShowProfile(false);
-      setShowAllWorkers(false);
-
-      if (hasMeCoords) {
-        const routeData = await fetchRoadRoute(
-          Number(me.lat),
-          Number(me.lon),
-          Number(activeWorker.lat),
-          Number(activeWorker.lng)
-        );
-
-        if (routeData?.route?.length) {
-          setRoute(routeData.route);
-          setEtaMinutes(routeData.durationMin);
-        } else {
-          setRoute([
-            [Number(me.lat), Number(me.lon)],
-            [Number(activeWorker.lat), Number(activeWorker.lng)],
-          ]);
-        }
-      }
-
-      try {
-        localStorage.setItem(
-          'activeJobChat',
-          JSON.stringify({
-            jid: job.id,
-            jstatus: job.status,
-            cid: nextChatId,
-            selectedWorker: activeWorker,
-          })
-        );
-      } catch {}
-
-      toast.success('Solicitud enviada. Ahora sí aparece el mapa.');
-    } catch (error) {
-      console.error(error);
-      toast.error('No pudimos crear la solicitud');
+      if (chatError) throw chatError;
+      nextChatId = chat?.id || null;
     }
+
+    setJobId(job.id);
+    setJobStatus(job.status);
+    setChatId(nextChatId);
+    setTrackingWorker(activeWorker);
+    setTrackingOpen(true);
+    setShowProfile(false);
+    setShowAllWorkers(false);
+
+    if (hasMeCoords) {
+      const routeData = await fetchRoadRoute(
+        Number(me.lat),
+        Number(me.lon),
+        Number(activeWorker.lat),
+        Number(activeWorker.lng)
+      );
+
+      if (routeData?.route?.length) {
+        setRoute(routeData.route);
+        setEtaMinutes(routeData.durationMin);
+      } else {
+        setRoute([
+          [Number(me.lat), Number(me.lon)],
+          [Number(activeWorker.lat), Number(activeWorker.lng)],
+        ]);
+      }
+    }
+
+    try {
+      localStorage.setItem(
+        'activeJobChat',
+        JSON.stringify({
+          jid: job.id,
+          jstatus: job.status,
+          cid: nextChatId,
+          selectedWorker: activeWorker,
+        })
+      );
+    } catch {}
+
+    toast.success('Solicitud enviada. Chat conectado con el trabajador.');
+  } catch (error) {
+    console.error(error);
+    toast.error('No pudimos crear la solicitud');
   }
+}
 async function cancelActiveJob() {
   if (!jobId) {
     toast.error('No hay pedido activo para cancelar');
