@@ -13,7 +13,7 @@ export default function Billing() {
 
   async function load() {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { window.location.href='/login'; return; }
+    if (!user) { window.location.href='/auth/login'; return; }
     const { data: w } = await supabase.from('wallets').select('*').eq('user_id', user.id).maybeSingle();
     const { data: s } = await supabase.from('subscriptions').select('*').eq('user_id', user.id).maybeSingle();
     const { data: t } = await supabase.from('transactions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20);

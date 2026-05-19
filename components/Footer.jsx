@@ -47,7 +47,7 @@ export default function Footer() {
               <li><Link href="/services/home">Para hogares</Link></li>
               <li><Link href="/services/business">Para empresas</Link></li>
               <li><Link href="/api">API & tecnología</Link></li>
-              <li><Link href="/match">Match con Pro</Link></li>
+              <li><Link href="/client">Match con Pro</Link></li>
             </ul>
           </div>
 
@@ -83,8 +83,8 @@ export default function Footer() {
             Las marcas, nombres e imágenes son propiedad de sus respectivos titulares.
           </p>
           <div className="flex gap-4">
-            <Link href="/legal/terminos" className="hover:text-white">Términos</Link>
-            <Link href="/legal/privacidad" className="hover:text-white">Privacidad</Link>
+            <Link href="/legal/terms" className="hover:text-white">Términos</Link>
+            <Link href="/legal/privacy" className="hover:text-white">Privacidad</Link>
             <Link href="/apps/android" className="hover:text-white">Google Play</Link>
             <Link href="/apps/ios" className="hover:text-white">App Store</Link>
           </div>

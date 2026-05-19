@@ -63,7 +63,7 @@ export default function Nav() {
 
   async function logout() {
     await supabase.auth.signOut();
-    window.location.href = '/login';
+    window.location.href = '/auth/login';
   }
 
   return (
@@ -86,10 +86,10 @@ export default function Nav() {
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
           {/* 🔹 Cliente */}
           <Link href="/client" className="hover:text-[var(--accent)]">Inicio Cliente</Link>
-          <Link href="/map" className="hover:text-[var(--accent)]">Buscar Profesionales</Link>
+          <Link href="/client" className="hover:text-[var(--accent)]">Buscar Profesionales</Link>
           <Link href="/client/new" className="hover:text-[var(--accent)]">Publicar Trabajo</Link>
           <Link href="/client/jobs" className="hover:text-[var(--accent)]">Mis Pedidos</Link>
-          <Link href="/perfil" className="hover:text-[var(--accent)]">Perfil</Link>
+          <Link href="/client/profile" className="hover:text-[var(--accent)]">Perfil</Link>
 
           {/* 🔹 Trabajador */}
           {user && !loadingWorker && (
@@ -108,7 +108,7 @@ export default function Nav() {
 
           {/* 🔹 Admin */}
           {isAdmin && (
-            <Link href="/admin" className="text-emerald-400 font-bold hover:text-white">
+            <Link href="/admin/analytics" className="text-emerald-400 font-bold hover:text-white">
               ⚙️ Admin
             </Link>
           )}
@@ -130,7 +130,7 @@ export default function Nav() {
             </button>
           ) : (
             <Link
-              href="/login"
+              href="/auth/login"
               className="bg-[var(--accent)] text-black px-3 py-1.5 rounded-md font-semibold hover:bg-white hover:text-black"
             >
               Entrar

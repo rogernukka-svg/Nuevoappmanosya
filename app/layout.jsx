@@ -1,21 +1,8 @@
 import "./globals.css";
-import { Inter, Manrope } from "next/font/google";
 import { Toaster } from "sonner";
 import ClientOnlyLayout from "./ClientOnlyLayout";
 import GlobalAudio from "@/components/GlobalAudio";
 import "leaflet/dist/leaflet.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-const manrope = Manrope({
-  subsets: ["latin"],
-  variable: "--font-manrope",
-  display: "swap",
-});
 
 /* === 🧠 SEO + PWA Metadata === */
 export const metadata = {
@@ -40,7 +27,7 @@ export default function RootLayout({ children }) {
     <html
       lang="es"
       suppressHydrationWarning
-      className={`${inter.variable} ${manrope.variable} antialiased`}
+      className="antialiased"
     >
       <head>
         {/* PWA */}

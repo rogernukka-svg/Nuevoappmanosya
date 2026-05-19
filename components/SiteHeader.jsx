@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, MapPin, PlusCircle, UserCheck } from 'lucide-react';
+import { getSupabase } from '@/lib/supabase';
 
 const NAV = [
-  { name: 'Match', href: '/match', icon: Home },
-  { name: 'Cerca', href: '/map', icon: MapPin },
+  { name: 'Match', href: '/client', icon: Home },
+  { name: 'Cerca', href: '/worker/nearby', icon: MapPin },
   { name: 'Chamba', href: '/client/new', icon: PlusCircle },
   { name: 'Online', href: '/worker/onboard', icon: UserCheck },
   // 👇 Eliminado: { name: 'Admin', href: '/admin', icon: Shield },
@@ -14,6 +15,12 @@ const NAV = [
 
 export default function SiteHeader({ email }) {
   const pathname = usePathname();
+  const supabase = getSupabase();
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    window.location.href = '/auth/login';
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-black/80 backdrop-blur-md">
@@ -31,12 +38,15 @@ export default function SiteHeader({ email }) {
               {email}
             </span>
           )}
-          <Link
-            href={email ? '/auth/signout' : '/login'}
-            className="btn btn-primary h-9 px-4"
-          >
-            {email ? 'Salir' : 'Entrar'}
-          </Link>
+          {email ? (
+            <button type="button" onClick={handleSignOut} className="btn btn-primary h-9 px-4">
+              Salir
+            </button>
+          ) : (
+            <Link href="/auth/login" className="btn btn-primary h-9 px-4">
+              Entrar
+            </Link>
+          )}
         </div>
       </div>
 

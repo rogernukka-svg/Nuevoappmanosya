@@ -10,6 +10,9 @@
    VARIABLES GLOBALES
    ===================================================== */
 :root {
+  --font-inter: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-manrope: Manrope, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
   --bg: #f8fafc;
   --bg-alt: #f1f5f9;
   --surface: rgba(255, 255, 255, 0.82);

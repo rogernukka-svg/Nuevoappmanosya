@@ -80,7 +80,7 @@ export default function ChatPage() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (data?.user) setUser(data.user);
-      else router.replace('/login');
+      else router.replace('/auth/login');
     });
   }, [router]);
 

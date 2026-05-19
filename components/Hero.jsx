@@ -21,14 +21,14 @@ export default function Hero() {
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link
-              href="/login?mode=signup"
+              href="/auth/login?mode=signup"
               className="rounded-full bg-white px-5 py-3 text-center font-semibold text-black transition hover:opacity-90"
               aria-label="Registrate en ManosYA"
             >
               Registrate
             </Link>
             <Link
-              href="/login"
+              href="/auth/login"
               className="rounded-full border border-white/20 px-5 py-3 text-center font-semibold text-white hover:bg-white/10"
               aria-label="Iniciá sesión en ManosYA"
             >

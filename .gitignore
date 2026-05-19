@@ -40,3 +40,8 @@ android/app/build/
 android/build/
 android/.gradle/
 android/.idea/
+.gradle/
+build/
+
+# TypeScript incremental cache
+*.tsbuildinfo

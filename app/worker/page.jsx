@@ -345,7 +345,7 @@ const HOTSPOTS = [
    AVAILABILITY CAROUSEL
 ========================= */
 
-export function AvailabilityCarousel({ value, onChange }) {
+function AvailabilityCarousel({ value, onChange }) {
   const items = [
     {
       id: 'available',
@@ -781,12 +781,12 @@ const sheetSnapMeta = useMemo(() => {
           setUser(data.user);
           await ensureWorkerProfile(data.user.id);
         } else {
-          router.replace('/login');
+          router.replace('/auth/login');
         }
       } catch (err) {
         console.error('Error inicializando sesión:', err);
         toast.error('Error al obtener usuario o sesión expirada');
-        router.replace('/login');
+        router.replace('/auth/login');
       }
     })();
   }, [router]);

@@ -43,15 +43,15 @@ export default function BottomNav() {
             <Home className="w-5 h-5" />
             <span>Inicio</span>
           </Link>
-          <Link href="/map" className="flex flex-col items-center py-2 hover:text-[var(--accent)]">
+          <Link href="/client" className="flex flex-col items-center py-2 hover:text-[var(--accent)]">
             <Briefcase className="w-5 h-5" />
             <span>Pro</span>
           </Link>
-          <Link href="/job" className="flex flex-col items-center py-2 hover:text-[var(--accent)]">
+          <Link href="/client/jobs" className="flex flex-col items-center py-2 hover:text-[var(--accent)]">
             <ClipboardList className="w-5 h-5" />
             <span>Pedidos</span>
           </Link>
-          <Link href="/perfil" className="flex flex-col items-center py-2 hover:text-[var(--accent)]">
+          <Link href="/client/profile" className="flex flex-col items-center py-2 hover:text-[var(--accent)]">
             <User className="w-5 h-5" />
             <span>Perfil</span>
           </Link>
@@ -73,7 +73,7 @@ export default function BottomNav() {
             <ClipboardList className="w-5 h-5" />
             <span>Mis Trabajos</span>
           </Link>
-          <Link href="/worker/profile" className="flex flex-col items-center py-2 hover:text-[var(--accent)]">
+          <Link href="/worker/onboard" className="flex flex-col items-center py-2 hover:text-[var(--accent)]">
             <User className="w-5 h-5" />
             <span>Perfil</span>
           </Link>

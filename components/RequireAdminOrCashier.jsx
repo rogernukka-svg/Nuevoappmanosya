@@ -7,7 +7,7 @@ export default function RequireAdminOrCashier({ children }) {
   useEffect(() => {
     async function check() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { window.location.href = '/login'; return; }
+      if (!user) { window.location.href = '/auth/login'; return; }
       const { data: p } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
       if (p?.role === 'admin' || p?.role === 'cashier') setOk(true);
       else window.location.href = '/';

@@ -2,12 +2,15 @@
 
 const path = require("path");
 
+const isPwaDisabled =
+  process.env.NODE_ENV === "development" || process.env.NEXT_DISABLE_PWA === "true";
+
 const withPWA = require("next-pwa")({
   dest: "public",
   sw: "service-worker.js",
   register: true,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === "development",
+  disable: isPwaDisabled,
 
   // ✅ evita errores de build PWA (algunos entornos fallan con este manifest)
   buildExcludes: [/app-build-manifest\.json$/],
@@ -136,4 +139,4 @@ const nextConfig = {
   },
 };
 
-module.exports = withBundleAnalyzer(withPWA(nextConfig));
+module.exports = withBundleAnalyzer(isPwaDisabled ? nextConfig : withPWA(nextConfig));

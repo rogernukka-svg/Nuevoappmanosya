@@ -23,6 +23,7 @@ import {
   Heart,
   Share2,
   Plus,
+  UserPlus,
 PanelTop,
 Bell,
 } from 'lucide-react';
@@ -355,7 +356,7 @@ async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
   }
 }
 
-function FeedCard({ worker, onOpen, onMessage, onRequest, onNearbyMap, onComments, onLike }) {
+function FeedCard({ worker, onOpen, onAddFriend, onMessage, onRequest, onNearbyMap, onComments, onLike }) {
   const [bioOpen, setBioOpen] = useState(false);
   const videoRef = useRef(null);
   const primaryService = serviceLabelForWorker(worker);
@@ -463,8 +464,24 @@ useEffect(() => {
             alt={workerName}
             className="h-[58px] w-[58px] rounded-full border-[2.5px] border-white object-cover shadow-[0_12px_26px_rgba(0,0,0,0.55)]"
           />
-          <span className="absolute bottom-[1px] flex h-6 w-6 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)]">
-            <Plus size={14} strokeWidth={3.2} />
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddFriend?.();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                onAddFriend?.();
+              }
+            }}
+            className="absolute bottom-[1px] flex h-6 w-6 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)]"
+            aria-label="Agregar amigo"
+          >
+            <UserPlus size={14} strokeWidth={3.2} />
           </span>
         </button>
 
@@ -823,13 +840,13 @@ function WorkerProfileSheet({ worker, onClose, onRequest, onMessage }) {
   );
 }
 function NearbyMapSheet({ open, workers, center, hasMeCoords, me, selectedWorker, onSelectWorker, onClose, onMessage, onRequest }) {
+ const [activeIndex, setActiveIndex] = useState(0);
+
   if (!open) return null;
 
   const validWorkers = (workers || []).filter((worker) => {
     return Number.isFinite(Number(worker?.lat)) && Number.isFinite(Number(worker?.lng));
   });
-
- const [activeIndex, setActiveIndex] = useState(0);
 
 const active =
   selectedWorker ||
@@ -1272,7 +1289,7 @@ const [bookingTime] = useState(initialTimingFromUrl || '');
         const uid = data?.user?.id;
 
         if (error || !uid) {
-          router.replace('/login');
+          router.replace('/auth/login');
           return;
         }
 
@@ -1293,7 +1310,7 @@ if (!profileError && alive) {
 }
       } catch (error) {
         console.warn('No se pudo validar la sesión del cliente', error);
-        router.replace('/login');
+        router.replace('/auth/login');
       }
     })();
 
@@ -1676,6 +1693,30 @@ async function sendPublicComment() {
 
   setCommentText('');
   openComments(commentsWorker);
+}
+
+async function addFriend(worker) {
+  const targetId = worker?.user_id || worker?.worker_id;
+  if (!targetId || !me?.id) return;
+
+  if (String(targetId) === String(me.id)) {
+    toast.message('Ese es tu propio perfil');
+    return;
+  }
+
+  const { data, error } = await supabase.rpc('request_friend', {
+    addressee: targetId,
+  });
+
+  if (error) {
+    console.error('friend request error:', error);
+    toast.error(error.message || 'No pudimos agregar amigo');
+    return;
+  }
+
+  if (data === 'accepted') toast.success('Ahora son amigos');
+  else if (data === 'pending') toast.success('Solicitud de amistad enviada');
+  else toast.message('La solicitud ya existe');
 }
 
 async function toggleWorkerLike(worker) {
@@ -2286,6 +2327,7 @@ async function cancelActiveJob() {
       <FeedCard
   worker={worker}
   onOpen={() => openProfile(worker)}
+  onAddFriend={() => addFriend(worker)}
   onComments={() => openComments(worker)}
   onMessage={() => openMessage(worker)}
   onRequest={() => requestWorker(worker)}

@@ -17,6 +17,7 @@ import {
   Heart,
   Share2,
   Plus,
+  UserPlus,
    ArrowLeft,
     Upload,
   Music2,
@@ -186,7 +187,7 @@ function meLocationIcon() {
   return L.divIcon({ html, className: '', iconSize: [24, 24], iconAnchor: [12, 12] });
 }
 
-function WorkerFeedCard({ worker, isActive, onOpen, onComments, onLike, onNearbyMap }) {
+function WorkerFeedCard({ worker, isActive, onOpen, onAddFriend, onComments, onLike, onNearbyMap }) {
   const [bioOpen, setBioOpen] = useState(false);
   const videoRef = useRef(null);
    const [paused, setPaused] = useState(!isActive);
@@ -332,8 +333,24 @@ function WorkerFeedCard({ worker, isActive, onOpen, onComments, onLike, onNearby
             alt={workerName}
             className="h-[66px] w-[66px] rounded-full border-[2.5px] border-white object-cover shadow-[0_12px_26px_rgba(0,0,0,0.55)]"
           />
-          <span className="absolute bottom-[2px] right-[1px] flex h-7 w-7 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)]">
-            <Plus size={14} strokeWidth={3.2} />
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddFriend?.();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                onAddFriend?.();
+              }
+            }}
+            className="absolute bottom-[2px] right-[1px] flex h-7 w-7 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)]"
+            aria-label="Agregar amigo"
+          >
+            <UserPlus size={14} strokeWidth={3.2} />
           </span>
         </button>
 
@@ -575,9 +592,10 @@ function WorkerProfileSheet({ worker, onClose }) {
 }
 
 function NearbyMapSheet({ open, workers, center, hasMeCoords, me, selectedWorker, onSelectWorker, onClose, onOpenProfile }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+
   if (!open) return null;
   const validWorkers = (workers || []).filter((worker) => Number.isFinite(Number(worker?.lat)) && Number.isFinite(Number(worker?.lng)));
-  const [activeIndex, setActiveIndex] = useState(0);
   const active = selectedWorker || validWorkers[activeIndex] || validWorkers[0] || null;
   const mapWorkers = validWorkers.slice(0, 14);
   function goPrevWorker() { if (!validWorkers.length) return; const next = activeIndex <= 0 ? validWorkers.length - 1 : activeIndex - 1; setActiveIndex(next); onSelectWorker(validWorkers[next]); }
@@ -748,7 +766,7 @@ const fileInputRef = useRef(null);
   const hasMeCoords = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
 
   useEffect(() => { setMounted(true); if (typeof window === 'undefined') return; const setRealVH = () => { const h = window.visualViewport?.height ?? window.innerHeight; document.documentElement.style.setProperty('--real-vh', `${Math.round(h)}px`); }; setRealVH(); window.addEventListener('resize', setRealVH); window.visualViewport?.addEventListener('resize', setRealVH); return () => { window.removeEventListener('resize', setRealVH); window.visualViewport?.removeEventListener('resize', setRealVH); }; }, []);
-  useEffect(() => { let alive = true; (async () => { try { const { data, error } = await supabase.auth.getUser(); const uid = data?.user?.id; if (error || !uid) { router.replace('/login'); return; } try { localStorage.setItem(LS_APP_ROLE, 'worker'); } catch {} if (alive) setMe((prev) => ({ ...prev, id: uid })); const { data: profileData } = await supabase.from('profiles').select('id, full_name, email, role, avatar_url').eq('id', uid).maybeSingle(); if (alive) setViewerProfile(profileData || null); } catch (error) { console.warn('No se pudo validar la sesión del trabajador', error); router.replace('/login'); } })(); return () => { alive = false; }; }, [router]);
+  useEffect(() => { let alive = true; (async () => { try { const { data, error } = await supabase.auth.getUser(); const uid = data?.user?.id; if (error || !uid) { router.replace('/auth/login'); return; } try { localStorage.setItem(LS_APP_ROLE, 'worker'); } catch {} if (alive) setMe((prev) => ({ ...prev, id: uid })); const { data: profileData } = await supabase.from('profiles').select('id, full_name, email, role, avatar_url').eq('id', uid).maybeSingle(); if (alive) setViewerProfile(profileData || null); } catch (error) { console.warn('No se pudo validar la sesión del trabajador', error); router.replace('/auth/login'); } })(); return () => { alive = false; }; }, [router]);
   useEffect(() => { if (!navigator.geolocation) return; const cached = (() => { try { const raw = localStorage.getItem(LAST_GPS_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; } })(); if (cached?.lat && cached?.lon) setMe((prev) => ({ ...prev, lat: Number(cached.lat), lon: Number(cached.lon) })); const watcher = navigator.geolocation.watchPosition((pos) => { const lat = pos.coords.latitude; const lon = pos.coords.longitude; setMe((prev) => ({ ...prev, lat, lon })); try { localStorage.setItem(LAST_GPS_KEY, JSON.stringify({ lat, lon, t: Date.now() })); } catch {} }, (err) => console.warn('GPS worker feed error', err), { enableHighAccuracy: true, maximumAge: 12000, timeout: 10000 }); return () => navigator.geolocation.clearWatch(watcher); }, []);
 async function fetchWorkerPosts() {
   if (!me?.id) return;
@@ -977,7 +995,30 @@ async function fetchWorkers(serviceFilter = '') {
 }
   async function openComments(worker) { setCommentsWorker(worker); setCommentsOpen(true); const { data } = await supabase.from('worker_comments').select('*').eq('worker_id', worker.user_id).order('created_at', { ascending: false }); setWorkerComments(data || []); }
   async function sendPublicComment() { if (!commentsWorker || !commentText.trim() || !me?.id) return; const workerId = commentsWorker.user_id; const payload = { worker_id: workerId, client_id: me.id, client_name: viewerProfile?.full_name || 'Trabajador', client_avatar: viewerProfile?.avatar_url || '', comment: commentText.trim() }; const { error } = await supabase.from('worker_comments').insert([payload]); if (error) { console.error('comment insert error', error); toast.error(error.message || 'No se pudo comentar'); return; } setWorkers((prev) => prev.map((w) => String(w.user_id) === String(workerId) ? { ...w, comments_count: Number(w.comments_count || 0) + 1 } : w)); setCommentText(''); openComments(commentsWorker); }
-  
+  async function addFriend(worker) {
+    const targetId = worker?.user_id || worker?.worker_id;
+    if (!targetId || !me?.id) return;
+
+    if (String(targetId) === String(me.id)) {
+      toast.message('Ese es tu propio perfil');
+      return;
+    }
+
+    const { data, error } = await supabase.rpc('request_friend', {
+      addressee: targetId,
+    });
+
+    if (error) {
+      console.error('friend request error:', error);
+      toast.error(error.message || 'No pudimos agregar amigo');
+      return;
+    }
+
+    if (data === 'accepted') toast.success('Ahora son amigos');
+    else if (data === 'pending') toast.success('Solicitud de amistad enviada');
+    else toast.message('La solicitud ya existe');
+  }
+
   async function toggleWorkerLike(worker) { if (!worker?.user_id || !me?.id) return; const workerId = worker.user_id; const { data: existing } = await supabase.from('worker_likes').select('id').eq('worker_id', workerId).eq('client_id', me.id).maybeSingle(); if (existing?.id) { await supabase.from('worker_likes').delete().eq('id', existing.id); setWorkers((prev) => prev.map((w) => String(w.user_id) === String(workerId) ? { ...w, likes_count: Math.max(0, Number(w.likes_count || 0) - 1) } : w)); toast.success('Quitaste el me encanta'); return; } const { error } = await supabase.from('worker_likes').insert([{ worker_id: workerId, client_id: me.id }]); if (error) { toast.error(error.message || 'No se pudo guardar el me encanta'); return; } setWorkers((prev) => prev.map((w) => String(w.user_id) === String(workerId) ? { ...w, likes_count: Number(w.likes_count || 0) + 1 } : w)); toast.success('Te encantó este perfil'); }
 async function uploadWorkerMedia(file) {
   if (!file || !me?.id) return;
@@ -1249,6 +1290,7 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
     worker={worker}
     isActive={index === feedIndex}
     onOpen={() => openProfile(worker)}
+    onAddFriend={() => addFriend(worker)}
     onComments={() => openComments(worker)}
     onLike={() => toggleWorkerLike(worker)}
     onNearbyMap={() => {

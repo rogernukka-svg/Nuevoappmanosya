@@ -16,7 +16,7 @@ export default function AuthCallback() {
 
         if (error) {
           console.error("Error obteniendo sesión:", error);
-          router.push("/login"); // ✔ ruta corregida
+          router.push("/auth/login");
           return;
         }
 
@@ -26,11 +26,11 @@ export default function AuthCallback() {
         if (session?.user) {
           router.push("/role-selector");
         } else {
-          router.push("/login"); // ✔ ruta corregida
+          router.push("/auth/login");
         }
       } catch (err) {
         console.error("Error en AuthCallback:", err);
-        router.push("/login"); // ✔ ruta corregida
+        router.push("/auth/login");
       }
     }
 

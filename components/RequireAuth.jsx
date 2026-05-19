@@ -6,7 +6,7 @@ export default function RequireAuth({ children }) {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (!data?.session) window.location.href = '/login';
+      if (!data?.session) window.location.href = '/auth/login';
       else setReady(true);
     });
   }, []);

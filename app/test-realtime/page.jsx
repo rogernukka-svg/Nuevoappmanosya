@@ -71,7 +71,7 @@ export default function TestRealtimeMessagesAuto() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center text-center bg-gray-50 p-6">
       <h1 className="text-2xl font-bold text-emerald-600 mb-4">
-        💬 Prueba Realtime automática (tabla "messages")
+        💬 Prueba Realtime automática (tabla &quot;messages&quot;)
       </h1>
       <p className="text-gray-700 mb-2">{status}</p>
       <p className="text-xs text-gray-400 mb-2">chat_id: {chatId}</p>

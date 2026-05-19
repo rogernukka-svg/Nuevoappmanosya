@@ -20,8 +20,8 @@ export default function ActionRail() {
       <div className="mx-auto max-w-6xl">
         {/* hacemos el bloque blanco con texto negro como Uber */}
         <div className="divide-y divide-black/10">
-          <Item title="Registrate" href="/login?mode=signup" />
-          <Item title="Iniciá sesión" href="/login" />
+          <Item title="Registrate" href="/auth/login?mode=signup" />
+          <Item title="Iniciá sesión" href="/auth/login" />
           {/* El camino único y visible */}
           <Item title="Utilidades" href="/utilidades" />
         </div>

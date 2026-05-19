@@ -21,6 +21,7 @@ export default function ClientOnlyLayout({ children }) {
 
   // 🔹 Rutas que se renderizan solas (sin ClientRoot)
   const isAuthRoute =
+    pathname === '/auth/login' ||
     pathname === '/login' ||
     pathname === '/register' ||
     pathname === '/role-selector' ||

@@ -141,7 +141,7 @@ export default function ClientJobsPage() {
         const { data, error } = await supabase.auth.getUser();
 
         if (error || !data?.user) {
-          router.replace('/login');
+          router.replace('/auth/login');
           return;
         }
 
@@ -158,7 +158,7 @@ export default function ClientJobsPage() {
         if (alive) setClientProfile(profileData || null);
       } catch (error) {
         console.warn('No se pudo validar sesión:', error);
-        router.replace('/login');
+        router.replace('/auth/login');
       }
     }
 

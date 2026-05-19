@@ -1,12 +1,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import "../globals.css";
-import { Inter, Manrope } from "next/font/google";
 import { useEffect, useState } from "react";
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
 
 export default function BusinessLayout({ children }) {
   const [mounted, setMounted] = useState(false);
@@ -14,11 +9,7 @@ export default function BusinessLayout({ children }) {
   if (!mounted) return null;
 
   return (
-    <html
-      lang="es"
-      className={`${inter.variable} ${manrope.variable} bg-gray-50 text-gray-900 antialiased`}
-    >
-      <body className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 antialiased">
         {/* === HEADER EMPRESARIAL === */}
         <header className="w-full bg-white border-b border-gray-200 shadow-sm">
           <div className="max-w-6xl mx-auto flex justify-between items-center px-6 py-3">
@@ -39,7 +30,6 @@ export default function BusinessLayout({ children }) {
           © 2025 ManosYA · Alto Paraná ·{" "}
           <span className="text-emerald-600">Tu ayuda al instante ⚡</span>
         </footer>
-      </body>
-    </html>
+    </div>
   );
 }
