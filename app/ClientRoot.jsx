@@ -48,7 +48,7 @@ export default function ClientRoot({ children }) {
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       if (process.env.NODE_ENV === "production") {
         navigator.serviceWorker
-          .register("/sw.js")
+          .register("/service-worker.js")
           .then(() => console.log("✅ Service Worker activo"))
           .catch((err) => console.warn("⚠️ Error SW:", err));
       } else {

@@ -16,6 +16,8 @@ import {
   MessageCircle,
   SendHorizontal,
   Compass,
+  BadgeCheck,
+  Check,
   Clock3,
   Users,
   Briefcase,
@@ -356,8 +358,9 @@ async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
   }
 }
 
-function FeedCard({ worker, onOpen, onAddFriend, onMessage, onRequest, onNearbyMap, onComments, onLike }) {
+function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, onMessage, onRequest, onNearbyMap, onComments, onLike }) {
   const [bioOpen, setBioOpen] = useState(false);
+  const [paused, setPaused] = useState(!isActive);
   const videoRef = useRef(null);
   const primaryService = serviceLabelForWorker(worker);
   const mediaUrl = worker?.media_url || worker?.cover_url || worker?.video_thumb_url || worker?.avatar_url || '/avatar-fallback.png';
@@ -370,29 +373,37 @@ function FeedCard({ worker, onOpen, onAddFriend, onMessage, onRequest, onNearbyM
   const postText = worker?.post_description || worker?.caption || worker?.bio || 'Mirá trabajos reales, consultá por chat y solicitá directo desde ManosYA.';
   const isLongBio = postText.length > 95;
   const shortBio = isLongBio ? `${postText.slice(0, 95).trim()}...` : postText;
-useEffect(() => {
-  const video = videoRef.current;
-  if (!video) return;
+  useEffect(() => {
+    if (!isVideo || !videoRef.current) return;
 
-  video.pause();
-  video.currentTime = 0;
+    const video = videoRef.current;
 
-  const playVideo = async () => {
-    try {
+    if (isActive) {
       video.muted = true;
-      await video.play();
-    } catch (error) {
-      console.warn('Autoplay bloqueado:', error);
+      video.playsInline = true;
+      video.preload = 'auto';
+      video.play().then(() => setPaused(false)).catch((error) => {
+        setPaused(true);
+        console.warn('Autoplay bloqueado:', error);
+      });
+    } else {
+      video.pause();
+      setPaused(true);
     }
-  };
+  }, [isActive, isVideo, mediaUrl]);
 
-  playVideo();
+  function toggleVideoPlay() {
+    if (!isVideo || !videoRef.current) return;
 
-  return () => {
-    video.pause();
-    video.currentTime = 0;
-  };
-}, [mediaUrl]);
+    const video = videoRef.current;
+    if (video.paused) {
+      video.muted = false;
+      video.play().then(() => setPaused(false)).catch(() => setPaused(true));
+    } else {
+      video.pause();
+      setPaused(true);
+    }
+  }
   const shareWorker = async () => {
     const text = `Mirá este trabajo en ManosYA: ${workerName} · ${primaryService}`;
     try {
@@ -414,29 +425,29 @@ useEffect(() => {
       className="relative h-[calc(var(--real-vh,100dvh)-74px)] w-full snap-start overflow-hidden bg-black"
     >
     {isVideo && mediaUrl ? (
-  <video
-    ref={videoRef}
-    key={mediaUrl}
-    src={mediaUrl}
-    autoPlay
-    muted
-    loop
-    playsInline
-    controls={false}
-    preload="metadata"
-    className="absolute inset-0 h-full w-full bg-black object-cover"
-    onPlay={(e) => {
-      document.querySelectorAll('video').forEach((video) => {
-        if (video !== e.currentTarget) {
-          video.pause();
-          video.currentTime = 0;
-        }
-      });
-    }}
-    onError={(e) => {
-      console.warn('No se pudo reproducir video del feed:', mediaUrl, e);
-    }}
-  />
+  <div onClick={toggleVideoPlay} className="absolute inset-0 h-full w-full">
+    <video
+      ref={videoRef}
+      key={mediaUrl}
+      src={mediaUrl}
+      muted
+      loop
+      playsInline
+      controls={false}
+      preload="auto"
+      className="absolute inset-0 h-full w-full bg-black object-contain"
+      onError={(e) => {
+        console.warn('No se pudo reproducir video del feed:', mediaUrl, e);
+      }}
+    />
+    {paused && (
+      <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/10">
+        <div className="rounded-full bg-black/45 px-5 py-5 backdrop-blur-md">
+          <span className="text-4xl text-white">▶</span>
+        </div>
+      </div>
+    )}
+  </div>
 ) : (
   <img
     src={mediaUrl || '/avatar-fallback.png'}
@@ -448,13 +459,13 @@ useEffect(() => {
   />
 )}
 
-      <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.92)_0%,rgba(0,0,0,0.58)_24%,rgba(0,0,0,0.04)_56%,rgba(0,0,0,0.34)_100%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.88)_0%,rgba(0,0,0,0.48)_22%,rgba(0,0,0,0.03)_56%,rgba(0,0,0,0.22)_100%)]" />
 
-      <div className="absolute right-[4px] bottom-[145px] z-30 flex w-[72px] flex-col items-center text-white">
+      <div className="absolute right-2 bottom-[150px] z-30 flex w-14 flex-col items-center text-white">
         <button
           type="button"
           onClick={onOpen}
-          className="relative mb-5 flex h-[68px] w-[68px] items-center justify-center active:scale-95"
+          className="relative mb-4 flex h-14 w-14 items-center justify-center active:scale-95"
         >
           <img
             src={worker?.avatar_url || '/avatar-fallback.png'}
@@ -462,7 +473,7 @@ useEffect(() => {
               e.currentTarget.src = '/avatar-fallback.png';
             }}
             alt={workerName}
-            className="h-[58px] w-[58px] rounded-full border-[2.5px] border-white object-cover shadow-[0_12px_26px_rgba(0,0,0,0.55)]"
+            className="h-12 w-12 rounded-full border-2 border-white object-cover shadow-[0_12px_26px_rgba(0,0,0,0.55)]"
           />
           <span
             role="button"
@@ -478,35 +489,41 @@ useEffect(() => {
                 onAddFriend?.();
               }
             }}
-            className="absolute bottom-[1px] flex h-6 w-6 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)]"
-            aria-label="Agregar amigo"
+            className={`absolute bottom-[1px] flex h-6 w-6 items-center justify-center rounded-full text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)] ${isFollowed ? 'bg-sky-500' : 'bg-[#62bfb9]'}`}
+            aria-label={isFollowed ? 'Siguiendo' : 'Agregar amigo'}
           >
-            <UserPlus size={14} strokeWidth={3.2} />
+            {isFollowed ? <Check size={14} strokeWidth={3.4} /> : <UserPlus size={14} strokeWidth={3.2} />}
           </span>
         </button>
 
-        <button type="button" onClick={() => onLike(worker)} className="mb-5 flex w-[68px] flex-col items-center active:scale-95">
-          <Heart size={38} fill="white" strokeWidth={1.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
-          <span className="mt-1 text-[13px] font-black">{likes}</span>
+        <button type="button" onClick={() => onLike(worker)} className="mb-4 flex w-14 flex-col items-center active:scale-95" aria-label={isLiked ? 'Quitar me gusta' : 'Dar me gusta'}>
+          <Heart
+            size={32}
+            fill={isLiked ? '#ef4444' : 'white'}
+            stroke={isLiked ? '#ef4444' : 'white'}
+            strokeWidth={1.8}
+            className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]"
+          />
+          <span className="mt-0.5 text-[12px] font-black">{likes}</span>
         </button>
 
-        <button type="button" onClick={() => onComments(worker)} className="mb-5 flex w-[68px] flex-col items-center active:scale-95">
-          <MessageCircle size={38} fill="white" strokeWidth={1.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
-          <span className="mt-1 text-[13px] font-black">{reviews}</span>
+        <button type="button" onClick={() => onComments(worker)} className="mb-4 flex w-14 flex-col items-center active:scale-95">
+          <MessageCircle size={32} fill="white" strokeWidth={1.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+          <span className="mt-0.5 text-[12px] font-black">{reviews}</span>
         </button>
 
-        <button type="button" onClick={shareWorker} className="mb-5 flex w-[68px] flex-col items-center active:scale-95">
-          <Share2 size={36} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
-          <span className="mt-1 text-[11px] font-black">Compartir</span>
+        <button type="button" onClick={shareWorker} className="mb-4 flex w-14 flex-col items-center active:scale-95">
+          <Share2 size={30} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+          <span className="mt-0.5 text-[10px] font-black">Compartir</span>
         </button>
 
-        <button type="button" onClick={onNearbyMap} className="flex w-[68px] flex-col items-center active:scale-95">
-          <MapPin size={38} fill="none" stroke="white" strokeWidth={2.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+        <button type="button" onClick={onNearbyMap} className="flex w-14 flex-col items-center active:scale-95">
+          <MapPin size={32} fill="none" stroke="white" strokeWidth={2.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
         </button>
       </div>
 
-      <div className="absolute left-4 right-[84px] bottom-[72px] z-20 text-white">
-        <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-black/30 px-3 py-1.5 text-[12px] font-black backdrop-blur-md">
+      <div className="absolute left-4 right-[72px] bottom-[70px] z-20 text-white">
+        <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-black/30 px-3 py-1.5 text-[12px] font-black backdrop-blur-md">
           <span className={isOnline ? 'h-2 w-2 rounded-full bg-emerald-400' : 'h-2 w-2 rounded-full bg-white/55'} />
           {isOnline ? 'Activo ahora' : 'Disponible'}
         </div>
@@ -518,12 +535,19 @@ useEffect(() => {
               e.currentTarget.src = '/avatar-fallback.png';
             }}
             alt={workerName}
-            className="h-11 w-11 rounded-full border-2 border-white object-cover"
+            className="h-10 w-10 rounded-full border-2 border-white object-cover"
           />
 
           <button type="button" onClick={onOpen} className="min-w-0 text-left">
-            <div className="truncate text-[20px] font-black leading-tight">
-              @{worker?.username || workerName}
+            <div className="flex min-w-0 items-center gap-1.5">
+              <div className="truncate text-[18px] font-black leading-tight">
+                @{worker?.username || workerName}
+              </div>
+              {worker?.is_verified && (
+                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white shadow-[0_6px_14px_rgba(14,165,233,0.45)]" title="Verificado por ManosYA">
+                  <BadgeCheck size={14} strokeWidth={3} />
+                </span>
+              )}
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] font-bold text-white/86">
               <span>{primaryService}</span>
@@ -533,7 +557,7 @@ useEffect(() => {
           </button>
         </div>
 
-        <div className="mt-2 text-[14px] font-semibold leading-5 text-white/95">
+        <div className="mt-1.5 text-[13px] font-semibold leading-5 text-white/95">
           <p className={bioOpen ? '' : 'truncate'}>
             {bioOpen ? postText : shortBio}
           </p>
@@ -549,10 +573,10 @@ useEffect(() => {
           )}
         </div>
 
-        <div className="mt-6 flex items-center gap-2 rounded-[42px] border border-white/80 bg-white/92 px-4 py-4 shadow-[0_18px_40px_rgba(98,191,185,0.28)] backdrop-blur-xl">
+        <div className="mt-3 flex items-center gap-2 rounded-[28px] border border-white/60 bg-black/38 px-3 py-2.5 shadow-[0_14px_32px_rgba(0,0,0,0.24)] backdrop-blur-xl">
           <input
             defaultValue="Hola, ¿estás disponible?..."
-            className="flex-1 bg-transparent px-3 text-[15px] font-semibold text-slate-500 placeholder:text-slate-400 outline-none"
+            className="min-w-0 flex-1 bg-transparent px-2 text-[13px] font-semibold text-white/80 placeholder:text-white/55 outline-none"
           />
 
           <button
@@ -561,7 +585,7 @@ useEffect(() => {
               const message = `Hola ${workerName}, vi tu publicación. ¿Estás disponible?`;
               onMessage?.(worker, message);
             }}
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_14px_28px_rgba(98,191,185,0.60)] ring-1 ring-white/50 active:scale-95"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_12px_24px_rgba(98,191,185,0.48)] ring-1 ring-white/40 active:scale-95"
           >
             <SendHorizontal size={18} strokeWidth={2.6} />
           </button>
@@ -1255,6 +1279,8 @@ const [clientChats, setClientChats] = useState([]);
 const [commentNotifications, setCommentNotifications] = useState([]);
 const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
 const [unreadCommentsCount, setUnreadCommentsCount] = useState(0);
+const [followedUserIds, setFollowedUserIds] = useState([]);
+const [likedWorkerIds, setLikedWorkerIds] = useState([]);
 const [nearbyMapWorker, setNearbyMapWorker] = useState(null);
 const [isCancelling, setIsCancelling] = useState(false);
 const [bookingTime] = useState(initialTimingFromUrl || '');
@@ -1318,6 +1344,48 @@ if (!profileError && alive) {
       alive = false;
     };
   }, [router]);
+
+async function loadFollowingIds() {
+  if (!me?.id) return;
+
+  const { data, error } = await supabase
+    .from('user_friendships')
+    .select('addressee_id')
+    .eq('requester_id', me.id)
+    .eq('status', 'accepted');
+
+  if (error) {
+    if (error.code !== 'PGRST205' && error.code !== '42P01') {
+      console.error('client following ids error:', error);
+    }
+    setFollowedUserIds([]);
+    return;
+  }
+
+  setFollowedUserIds((data || []).map((item) => String(item.addressee_id)));
+}
+
+async function loadLikedWorkerIds() {
+  if (!me?.id) return;
+
+  const { data, error } = await supabase
+    .from('worker_likes')
+    .select('worker_id')
+    .eq('client_id', me.id);
+
+  if (error) {
+    console.error('client liked workers error:', error);
+    setLikedWorkerIds([]);
+    return;
+  }
+
+  setLikedWorkerIds((data || []).map((item) => String(item.worker_id)));
+}
+
+useEffect(() => {
+  loadFollowingIds();
+  loadLikedWorkerIds();
+}, [me?.id]);
 
   useEffect(() => {
     if (!navigator.geolocation) return;
@@ -1388,7 +1456,7 @@ async function fetchWorkers(serviceFilter = '') {
     const { data: profilesData } = workerIdsFromPosts.length
       ? await supabase
           .from('profiles')
-          .select('id, full_name, avatar_url')
+          .select('id, full_name, avatar_url, is_verified')
           .in('id', workerIdsFromPosts)
       : { data: [] };
 
@@ -1418,6 +1486,23 @@ async function fetchWorkers(serviceFilter = '') {
         ...Object.keys(postsByWorker),
       ]),
     ];
+
+    const likeCounts = {};
+    if (allWorkerIds.length) {
+      const { data: likesData, error: likesError } = await supabase
+        .from('worker_likes')
+        .select('worker_id')
+        .in('worker_id', allWorkerIds);
+
+      if (likesError) {
+        console.warn('worker likes count error', likesError);
+      } else {
+        (likesData || []).forEach((like) => {
+          const key = String(like.worker_id);
+          likeCounts[key] = (likeCounts[key] || 0) + 1;
+        });
+      }
+    }
 
     const normalizedFilter = normalizeSlug(serviceFilter);
 
@@ -1462,6 +1547,8 @@ async function fetchWorkers(serviceFilter = '') {
           worker.avatar_url ||
           profile.avatar_url ||
           '/avatar-fallback.png',
+        is_verified: Boolean(worker.is_verified || profile.is_verified),
+        likes_count: Number(likeCounts[workerId] ?? worker.likes_count ?? worker.like_count ?? 0),
 
         lat,
         lng,
@@ -1704,19 +1791,78 @@ async function addFriend(worker) {
     return;
   }
 
-  const { data, error } = await supabase.rpc('request_friend', {
-    addressee: targetId,
-  });
+  try {
+    let result = null;
+    const { data, error } = await supabase.rpc('request_friend', {
+      addressee: targetId,
+    });
 
-  if (error) {
+    if (error) {
+      if (error.code !== 'PGRST202') throw error;
+      result = await requestFriendViaTable(targetId);
+      setFollowedUserIds((prev) => (
+        prev.includes(String(targetId)) ? prev : [...prev, String(targetId)]
+      ));
+    } else {
+      result = data;
+      setFollowedUserIds((prev) => (
+        prev.includes(String(targetId)) ? prev : [...prev, String(targetId)]
+      ));
+    }
+
+    if (result === 'accepted') toast.success('Ahora seguís a este trabajador');
+    else toast.message('Ya seguís a este trabajador');
+  } catch (error) {
     console.error('friend request error:', error);
-    toast.error(error.message || 'No pudimos agregar amigo');
-    return;
+    const missingSchema = error?.code === 'PGRST205' || error?.code === '42P01';
+    toast.error(
+      missingSchema
+        ? 'Falta aplicar la migración social en Supabase'
+        : error.message || 'No pudimos agregar amigo'
+    );
+  }
+}
+
+async function requestFriendViaTable(targetId) {
+  const { data: direct, error: directError } = await supabase
+    .from('user_friendships')
+    .select('id, status')
+    .eq('requester_id', me.id)
+    .eq('addressee_id', targetId)
+    .maybeSingle();
+
+  if (directError) throw directError;
+  if (direct?.id) return direct.status;
+
+  const { data: reverse, error: reverseError } = await supabase
+    .from('user_friendships')
+    .select('id, status')
+    .eq('requester_id', targetId)
+    .eq('addressee_id', me.id)
+    .maybeSingle();
+
+  if (reverseError) throw reverseError;
+
+  if (reverse?.id) {
+    const { error: updateError } = await supabase
+      .from('user_friendships')
+      .update({ status: 'accepted', updated_at: new Date().toISOString() })
+      .eq('id', reverse.id);
+
+    if (updateError) throw updateError;
+    return 'accepted';
   }
 
-  if (data === 'accepted') toast.success('Ahora son amigos');
-  else if (data === 'pending') toast.success('Solicitud de amistad enviada');
-  else toast.message('La solicitud ya existe');
+  const { error: insertError } = await supabase.from('user_friendships').insert([
+    {
+      requester_id: me.id,
+      addressee_id: targetId,
+      status: 'accepted',
+    },
+  ]);
+
+  if (insertError) throw insertError;
+  return 'accepted';
 }
 
 async function toggleWorkerLike(worker) {
@@ -1733,6 +1879,7 @@ async function toggleWorkerLike(worker) {
 
   if (existing?.id) {
     await supabase.from('worker_likes').delete().eq('id', existing.id);
+    setLikedWorkerIds((prev) => prev.filter((id) => id !== String(workerId)));
 
     setWorkers((prev) =>
       prev.map((w) =>
@@ -1757,6 +1904,10 @@ async function toggleWorkerLike(worker) {
     toast.error(error.message || 'No se pudo guardar el me gusta');
     return;
   }
+
+  setLikedWorkerIds((prev) => (
+    prev.includes(String(workerId)) ? prev : [...prev, String(workerId)]
+  ));
 
   setWorkers((prev) =>
     prev.map((w) =>
@@ -2326,6 +2477,9 @@ async function cancelActiveJob() {
   <div key={String(worker.user_id)} className="h-[calc(var(--real-vh,100dvh)-74px)] snap-start">
       <FeedCard
   worker={worker}
+  isActive={idx === feedIndex}
+  isFollowed={followedUserIds.includes(String(worker.user_id || worker.worker_id))}
+  isLiked={likedWorkerIds.includes(String(worker.user_id || worker.worker_id))}
   onOpen={() => openProfile(worker)}
   onAddFriend={() => addFriend(worker)}
   onComments={() => openComments(worker)}

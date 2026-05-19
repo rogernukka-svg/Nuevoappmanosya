@@ -8,6 +8,7 @@ const isPwaDisabled =
 const withPWA = require("next-pwa")({
   dest: "public",
   sw: "service-worker.js",
+  customWorkerDir: "worker",
   register: true,
   skipWaiting: true,
   disable: isPwaDisabled,

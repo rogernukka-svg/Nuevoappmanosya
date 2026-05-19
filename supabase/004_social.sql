@@ -77,7 +77,7 @@ create table if not exists public.user_friendships (
   id uuid primary key default gen_random_uuid(),
   requester_id uuid not null references public.profiles(id) on delete cascade,
   addressee_id uuid not null references public.profiles(id) on delete cascade,
-  status text not null default 'pending' check (status in ('pending', 'accepted')),
+  status text not null default 'accepted' check (status in ('pending', 'accepted')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint user_friendships_not_self check (requester_id <> addressee_id),
@@ -119,7 +119,12 @@ begin
   where requester_id = auth.uid() and addressee_id = addressee;
 
   if existing_direct.id is not null then
-    return existing_direct.status;
+    if existing_direct.status <> 'accepted' then
+      update public.user_friendships
+        set status = 'accepted', updated_at = now()
+        where id = existing_direct.id;
+    end if;
+    return 'accepted';
   end if;
 
   select * into existing_reverse
@@ -134,8 +139,39 @@ begin
   end if;
 
   insert into public.user_friendships (requester_id, addressee_id, status)
-  values (auth.uid(), addressee, 'pending');
+  values (auth.uid(), addressee, 'accepted');
 
-  return 'pending';
+  return 'accepted';
 end;
 $$;
+
+update public.user_friendships
+set status = 'accepted', updated_at = now()
+where status = 'pending';
+
+create table if not exists public.push_subscriptions (
+  endpoint text primary key,
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  p256dh text not null,
+  auth text not null,
+  device text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.push_subscriptions enable row level security;
+
+drop policy if exists "push_subscriptions_select_own" on public.push_subscriptions;
+create policy "push_subscriptions_select_own" on public.push_subscriptions
+  for select using (auth.uid() = profile_id);
+
+drop policy if exists "push_subscriptions_insert_own" on public.push_subscriptions;
+create policy "push_subscriptions_insert_own" on public.push_subscriptions
+  for insert with check (auth.uid() = profile_id);
+
+drop policy if exists "push_subscriptions_update_own" on public.push_subscriptions;
+create policy "push_subscriptions_update_own" on public.push_subscriptions
+  for update using (auth.uid() = profile_id) with check (auth.uid() = profile_id);
+
+drop policy if exists "push_subscriptions_delete_own" on public.push_subscriptions;
+create policy "push_subscriptions_delete_own" on public.push_subscriptions
+  for delete using (auth.uid() = profile_id);
