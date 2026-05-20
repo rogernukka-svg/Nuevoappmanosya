@@ -6,6 +6,7 @@ import "leaflet/dist/leaflet.css";
 
 /* === 🧠 SEO + PWA Metadata === */
 export const metadata = {
+  metadataBase: new URL("https://www.manosya.app"),
   title: "ManosYA | Tu ayuda al instante",
   description:
     "Conectamos clientes y profesionales en minutos. Rápido, seguro y confiable.",
@@ -14,6 +15,30 @@ export const metadata = {
     icon: "/favicon.ico",
     shortcut: "/favicon.ico",
     apple: "/icons/icon-192x192.png",
+  },
+  openGraph: {
+    title: "ManosYA | Tu ayuda al instante",
+    description:
+      "Conectamos clientes y profesionales en minutos. Rápido, seguro y confiable.",
+    url: "https://www.manosya.app",
+    siteName: "ManosYA",
+    images: [
+      {
+        url: "/og-manosya-v2.png",
+        width: 1200,
+        height: 630,
+        alt: "ManosYA",
+      },
+    ],
+    locale: "es_PY",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ManosYA | Tu ayuda al instante",
+    description:
+      "Conectamos clientes y profesionales en minutos. Rápido, seguro y confiable.",
+    images: ["/og-manosya-v2.png"],
   },
 };
 
