@@ -1972,10 +1972,18 @@ const roleToSave = finalFlow === 'worker' ? 'worker' : finalFlow === 'supplier' 
 
   useEffect(() => {
     let mounted = true;
+    const withTimeout = (promise, ms, fallback = null) =>
+      Promise.race([
+        promise,
+        new Promise((resolve) => {
+          setTimeout(() => resolve(fallback), ms);
+        }),
+      ]);
 
     const checkSession = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const sessionResult = await withTimeout(supabase.auth.getSession(), 1800, null);
+        const user = sessionResult?.data?.session?.user || null;
 
         const rememberedEmail =
           typeof window !== 'undefined'
@@ -1992,7 +2000,7 @@ const roleToSave = finalFlow === 'worker' ? 'worker' : finalFlow === 'supplier' 
 }
 
         if (!user && rememberedEmail) {
-          const profile = await getProfileByEmail(rememberedEmail);
+          const profile = await withTimeout(getProfileByEmail(rememberedEmail), 1800, null);
           const rememberedName =
             firstNameOf(profile?.full_name || '') || getDisplayNameFromEmail(rememberedEmail);
 
@@ -2161,7 +2169,7 @@ function handleMainContinue(latestValue = '') {
 
   if (checkingSession) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#69c4c0] px-6">
+      <div className="flex min-h-screen w-full items-center justify-center bg-[#69c4c0] px-6">
         <div className="text-center">
           <img
             src="/ROGER OK.png"

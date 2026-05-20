@@ -42,7 +42,7 @@ export default function ClientOnlyLayout({ children }) {
   // 🔹 LOGIN / ROLE SELECTOR → sin fondo global
   if (isAuthRoute) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-gray-900">
+      <div className="min-h-screen w-full bg-white text-gray-900">
         {children}
       </div>
     );
