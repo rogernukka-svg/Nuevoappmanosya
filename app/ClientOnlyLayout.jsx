@@ -19,6 +19,10 @@ export default function ClientOnlyLayout({ children }) {
 
   if (!isMounted) return null;
 
+  if (pathname === '/') {
+    return <>{children}</>;
+  }
+
   // 🔹 Rutas que se renderizan solas (sin ClientRoot)
   const isAuthRoute =
     pathname === '/auth/login' ||
