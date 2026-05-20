@@ -6,11 +6,14 @@ import {
   ArrowLeft,
   BadgeCheck,
   BriefcaseBusiness,
+  Clapperboard,
   ImagePlus,
   Loader2,
+  MessageSquareText,
   PackagePlus,
   Save,
   SendHorizontal,
+  Sparkles,
   Store,
   Trash2,
   X,
@@ -191,6 +194,16 @@ export default function SupplierPage() {
   });
 
   const activeProducts = useMemo(() => products.filter((item) => item.is_active !== false), [products]);
+  const storeScore = useMemo(() => {
+    let score = 25;
+    if (profileForm.store_name.trim()) score += 15;
+    if (profileForm.bio.trim().length >= 30) score += 15;
+    if (profileForm.avatar_url.trim()) score += 10;
+    if (profileForm.address_text.trim()) score += 10;
+    if (activeProducts.length >= 1) score += 15;
+    if (activeProducts.length >= 3) score += 10;
+    return Math.min(score, 100);
+  }, [activeProducts.length, profileForm.address_text, profileForm.avatar_url, profileForm.bio, profileForm.store_name]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -410,7 +423,7 @@ export default function SupplierPage() {
         price_text: productForm.price_text.trim(),
         service_slug: productForm.service_slug,
         image_url: productForm.image_url.trim(),
-        contact_url: productForm.contact_url.trim() || profileForm.whatsapp_url.trim(),
+        contact_url: productForm.contact_url.trim(),
         is_active: true,
         updated_at: new Date().toISOString(),
       };
@@ -476,6 +489,28 @@ export default function SupplierPage() {
         </div>
       </div>
 
+      <div className="pointer-events-none absolute left-0 right-0 top-[92px] z-30 px-4">
+        <button
+          type="button"
+          onClick={() => setSheet('creator')}
+          className="pointer-events-auto mx-auto flex w-full max-w-4xl items-center gap-3 rounded-[26px] border border-white/14 bg-black/34 p-3 text-left text-white shadow-[0_18px_42px_rgba(0,0,0,0.28)] backdrop-blur-[22px] active:scale-[0.99]"
+        >
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#62bfb9] text-white">
+            <Clapperboard size={22} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#9ee5df]">
+              <Sparkles size={13} />
+              Tu tienda vive dentro de ManosYA
+            </div>
+            <div className="truncate text-[14px] font-black">Graba un video corto y atende pedidos aca, no afuera.</div>
+          </div>
+          <div className="hidden rounded-full bg-white/12 px-3 py-2 text-[11px] font-black sm:block">
+            {storeScore}% listo
+          </div>
+        </button>
+      </div>
+
       {busy ? (
         <div className="flex h-full items-center justify-center text-center">
           <div>
@@ -514,7 +549,7 @@ export default function SupplierPage() {
       )}
 
       <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+16px)] z-50 flex justify-center">
-        <div className="grid w-[300px] grid-cols-3 gap-2 rounded-full border border-white/12 bg-black/38 p-2 shadow-[0_18px_42px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
+        <div className="grid w-[360px] max-w-[calc(100vw-24px)] grid-cols-4 gap-2 rounded-full border border-white/12 bg-black/38 p-2 shadow-[0_18px_42px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
           <button type="button" onClick={() => setSheet('profile')} className="rounded-full px-3 py-3 text-[12px] font-black text-white active:scale-95">
             Perfil
           </button>
@@ -524,11 +559,28 @@ export default function SupplierPage() {
           <button type="button" onClick={() => setSheet('catalog')} className="rounded-full px-3 py-3 text-[12px] font-black text-white active:scale-95">
             Catalogo
           </button>
+          <button type="button" onClick={() => setSheet('creator')} className="rounded-full px-3 py-3 text-[12px] font-black text-white active:scale-95">
+            Videos
+          </button>
         </div>
       </div>
 
       <SupplierSheet title="Perfil proveedor" open={sheet === 'profile'} onClose={() => setSheet(null)}>
         <form onSubmit={saveSupplierProfile} className="space-y-4">
+          <div className="rounded-[26px] border border-[#d6f4f1] bg-[#effffb] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-[0.14em] text-[#0c6b70]">Tienda interna</div>
+                <div className="mt-1 text-xl font-black text-slate-950">{storeScore}% listo</div>
+              </div>
+              <div className="h-3 w-32 overflow-hidden rounded-full bg-white">
+                <div className="h-full rounded-full bg-[#62bfb9]" style={{ width: `${storeScore}%` }} />
+              </div>
+            </div>
+            <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">
+              Completa tu perfil para recibir consultas y pedidos dentro de ManosYA. WhatsApp queda como respaldo, no como el centro de venta.
+            </p>
+          </div>
           <Field label="Nombre comercial">
             <input value={profileForm.store_name} onChange={(e) => setProfileForm((prev) => ({ ...prev, store_name: e.target.value }))} placeholder="Ferreteria San Jose" className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
@@ -538,14 +590,14 @@ export default function SupplierPage() {
           <Field label="Portada URL">
             <input value={profileForm.cover_url} onChange={(e) => setProfileForm((prev) => ({ ...prev, cover_url: e.target.value }))} placeholder="https://..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
-          <Field label="WhatsApp o link de compra">
-            <input value={profileForm.whatsapp_url} onChange={(e) => setProfileForm((prev) => ({ ...prev, whatsapp_url: e.target.value }))} placeholder="https://wa.me/595..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
+          <Field label="Respaldo externo opcional">
+            <input value={profileForm.whatsapp_url} onChange={(e) => setProfileForm((prev) => ({ ...prev, whatsapp_url: e.target.value }))} placeholder="Link opcional, ej: https://wa.me/595..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
           <Field label="Direccion">
             <input value={profileForm.address_text} onChange={(e) => setProfileForm((prev) => ({ ...prev, address_text: e.target.value }))} placeholder="Ciudad, barrio, calle" className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
           <Field label="Descripcion">
-            <textarea value={profileForm.bio} onChange={(e) => setProfileForm((prev) => ({ ...prev, bio: e.target.value }))} rows={3} placeholder="Vendemos insumos para profesionales..." className="min-h-[92px] w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
+            <textarea value={profileForm.bio} onChange={(e) => setProfileForm((prev) => ({ ...prev, bio: e.target.value }))} rows={3} placeholder="Vendemos insumos para profesionales, respondemos pedidos en ManosYA y hacemos entregas en la zona..." className="min-h-[92px] w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
           <button type="submit" disabled={savingProfile} className="flex w-full items-center justify-center gap-2 rounded-[22px] bg-[#08233a] px-5 py-4 text-sm font-black text-white disabled:opacity-60">
             {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save size={17} />}
@@ -556,6 +608,19 @@ export default function SupplierPage() {
 
       <SupplierSheet title="Publicar producto" open={sheet === 'product'} onClose={() => setSheet(null)}>
         <form onSubmit={saveProduct} className="space-y-4">
+          <div className="rounded-[26px] border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#62bfb9] text-white">
+                <MessageSquareText size={20} />
+              </div>
+              <div>
+                <div className="text-[15px] font-black text-slate-950">Publica para recibir pedidos dentro de ManosYA</div>
+                <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                  El cliente ve tu producto en la app y te consulta desde ManosYA. El link externo es opcional.
+                </p>
+              </div>
+            </div>
+          </div>
           <Field label="Producto">
             <input value={productForm.title} onChange={(e) => setProductForm((prev) => ({ ...prev, title: e.target.value }))} placeholder="Cano PVC 40mm, canilla monocomando..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
@@ -570,8 +635,8 @@ export default function SupplierPage() {
           <Field label="Imagen URL">
             <input value={productForm.image_url} onChange={(e) => setProductForm((prev) => ({ ...prev, image_url: e.target.value }))} placeholder="https://..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
-          <Field label="Link de compra o WhatsApp">
-            <input value={productForm.contact_url} onChange={(e) => setProductForm((prev) => ({ ...prev, contact_url: e.target.value }))} placeholder="https://wa.me/595..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
+          <Field label="Link externo opcional">
+            <input value={productForm.contact_url} onChange={(e) => setProductForm((prev) => ({ ...prev, contact_url: e.target.value }))} placeholder="Opcional. Si lo dejas vacio, se prioriza ManosYA." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
           <Field label="Descripcion">
             <textarea value={productForm.description} onChange={(e) => setProductForm((prev) => ({ ...prev, description: e.target.value }))} rows={3} placeholder="Ideal para este tipo de trabajo..." className="min-h-[92px] w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
@@ -581,6 +646,48 @@ export default function SupplierPage() {
             Publicar producto
           </button>
         </form>
+      </SupplierSheet>
+
+      <SupplierSheet title="Videos que venden" open={sheet === 'creator'} onClose={() => setSheet(null)}>
+        <div className="space-y-4">
+          <div className="overflow-hidden rounded-[30px] bg-[#08233a] p-5 text-white">
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#9ee5df]">
+              <Clapperboard size={15} />
+              Proveedor influencer
+            </div>
+            <h3 className="mt-4 text-3xl font-black leading-tight">Mostra tu cara, explica tu producto y gana confianza.</h3>
+            <p className="mt-3 text-sm font-semibold leading-6 text-white/78">
+              Los clientes compran mas cuando ven quien esta atras del negocio. Graba videos simples, verticales y reales.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              ['Presentacion', 'Soy de Ferreteria San Jose, vendo cables, focos y herramientas. Entrego en la zona.'],
+              ['Consejo', 'Para instalar una canilla, estos son los tres insumos que no te pueden faltar.'],
+              ['Oferta', 'Hoy tengo promo en cemento y arena. Pedime dentro de ManosYA y te preparo el pedido.'],
+            ].map(([title, text]) => (
+              <article key={title} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#effffb] text-[#0c6b70]">
+                  <Sparkles size={19} />
+                </div>
+                <div className="mt-3 text-[15px] font-black text-slate-950">{title}</div>
+                <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">{text}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="rounded-[26px] border border-[#d6f4f1] bg-[#effffb] p-5">
+            <div className="text-[11px] font-black uppercase tracking-[0.14em] text-[#0c6b70]">Regla ManosYA</div>
+            <p className="mt-2 text-[15px] font-bold leading-7 text-slate-700">
+              Cierra el video diciendo: &quot;Pedime por ManosYA&quot;. Asi el cliente vuelve a la app, tu tienda sube de nivel y el negocio queda ordenado.
+            </p>
+            <button type="button" onClick={() => setSheet('product')} className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#62bfb9] px-5 py-3 text-sm font-black text-white shadow-[0_12px_26px_rgba(98,191,185,0.32)] active:scale-95">
+              <PackagePlus size={17} />
+              Publicar producto despues del video
+            </button>
+          </div>
+        </div>
       </SupplierSheet>
 
       <SupplierSheet title="Mi catalogo" open={sheet === 'catalog'} onClose={() => setSheet(null)}>

@@ -452,14 +452,17 @@ function SupplierProductStrip({ products, serviceName }) {
             target="_blank"
             rel="noreferrer"
             onClick={(event) => {
-              if (!product.contact_url) event.preventDefault();
+              if (!product.contact_url) {
+                event.preventDefault();
+                toast.info('Pedido interno ManosYA: el proveedor vera esta consulta cuando activemos el inbox.');
+              }
             }}
             className="flex min-w-[170px] items-center gap-2 rounded-[18px] bg-white/94 p-2 text-slate-950 shadow-[0_10px_20px_rgba(0,0,0,0.18)] active:scale-[0.98]"
           >
             <img src={product.image_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={product.title} className="h-12 w-12 rounded-xl object-cover" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] font-black">{product.title}</div>
-              <div className="truncate text-[11px] font-bold text-slate-500">{product.price_text || product.supplier_name || 'Consultar'}</div>
+              <div className="truncate text-[11px] font-bold text-slate-500">{product.price_text || 'Pedir en ManosYA'}</div>
             </div>
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white">
               <ShoppingCart size={14} />
