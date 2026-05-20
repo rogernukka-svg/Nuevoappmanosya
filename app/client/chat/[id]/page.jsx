@@ -19,6 +19,46 @@ import { motion } from 'framer-motion';
 
 const supabase = getSupabase();
 
+const CHAT_SERVICE_WATERMARKS = [
+  'Taxi', 'Chofer', 'Plomeria', 'Electricidad', 'Limpieza', 'Jardineria', 'Pintura', 'Albanileria',
+  'Carpinteria', 'Cerrajeria', 'Mecanica', 'Refrigeracion', 'Mudanza', 'Fletes', 'Parrillero', 'Cocina',
+  'Niñera', 'Cuidador', 'Enfermeria', 'Belleza', 'Maquillaje', 'Peluqueria', 'Masajes', 'Costura',
+  'Tecnico PC', 'Celulares', 'Internet', 'Camara CCTV', 'Soldadura', 'Herreria', 'Vidrieria', 'Tapiceria',
+  'Piscina', 'Fumigacion', 'Lavadero', 'Delivery', 'Mensajeria', 'Eventos', 'Fotografia', 'Video',
+  'DJ', 'Musica', 'Profesor', 'Traduccion', 'Contabilidad', 'Abogacia', 'Arquitectura', 'Diseño',
+  'Veterinaria', 'Mascotas', 'Seguridad', 'Servicio general',
+];
+
+function ChatServicePattern() {
+  const icons = [Wrench, BriefcaseBusiness, WalletCards, Sparkles, MapPin, ShieldCheck];
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div
+        className="absolute inset-0 opacity-[0.16]"
+        style={{
+          backgroundImage: `
+            radial-gradient(circle at 16px 16px, rgba(255,255,255,.58) 1.2px, transparent 1.4px),
+            linear-gradient(135deg, transparent 0 44%, rgba(255,255,255,.25) 45% 46%, transparent 47% 100%)
+          `,
+          backgroundSize: '82px 82px, 118px 118px',
+        }}
+      />
+      <div className="absolute inset-0 grid grid-cols-4 content-start gap-x-8 gap-y-9 p-6 text-white/20 sm:grid-cols-6">
+        {CHAT_SERVICE_WATERMARKS.map((service, index) => {
+          const Icon = icons[index % icons.length];
+          return (
+            <div key={`${service}-${index}`} className="flex -rotate-[18deg] flex-col items-center gap-1">
+              <Icon size={22 + (index % 3) * 5} strokeWidth={2.4} />
+              <span className="max-w-[74px] truncate text-[8px] font-black uppercase tracking-wide">{service}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function normalizeText(value) {
   return String(value || '')
     .normalize('NFD')
@@ -108,7 +148,14 @@ export default function ChatPage() {
 .select('*')
             .eq('user_id', chat.worker_id)
             .maybeSingle();
-if (alive) setWorkerProfile(worker || null);
+
+          const { data: workerExtra } = await supabase
+            .from('worker_profiles')
+            .select('full_name, avatar_url, profile_photo_url, service_type, main_skill, skills')
+            .eq('user_id', chat.worker_id)
+            .maybeSingle();
+
+if (alive) setWorkerProfile({ ...(workerExtra || {}), ...(worker || {}) });
 
 const { data: userProfile } = await supabase
   .from('profiles')
@@ -213,8 +260,10 @@ if (alive) {
   workerProfile?.full_name ||
   'Trabajador';
  const workerAvatar =
-  workerUserProfile?.avatar_url ||
   workerProfile?.avatar_url ||
+  workerProfile?.profile_photo_url ||
+  workerProfile?.photo_url ||
+  workerUserProfile?.avatar_url ||
   '/avatar-fallback.png';
   const workerService = serviceLabelForWorker(workerProfile);
 
@@ -481,35 +530,7 @@ async function requestWorkerFromChat(customText = '') {
         ref={messagesWrapRef}
         className="relative flex-1 overflow-y-auto px-3 py-4"
       >
-        <div className="pointer-events-none absolute inset-0 opacity-[0.18]">
-          <div
-            className="h-full w-full"
-            style={{
-              backgroundImage: `
-                radial-gradient(circle at 16px 16px, rgba(255,255,255,.55) 1.2px, transparent 1.4px),
-                linear-gradient(135deg, transparent 0 44%, rgba(255,255,255,.26) 45% 46%, transparent 47% 100%)
-              `,
-              backgroundSize: '82px 82px, 118px 118px',
-            }}
-          />
-        </div>
-
-        <div className="pointer-events-none absolute inset-0 opacity-[0.12]">
-          <div className="grid grid-cols-4 gap-12 p-8 text-white">
-            {Array.from({ length: 36 }).map((_, i) => {
-              const icons = [Wrench, BriefcaseBusiness, WalletCards, Sparkles];
-              const Icon = icons[i % icons.length];
-
-              return (
-                <Icon
-                  key={i}
-                  size={28 + (i % 3) * 8}
-                  className="rotate-[-18deg]"
-                />
-              );
-            })}
-          </div>
-        </div>
+        <ChatServicePattern />
 
         <div className="relative z-10">
           <div className="mx-auto mb-4 w-fit rounded-lg bg-white/28 px-3 py-1 text-[12px] font-black text-[#1e4e53] backdrop-blur-md">

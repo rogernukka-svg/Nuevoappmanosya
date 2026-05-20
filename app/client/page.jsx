@@ -26,6 +26,8 @@ import {
   Share2,
   Plus,
   UserPlus,
+  Store,
+  ShoppingCart,
 PanelTop,
 Bell,
 } from 'lucide-react';
@@ -67,12 +69,30 @@ const FitBounds = dynamic(
 );
 const LS_APP_ROLE = 'app_role';
 const LAST_GPS_KEY = 'manosya_last_gps';
+const FEED_SOUND_KEY = 'manosya_feed_sound_enabled';
 const LOGIN_BG = '#62bfb9';
 
 const HOME_VIEW = {
   center: [-25.5097, -54.6111],
   zoom: 12,
 };
+
+function isFeedSoundEnabled() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(FEED_SOUND_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function unlockFeedSound() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(FEED_SOUND_KEY, '1');
+  } catch {}
+  window.dispatchEvent(new Event('manosya-feed-sound-unlocked'));
+}
 
 const SERVICE_CATALOG = [
   { slug: 'taxi', name: 'Taxi', badge: 'Inmediato' },
@@ -230,6 +250,63 @@ function formatKm(km) {
   return `${km.toFixed(1)} km`;
 }
 
+function workerRatingValue(worker) {
+  const count = Number(worker?.total_reviews || worker?.rating_count || 0);
+  const rating = Number(worker?.avg_rating ?? worker?.rating_avg);
+  if (!count || !Number.isFinite(rating) || rating <= 0) return null;
+  return rating;
+}
+
+function formatWorkerRating(worker) {
+  const rating = workerRatingValue(worker);
+  return rating == null ? 'Sin reseÃ±as' : `â­ ${rating.toFixed(1)}`;
+}
+
+function formatWorkerRatingClean(worker) {
+  const rating = workerRatingValue(worker);
+  return rating == null ? 'Nuevo perfil' : `Rating ${rating.toFixed(1)}`;
+}
+
+function workerShareUrl(worker, path = '/client') {
+  const configuredBase = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || '';
+  const base = (configuredBase || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
+  const workerId = encodeURIComponent(String(worker?.user_id || worker?.worker_id || worker?.id || ''));
+  return `${base}${path}${workerId ? `?worker=${workerId}` : ''}`;
+}
+
+async function fetchWorkerReviewStats(workerIds) {
+  const ids = [...new Set((workerIds || []).map((id) => String(id || '')).filter(Boolean))];
+  if (!ids.length) return {};
+
+  const { data, error } = await supabase
+    .from('reviews')
+    .select('worker_id, rating')
+    .in('worker_id', ids);
+
+  if (error) {
+    console.warn('worker reviews stats error', error);
+    return {};
+  }
+
+  const grouped = {};
+  (data || []).forEach((review) => {
+    const key = String(review.worker_id || '');
+    const rating = Number(review.rating);
+    if (!key || !Number.isFinite(rating) || rating <= 0) return;
+    if (!grouped[key]) grouped[key] = { sum: 0, count: 0 };
+    grouped[key].sum += rating;
+    grouped[key].count += 1;
+  });
+
+  return Object.entries(grouped).reduce((acc, [key, value]) => {
+    acc[key] = {
+      avg_rating: value.count ? value.sum / value.count : null,
+      total_reviews: value.count,
+    };
+    return acc;
+  }, {});
+}
+
 function minutesSince(dateString) {
   if (!dateString) return null;
   const diffMs = Date.now() - new Date(dateString).getTime();
@@ -358,9 +435,46 @@ async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
   }
 }
 
-function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, onMessage, onRequest, onNearbyMap, onComments, onLike }) {
+function SupplierProductStrip({ products, serviceName }) {
+  if (!Array.isArray(products) || !products.length) return null;
+
+  return (
+    <div className="mt-2 rounded-[22px] border border-white/18 bg-black/34 p-2 backdrop-blur-xl">
+      <div className="mb-2 flex items-center gap-2 px-1 text-[11px] font-black uppercase tracking-[0.12em] text-[#9ee5df]">
+        <Store size={13} />
+        Insumos para {serviceName || 'este servicio'}
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {products.slice(0, 4).map((product) => (
+          <a
+            key={product.id}
+            href={product.contact_url || '#'}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => {
+              if (!product.contact_url) event.preventDefault();
+            }}
+            className="flex min-w-[170px] items-center gap-2 rounded-[18px] bg-white/94 p-2 text-slate-950 shadow-[0_10px_20px_rgba(0,0,0,0.18)] active:scale-[0.98]"
+          >
+            <img src={product.image_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={product.title} className="h-12 w-12 rounded-xl object-cover" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12px] font-black">{product.title}</div>
+              <div className="truncate text-[11px] font-bold text-slate-500">{product.price_text || product.supplier_name || 'Consultar'}</div>
+            </div>
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white">
+              <ShoppingCart size={14} />
+            </span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FeedCard({ worker, isActive, isFollowed, isLiked, products = [], onOpen, onAddFriend, onMessage, onRequest, onNearbyMap, onComments, onLike }) {
   const [bioOpen, setBioOpen] = useState(false);
   const [paused, setPaused] = useState(!isActive);
+  const [muted, setMuted] = useState(() => !isFeedSoundEnabled());
   const videoRef = useRef(null);
   const primaryService = serviceLabelForWorker(worker);
   const mediaUrl = worker?.media_url || worker?.cover_url || worker?.video_thumb_url || worker?.avatar_url || '/avatar-fallback.png';
@@ -373,17 +487,47 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, 
   const postText = worker?.post_description || worker?.caption || worker?.bio || 'Mirá trabajos reales, consultá por chat y solicitá directo desde ManosYA.';
   const isLongBio = postText.length > 95;
   const shortBio = isLongBio ? `${postText.slice(0, 95).trim()}...` : postText;
+
+  useEffect(() => {
+    const markSoundEnabled = () => unlockFeedSound();
+    const syncSound = () => {
+      setMuted(false);
+      const video = videoRef.current;
+      if (!video || !isActive) return;
+      video.muted = false;
+      video.volume = 1;
+      video.play().then(() => setPaused(false)).catch(() => {});
+    };
+
+    window.addEventListener('manosya-feed-sound-unlocked', syncSound);
+    document.addEventListener('pointerdown', markSoundEnabled, { once: true, capture: true });
+    document.addEventListener('touchstart', markSoundEnabled, { once: true, capture: true });
+    document.addEventListener('keydown', markSoundEnabled, { once: true, capture: true });
+
+    return () => {
+      window.removeEventListener('manosya-feed-sound-unlocked', syncSound);
+      document.removeEventListener('pointerdown', markSoundEnabled, true);
+      document.removeEventListener('touchstart', markSoundEnabled, true);
+      document.removeEventListener('keydown', markSoundEnabled, true);
+    };
+  }, [isActive]);
+
   useEffect(() => {
     if (!isVideo || !videoRef.current) return;
 
     const video = videoRef.current;
 
     if (isActive) {
-      video.muted = true;
+      const shouldPlayWithSound = isFeedSoundEnabled();
+      video.muted = !shouldPlayWithSound;
+      video.volume = 1;
       video.playsInline = true;
       video.preload = 'auto';
+      setMuted(!shouldPlayWithSound);
       video.play().then(() => setPaused(false)).catch((error) => {
-        setPaused(true);
+        video.muted = true;
+        setMuted(true);
+        video.play().then(() => setPaused(false)).catch(() => setPaused(true));
         console.warn('Autoplay bloqueado:', error);
       });
     } else {
@@ -396,9 +540,17 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, 
     if (!isVideo || !videoRef.current) return;
 
     const video = videoRef.current;
-    if (video.paused) {
+    unlockFeedSound();
+
+    if (video.paused || paused) {
       video.muted = false;
-      video.play().then(() => setPaused(false)).catch(() => setPaused(true));
+      video.volume = 1;
+      setMuted(false);
+      video.play().then(() => setPaused(false)).catch(() => {
+        video.muted = true;
+        setMuted(true);
+        video.play().then(() => setPaused(false)).catch(() => setPaused(true));
+      });
     } else {
       video.pause();
       setPaused(true);
@@ -408,11 +560,11 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, 
     const text = `Mirá este trabajo en ManosYA: ${workerName} · ${primaryService}`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: `${workerName} en ManosYA`, text, url: window.location.href });
+        await navigator.share({ title: `${workerName} en ManosYA`, text: `Mira este perfil en ManosYA: ${workerName} - ${primaryService}\n${workerShareUrl(worker, '/client')}`, url: workerShareUrl(worker, '/client') });
         return;
       }
 
-      await navigator.clipboard.writeText(`${text}\n${window.location.href}`);
+      await navigator.clipboard.writeText(`Mira este perfil en ManosYA: ${workerName} - ${primaryService}\n${workerShareUrl(worker, '/client')}`);
       toast.success('Link copiado para compartir');
     } catch (error) {
       if (error?.name !== 'AbortError') toast.error('No pudimos compartir ahora');
@@ -425,25 +577,27 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, 
       className="relative h-[calc(var(--real-vh,100dvh)-74px)] w-full snap-start overflow-hidden bg-black"
     >
     {isVideo && mediaUrl ? (
-  <div onClick={toggleVideoPlay} className="absolute inset-0 h-full w-full">
+  <div onClick={toggleVideoPlay} className="absolute inset-0 h-full w-full cursor-pointer">
     <video
       ref={videoRef}
       key={mediaUrl}
       src={mediaUrl}
-      muted
+      muted={muted}
       loop
       playsInline
       controls={false}
       preload="auto"
       className="absolute inset-0 h-full w-full bg-black object-contain"
+      onPlay={() => setPaused(false)}
+      onPause={() => setPaused(true)}
       onError={(e) => {
         console.warn('No se pudo reproducir video del feed:', mediaUrl, e);
       }}
     />
     {paused && (
-      <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/10">
+      <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/10">
         <div className="rounded-full bg-black/45 px-5 py-5 backdrop-blur-md">
-          <span className="text-4xl text-white">▶</span>
+          <span className="ml-1 block h-0 w-0 border-y-[15px] border-l-[22px] border-y-transparent border-l-white" />
         </div>
       </div>
     )}
@@ -459,9 +613,9 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, 
   />
 )}
 
-      <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.88)_0%,rgba(0,0,0,0.48)_22%,rgba(0,0,0,0.03)_56%,rgba(0,0,0,0.22)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.72)_0%,rgba(0,0,0,0.36)_22%,rgba(0,0,0,0.02)_56%,rgba(0,0,0,0.18)_100%)]" />
 
-      <div className="absolute right-2 bottom-[150px] z-30 flex w-14 flex-col items-center text-white">
+      <div className="absolute right-2 bottom-[118px] z-30 flex w-12 flex-col items-center text-white">
         <button
           type="button"
           onClick={onOpen}
@@ -496,7 +650,7 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, 
           </span>
         </button>
 
-        <button type="button" onClick={() => onLike(worker)} className="mb-4 flex w-14 flex-col items-center active:scale-95" aria-label={isLiked ? 'Quitar me gusta' : 'Dar me gusta'}>
+        <button type="button" onClick={() => onLike(worker)} className="mb-3 flex w-12 flex-col items-center active:scale-95" aria-label={isLiked ? 'Quitar me gusta' : 'Dar me gusta'}>
           <Heart
             size={32}
             fill={isLiked ? '#ef4444' : 'white'}
@@ -507,12 +661,12 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, 
           <span className="mt-0.5 text-[12px] font-black">{likes}</span>
         </button>
 
-        <button type="button" onClick={() => onComments(worker)} className="mb-4 flex w-14 flex-col items-center active:scale-95">
+        <button type="button" onClick={() => onComments(worker)} className="mb-3 flex w-12 flex-col items-center active:scale-95">
           <MessageCircle size={32} fill="white" strokeWidth={1.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
           <span className="mt-0.5 text-[12px] font-black">{reviews}</span>
         </button>
 
-        <button type="button" onClick={shareWorker} className="mb-4 flex w-14 flex-col items-center active:scale-95">
+        <button type="button" onClick={shareWorker} className="mb-3 flex w-12 flex-col items-center active:scale-95">
           <Share2 size={30} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
           <span className="mt-0.5 text-[10px] font-black">Compartir</span>
         </button>
@@ -522,7 +676,7 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, 
         </button>
       </div>
 
-      <div className="absolute left-4 right-[72px] bottom-[70px] z-20 text-white">
+      <div className="absolute left-4 right-[66px] bottom-[76px] z-20 text-white">
         <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-black/30 px-3 py-1.5 text-[12px] font-black backdrop-blur-md">
           <span className={isOnline ? 'h-2 w-2 rounded-full bg-emerald-400' : 'h-2 w-2 rounded-full bg-white/55'} />
           {isOnline ? 'Activo ahora' : 'Disponible'}
@@ -552,7 +706,7 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, 
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] font-bold text-white/86">
               <span>{primaryService}</span>
               {worker?._distKm != null && <span>• {formatKm(worker._distKm)}</span>}
-              <span>• ⭐ {Number(worker?.avg_rating || 4.8).toFixed(1)}</span>
+              <span>• {formatWorkerRatingClean(worker)}</span>
             </div>
           </button>
         </div>
@@ -573,7 +727,9 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, 
           )}
         </div>
 
-        <div className="mt-3 flex items-center gap-2 rounded-[28px] border border-white/60 bg-black/38 px-3 py-2.5 shadow-[0_14px_32px_rgba(0,0,0,0.24)] backdrop-blur-xl">
+        <SupplierProductStrip products={products} serviceName={primaryService} />
+
+        <div className="mt-2 flex items-center gap-2 rounded-[24px] border border-white/45 bg-black/28 px-3 py-2 shadow-[0_10px_22px_rgba(0,0,0,0.20)] backdrop-blur-md">
           <input
             defaultValue="Hola, ¿estás disponible?..."
             className="min-w-0 flex-1 bg-transparent px-2 text-[13px] font-semibold text-white/80 placeholder:text-white/55 outline-none"
@@ -585,7 +741,7 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, 
               const message = `Hola ${workerName}, vi tu publicación. ¿Estás disponible?`;
               onMessage?.(worker, message);
             }}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_12px_24px_rgba(98,191,185,0.48)] ring-1 ring-white/40 active:scale-95"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_10px_20px_rgba(98,191,185,0.42)] ring-1 ring-white/35 active:scale-95"
           >
             <SendHorizontal size={18} strokeWidth={2.6} />
           </button>
@@ -665,7 +821,7 @@ function CommentsSheet({
                         {item.client_name || 'Cliente'}
                       </div>
                       <div className="shrink-0 text-[12px] font-black text-amber-500">
-                        ⭐ {Number(item.rating || 5).toFixed(1)}
+                        {Number(item.rating || 0) > 0 ? `⭐ ${Number(item.rating).toFixed(1)}` : 'Sin rating'}
                       </div>
                     </div>
 
@@ -721,7 +877,7 @@ function WorkerRow({ worker, onSelect, onMessage, onRequest }) {
         <div className="mt-1 flex flex-wrap gap-2 text-[12px] text-slate-500">
           <span>{serviceLabelForWorker(worker)}</span>
           {worker?._distKm != null && <span>• {formatKm(worker._distKm)}</span>}
-          <span>• ⭐ {Number(worker?.avg_rating || 4.8).toFixed(1)}</span>
+          <span>• {formatWorkerRatingClean(worker)}</span>
         </div>
         <div className="mt-2">
           {online ? (
@@ -743,14 +899,94 @@ function WorkerRow({ worker, onSelect, onMessage, onRequest }) {
   );
 }
 
+function ProfileMediaViewer({ media, onClose }) {
+  const mediaRef = useRef(null);
+
+  useEffect(() => {
+    if (!media) return undefined;
+
+    const viewerVideo = mediaRef.current;
+    const pausedVideos = [];
+
+    document.querySelectorAll('video').forEach((video) => {
+      if (video === viewerVideo) return;
+      if (!video.paused) {
+        video.pause();
+        pausedVideos.push(video);
+      }
+    });
+
+    return () => {
+      pausedVideos.forEach((video) => {
+        if (!video.isConnected) return;
+        video.play().catch(() => {});
+      });
+    };
+  }, [media]);
+
+  if (!media) return null;
+
+  const mediaUrl = media.media_url || media.thumbnail_url;
+  const isVideo = String(media.media_type || '').toLowerCase() === 'video';
+
+  return (
+    <div className="fixed inset-0 z-[70000] flex items-center justify-center bg-black/92 p-3">
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/14 text-white backdrop-blur-md active:scale-95"
+        aria-label="Cerrar"
+      >
+        <X size={20} />
+      </button>
+      <div className="flex h-full w-full max-w-3xl items-center justify-center">
+        {isVideo ? (
+          <video
+            ref={mediaRef}
+            src={mediaUrl}
+            controls
+            autoPlay
+            playsInline
+            className="max-h-full w-full rounded-[18px] object-contain"
+          />
+        ) : (
+          <img
+            src={mediaUrl}
+            onError={(e) => {
+              e.currentTarget.src = '/avatar-fallback.png';
+            }}
+            alt={media.caption || 'Trabajo publicado'}
+            className="max-h-full w-full rounded-[18px] object-contain"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function WorkerProfileSheet({ worker, onClose, onRequest, onMessage }) {
+  const [selectedMedia, setSelectedMedia] = useState(null);
+
   if (!worker) return null;
 
   const services = splitWorkerServices(worker);
   const online = isOnlineRecent(worker);
+  const profileMedia = Array.isArray(worker?.profile_media) && worker.profile_media.length
+    ? worker.profile_media
+    : [{
+        id: worker?.post_id || worker?.media_url || worker?.avatar_url,
+        media_url: worker?.media_url || worker?.cover_url || worker?.avatar_url,
+        thumbnail_url: worker?.thumbnail_url || worker?.cover_url || worker?.avatar_url,
+        media_type: worker?.media_type || 'image',
+        caption: worker?.post_description || worker?.caption || '',
+      }].filter((item) => item.media_url);
+  const followersCount = Number(worker?.followers_count || worker?.followers || worker?.total_followers || 0);
+  const likesCount = Number(worker?.likes_count || worker?.like_count || 0);
+  const reviewsCount = Number(worker?.total_reviews || worker?.rating_count || 0);
 
   return (
     <div className="absolute inset-0 z-[65000] bg-slate-950/58 p-3 backdrop-blur-sm sm:p-5">
+      <ProfileMediaViewer media={selectedMedia} onClose={() => setSelectedMedia(null)} />
       <motion.div
         initial={{ opacity: 0, y: 32, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -807,7 +1043,7 @@ function WorkerProfileSheet({ worker, onClose, onRequest, onMessage }) {
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Rating</div>
-              <div className="mt-2 text-2xl font-black text-slate-900">{Number(worker?.avg_rating || 4.8).toFixed(1)}</div>
+              <div className="mt-2 text-2xl font-black text-slate-900">{workerRatingValue(worker) == null ? 'Nuevo' : workerRatingValue(worker).toFixed(1)}</div>
             </div>
             <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Reseñas</div>
@@ -816,6 +1052,34 @@ function WorkerProfileSheet({ worker, onClose, onRequest, onMessage }) {
             <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Radio</div>
               <div className="mt-2 text-2xl font-black text-slate-900">{Number(worker?.radius_km || 5)} km</div>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-4 gap-2 rounded-[26px] border border-slate-200 bg-white p-3 text-center shadow-sm">
+            <div><div className="text-[18px] font-black text-slate-950">{profileMedia.length}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">Posts</div></div>
+            <div><div className="text-[18px] font-black text-slate-950">{followersCount}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">Seguidores</div></div>
+            <div><div className="text-[18px] font-black text-slate-950">{likesCount}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">Me encanta</div></div>
+            <div><div className="text-[18px] font-black text-slate-950">{workerRatingValue(worker) == null ? '-' : workerRatingValue(worker).toFixed(1)}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">{reviewsCount ? 'Rating' : 'Nuevo'}</div></div>
+          </div>
+
+          <div className="mt-5">
+            <div className="mb-3 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Trabajos publicados</div>
+            <div className="grid grid-cols-3 gap-1 overflow-hidden rounded-[18px] bg-slate-100">
+              {profileMedia.slice(0, 9).map((item, idx) => (
+                <button
+                  type="button"
+                  key={`${item.id || item.media_url}-${idx}`}
+                  onClick={() => setSelectedMedia(item)}
+                  className="relative aspect-[3/4] overflow-hidden bg-slate-200 text-left active:scale-[0.99]"
+                >
+                  {item.media_type === 'video' ? (
+                    <video src={item.media_url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+                  ) : (
+                    <img src={item.thumbnail_url || item.media_url} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={item.caption || 'Trabajo'} className="h-full w-full object-cover" />
+                  )}
+                  {item.media_type === 'video' && <span className="absolute right-2 top-2 rounded-full bg-black/45 px-2 py-1 text-[10px] font-black text-white">VIDEO</span>}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -865,41 +1129,80 @@ function WorkerProfileSheet({ worker, onClose, onRequest, onMessage }) {
 }
 function NearbyMapSheet({ open, workers, center, hasMeCoords, me, selectedWorker, onSelectWorker, onClose, onMessage, onRequest }) {
  const [activeIndex, setActiveIndex] = useState(0);
-
-  if (!open) return null;
+ const [activeWorker, setActiveWorker] = useState(null);
 
   const validWorkers = (workers || []).filter((worker) => {
     return Number.isFinite(Number(worker?.lat)) && Number.isFinite(Number(worker?.lng));
   });
 
-const active =
-  selectedWorker ||
-  validWorkers[activeIndex] ||
-  validWorkers[0] ||
-  null;
   const closeWorkers = validWorkers
   .filter((worker) => Number.isFinite(Number(worker?._distKm)))
   .filter((worker) => Number(worker._distKm) <= 12)
   .slice(0, 14);
 
 const mapWorkers = closeWorkers.length ? closeWorkers : validWorkers.slice(0, 10);
+const active =
+  activeWorker ||
+  selectedWorker ||
+  mapWorkers[activeIndex] ||
+  mapWorkers[0] ||
+  validWorkers[0] ||
+  null;
+
+useEffect(() => {
+  if (!open) return;
+
+  const selectedId = selectedWorker?.user_id || selectedWorker?.worker_id;
+  const selectedInMap = selectedId
+    ? mapWorkers.find((worker) => String(worker.user_id || worker.worker_id) === String(selectedId))
+    : null;
+
+  const initialWorker = selectedInMap || mapWorkers[activeIndex] || mapWorkers[0] || validWorkers[0] || null;
+  setActiveWorker(initialWorker);
+}, [open, selectedWorker?.user_id, selectedWorker?.worker_id]);
+
+if (!open) return null;
 
 const fitPoints = [
   ...(hasMeCoords ? [[Number(me.lat), Number(me.lon)]] : []),
   ...mapWorkers.map((worker) => [Number(worker.lat), Number(worker.lng)]),
 ];
+function selectMapWorker(worker) {
+  if (!worker) return;
+
+  const workerId = String(worker.user_id || worker.worker_id);
+  const nextIndex = mapWorkers.findIndex((item) => String(item.user_id || item.worker_id) === workerId);
+  const fallbackIndex = validWorkers.findIndex((item) => String(item.user_id || item.worker_id) === workerId);
+
+  if (nextIndex >= 0) setActiveIndex(nextIndex);
+  else if (fallbackIndex >= 0) setActiveIndex(fallbackIndex);
+
+  setActiveWorker(worker);
+  onSelectWorker(worker);
+}
+
 function goPrevWorker() {
-  if (!validWorkers.length) return;
-  const next = activeIndex <= 0 ? validWorkers.length - 1 : activeIndex - 1;
+  const list = mapWorkers.length ? mapWorkers : validWorkers;
+  if (!list.length) return;
+  const current = active
+    ? list.findIndex((worker) => String(worker.user_id || worker.worker_id) === String(active.user_id || active.worker_id))
+    : activeIndex;
+  const safeIndex = current >= 0 ? current : activeIndex;
+  const next = safeIndex <= 0 ? list.length - 1 : safeIndex - 1;
   setActiveIndex(next);
-  onSelectWorker(validWorkers[next]);
+  selectMapWorker(list[next]);
 }
 
 function goNextWorker() {
-  if (!validWorkers.length) return;
-  const next = activeIndex >= validWorkers.length - 1 ? 0 : activeIndex + 1;
+  const list = mapWorkers.length ? mapWorkers : validWorkers;
+  if (!list.length) return;
+  const current = active
+    ? list.findIndex((worker) => String(worker.user_id || worker.worker_id) === String(active.user_id || active.worker_id))
+    : activeIndex;
+  const safeIndex = current >= 0 ? current : activeIndex;
+  const next = safeIndex >= list.length - 1 ? 0 : safeIndex + 1;
   setActiveIndex(next);
-  onSelectWorker(validWorkers[next]);
+  selectMapWorker(list[next]);
 }
   return (
     <div className="fixed inset-0 z-[66000] bg-slate-950/70 p-3 backdrop-blur-sm">
@@ -963,10 +1266,8 @@ function goNextWorker() {
                 position={[Number(worker.lat), Number(worker.lng)]}
                 icon={avatarIcon(worker.avatar_url, worker) || undefined}
                 eventHandlers={{
-                 click: () => {
-  onSelectWorker(worker);
-  const idx = validWorkers.findIndex((w) => String(w.user_id) === String(worker.user_id));
-  if (idx >= 0) setActiveIndex(idx);
+                  click: () => {
+  selectMapWorker(worker);
 },
                 }}
               />
@@ -999,10 +1300,15 @@ function goNextWorker() {
             {active?.full_name || 'Trabajador'}
           </div>
 
+          <div className="mt-1 text-[12px] font-extrabold text-[#0c6b70]">
+            {active?.full_name || 'El trabajador'} esta aca
+            {active?._distKm != null ? `, a ${formatKm(Number(active._distKm))} de ti` : ''}
+          </div>
+
           <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] font-bold text-slate-500">
             <span>{serviceLabelForWorker(active)}</span>
             {active?._distKm != null && <span>• {formatKm(active._distKm)}</span>}
-            <span>• ⭐ {Number(active?.avg_rating || 4.8).toFixed(1)}</span>
+            <span>• {formatWorkerRatingClean(active)}</span>
           </div>
 
           <div className="mt-1 text-[10px] font-black text-[#0c6b70]">
@@ -1240,8 +1546,9 @@ function CommentNotificationsSheet({ open, notifications, onClose }) {
 export default function ClientPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const mapRef = useRef(null);
+const mapRef = useRef(null);
 const feedRef = useRef(null);
+const sharedWorkerOpenedRef = useRef('');
 const [mounted, setMounted] = useState(false);
 
   const initialServiceFromUrl = normalizeSlug(searchParams?.get('service') || '');
@@ -1250,6 +1557,7 @@ const [mounted, setMounted] = useState(false);
 const [me, setMe] = useState({ id: null, lat: null, lon: null });
 const [clientProfile, setClientProfile] = useState(null);
 const [workers, setWorkers] = useState([]);
+const [supplierProducts, setSupplierProducts] = useState([]);
 const [busy, setBusy] = useState(false);
 const [selectedService, setSelectedService] = useState(initialServiceFromUrl || '');
 const [serviceQuery, setServiceQuery] = useState('');
@@ -1387,6 +1695,30 @@ useEffect(() => {
   loadLikedWorkerIds();
 }, [me?.id]);
 
+async function loadSupplierProducts() {
+  const { data, error } = await supabase
+    .from('supplier_products')
+    .select('*')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(80);
+
+  if (error) {
+    if (error.code !== 'PGRST205' && error.code !== '42P01') {
+      console.warn('supplier products client error:', error);
+    }
+    setSupplierProducts([]);
+    return;
+  }
+
+  setSupplierProducts(data || []);
+}
+
+useEffect(() => {
+  if (!mounted) return;
+  loadSupplierProducts();
+}, [mounted]);
+
   useEffect(() => {
     if (!navigator.geolocation) return;
 
@@ -1456,7 +1788,7 @@ async function fetchWorkers(serviceFilter = '') {
     const { data: profilesData } = workerIdsFromPosts.length
       ? await supabase
           .from('profiles')
-          .select('id, full_name, avatar_url, is_verified')
+          .select('id, full_name, avatar_url')
           .in('id', workerIdsFromPosts)
       : { data: [] };
 
@@ -1473,11 +1805,14 @@ async function fetchWorkers(serviceFilter = '') {
     });
 
     const postsByWorker = {};
+    const postsListByWorker = {};
 
     (postsData || []).forEach((post) => {
       const key = String(post.worker_id || '');
       if (!key) return;
       if (!postsByWorker[key]) postsByWorker[key] = post;
+      if (!postsListByWorker[key]) postsListByWorker[key] = [];
+      postsListByWorker[key].push(post);
     });
 
     const allWorkerIds = [
@@ -1486,6 +1821,41 @@ async function fetchWorkers(serviceFilter = '') {
         ...Object.keys(postsByWorker),
       ]),
     ];
+
+    const { data: verifiedProfilesData } = allWorkerIds.length
+      ? await supabase
+          .from('worker_profiles')
+          .select('user_id, is_verified, cover_url')
+          .in('user_id', allWorkerIds)
+      : { data: [] };
+
+    const workerProfileMap = (verifiedProfilesData || []).reduce((acc, item) => {
+      acc[String(item.user_id)] = item;
+      return acc;
+    }, {});
+    const verifiedMap = Object.fromEntries(
+      Object.entries(workerProfileMap).map(([id, item]) => [id, Boolean(item.is_verified)])
+    );
+
+    const reviewStats = await fetchWorkerReviewStats(allWorkerIds);
+
+    const followerCounts = {};
+    if (allWorkerIds.length) {
+      const { data: followersData, error: followersError } = await supabase
+        .from('user_friendships')
+        .select('addressee_id')
+        .in('addressee_id', allWorkerIds)
+        .eq('status', 'accepted');
+
+      if (followersError) {
+        console.warn('worker followers count error', followersError);
+      } else {
+        (followersData || []).forEach((item) => {
+          const key = String(item.addressee_id);
+          followerCounts[key] = (followerCounts[key] || 0) + 1;
+        });
+      }
+    }
 
     const likeCounts = {};
     if (allWorkerIds.length) {
@@ -1509,6 +1879,7 @@ async function fetchWorkers(serviceFilter = '') {
     let merged = allWorkerIds.map((workerId) => {
       const worker = workersMap[workerId] || {};
       const post = postsByWorker[workerId] || null;
+      const workerPosts = postsListByWorker[workerId] || [];
       const profile = profilesMap[workerId] || {};
 
       const lat = Number(worker?.lat);
@@ -1526,6 +1897,7 @@ async function fetchWorkers(serviceFilter = '') {
       const mediaUrl =
         post?.media_url ||
         post?.thumbnail_url ||
+        workerProfileMap[workerId]?.cover_url ||
         worker?.cover_url ||
         worker?.video_thumb_url ||
         worker?.avatar_url ||
@@ -1547,7 +1919,12 @@ async function fetchWorkers(serviceFilter = '') {
           worker.avatar_url ||
           profile.avatar_url ||
           '/avatar-fallback.png',
-        is_verified: Boolean(worker.is_verified || profile.is_verified),
+        is_verified: Boolean(verifiedMap[workerId]),
+        avg_rating: reviewStats[workerId]?.avg_rating ?? null,
+        rating_avg: reviewStats[workerId]?.avg_rating ?? null,
+        total_reviews: reviewStats[workerId]?.total_reviews ?? 0,
+        rating_count: reviewStats[workerId]?.total_reviews ?? 0,
+        followers_count: Number(followerCounts[workerId] || 0),
         likes_count: Number(likeCounts[workerId] ?? worker.likes_count ?? worker.like_count ?? 0),
 
         lat,
@@ -1559,8 +1936,15 @@ async function fetchWorkers(serviceFilter = '') {
         post_created_at: post?.created_at || null,
 
         media_url: mediaUrl,
-        cover_url: mediaUrl,
+        cover_url: workerProfileMap[workerId]?.cover_url || mediaUrl,
         thumbnail_url: post?.thumbnail_url || mediaUrl,
+        profile_media: workerPosts.map((item) => ({
+          id: item.post_id || item.id || item.media_url,
+          media_url: item.media_url || item.thumbnail_url,
+          thumbnail_url: item.thumbnail_url || item.media_url,
+          media_type: String(item.media_type || '').toLowerCase() === 'video' ? 'video' : 'image',
+          caption: item.caption || item.text_overlay || '',
+        })).filter((item) => item.media_url),
 
         media_type:
           String(post?.media_type || '').toLowerCase() === 'video'
@@ -1724,6 +2108,16 @@ const feedWorkers = useMemo(() => {
 }, [workers, feedMode, feedSeed, serviceQuery]);
 
 const currentWorker = feedWorkers[feedIndex] || null;
+const productsForWorker = (worker) => {
+  const tokens = worker?._serviceTokens?.length
+    ? worker._serviceTokens
+    : splitWorkerServices(worker).map((item) => normalizeSlug(item));
+  return (supplierProducts || []).filter((product) => {
+    const slug = normalizeSlug(product.service_slug || '');
+    if (!slug) return false;
+    return tokens.some((token) => token === slug || token.includes(slug) || slug.includes(token));
+  });
+};
 const nearbyWorkers = useMemo(() => {
   return (workers || [])
     .filter((worker) => Number.isFinite(Number(worker?._distKm)))
@@ -1732,6 +2126,26 @@ const nearbyWorkers = useMemo(() => {
   useEffect(() => {
     if (currentWorker) setSelected(currentWorker);
   }, [currentWorker]);
+
+  useEffect(() => {
+    const workerId = String(searchParams?.get('worker') || '');
+    if (!workerId || sharedWorkerOpenedRef.current === workerId || !feedWorkers.length) return;
+
+    const idx = feedWorkers.findIndex((worker) => (
+      String(worker?.user_id || worker?.worker_id || worker?.id || '') === workerId
+    ));
+    if (idx < 0) return;
+
+    sharedWorkerOpenedRef.current = workerId;
+    setFeedIndex(idx);
+    setSelected(feedWorkers[idx]);
+    setShowProfile(true);
+    setTimeout(() => {
+      const el = feedRef.current;
+      if (!el) return;
+      el.scrollTo({ top: idx * Math.max(1, el.clientHeight - 74), behavior: 'smooth' });
+    }, 120);
+  }, [feedWorkers, searchParams]);
 
   async function openProfile(worker) {
     setSelected(worker);
@@ -2477,6 +2891,7 @@ async function cancelActiveJob() {
   <div key={String(worker.user_id)} className="h-[calc(var(--real-vh,100dvh)-74px)] snap-start">
       <FeedCard
   worker={worker}
+  products={productsForWorker(worker)}
   isActive={idx === feedIndex}
   isFollowed={followedUserIds.includes(String(worker.user_id || worker.worker_id))}
   isLiked={likedWorkerIds.includes(String(worker.user_id || worker.worker_id))}
@@ -2487,7 +2902,7 @@ async function cancelActiveJob() {
   onRequest={() => requestWorker(worker)}
   onLike={() => toggleWorkerLike(worker)}
   onNearbyMap={() => {
-    setNearbyMapWorker(null);
+    setNearbyMapWorker(worker);
     setNearbyMapOpen(true);
   }}
 />

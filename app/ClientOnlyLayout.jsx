@@ -30,6 +30,7 @@ export default function ClientOnlyLayout({ children }) {
   // 🔹 Rutas especiales (worker, business, padrón y admin aisladas)
   const isIsolated =
     pathname.startsWith('/worker') ||
+    pathname.startsWith('/supplier') ||
     pathname.startsWith('/business') ||
     pathname.startsWith('/padron') ||
     pathname.startsWith('/admin');

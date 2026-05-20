@@ -10,6 +10,7 @@ import {
   ArrowRight,
   BriefcaseBusiness,
   MapPinned,
+  Store,
   Settings,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -64,6 +65,9 @@ export default function RoleSelectorPage() {
     if (role === 'worker') {
       toast.success('Modo profesional activado');
       router.push('/worker');
+    } else if (role === 'supplier') {
+      toast.success('Modo proveedor activado');
+      router.push('/supplier');
     } else {
       toast.success('Modo cliente activado');
       router.push('/client');
@@ -174,6 +178,27 @@ export default function RoleSelectorPage() {
               </div>
 
               <ArrowRight className="h-5 w-5 shrink-0 text-[#0c6b70]" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectRole('supplier')}
+              className="flex w-full items-center gap-4 rounded-[34px] bg-[#08233a] px-5 py-5 text-left text-white shadow-[0_18px_44px_rgba(8,15,52,0.18)] active:scale-[0.985]"
+            >
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[24px] bg-white/12 text-[#9ee5df] shadow-sm">
+                <Store className="h-7 w-7" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="text-[23px] font-black leading-tight">
+                  Vendo insumos
+                </div>
+                <div className="mt-1 text-[14px] font-semibold text-white/66">
+                  Publicar productos y recibir compras
+                </div>
+              </div>
+
+              <ArrowRight className="h-5 w-5 shrink-0 text-[#9ee5df]" />
             </button>
           </div>
 

@@ -76,7 +76,7 @@ $$;
 -- === Wallets / Transactions / Plans / Subscriptions ===
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check
-  check (role in ('client','worker','admin','cashier'));
+  check (role in ('client','worker','admin','cashier','supplier'));
 
 create table if not exists public.wallets (
   user_id uuid primary key references public.profiles(id) on delete cascade,

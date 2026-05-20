@@ -336,6 +336,181 @@ const TIMING_OPTIONS = [
   { id: 'otro-dia', label: 'otro día' },
 ];
 
+const SUPPLIER_ALIASES = {
+  plomeria_insumos: {
+    name: 'Plomería - caños, canillas y conexiones',
+    keywords: [
+      'caño', 'cano', 'cañoo', 'kaño', 'tubo', 'tubos', 'tubo pvc', 'pvc', 'pbc',
+      'caño pvc', 'cano pvc', 'termofusion', 'termofusión', 'polipropileno',
+      'canilla', 'griferia', 'grifería', 'mezcladora', 'ducha', 'flexible',
+      'codo', 'tee', 'union', 'unión', 'reduccion', 'reducción', 'acople',
+      'llave de paso', 'flotante', 'sifon', 'sifón', 'pileta', 'valvula',
+      'válvula', 'registro', 'teflon', 'teflón', 'pegamento pvc', 'vendo caños',
+      'vendo canos', 'vendo pvc'
+    ],
+  },
+  electricidad_insumos: {
+    name: 'Electricidad - cables, focos y tableros',
+    keywords: [
+      'cable', 'cables', 'cavle', 'kable', 'cable tipo taller', 'cable canal',
+      'foco', 'focos', 'foko', 'lampara', 'lámpara', 'lampra', 'led', 'focos led',
+      'llave', 'interruptor', 'tomacorriente', 'enchufe', 'zapatilla',
+      'disyuntor', 'termica', 'térmica', 'tablero', 'breaker', 'fusible',
+      'portalámpara', 'portalampra', 'tubo led', 'cinta aisladora', 'conector',
+      'tengo cables', 'vendo focos led'
+    ],
+  },
+  construccion_materiales: {
+    name: 'Construcción - cemento, arena y obra',
+    keywords: [
+      'cemento', 'semento', 'siminto', 'arena', 'piedra', 'cal', 'varilla',
+      'hierro', 'ladrillo', 'ladrillos', 'bloque', 'bloques', 'cemento cp',
+      'pegamento ceramico', 'pegamento cerámico', 'porcelanato', 'ceramica',
+      'cerámica', 'teja', 'chapa', 'aislante', 'yeso', 'masilla', 'obra',
+      'materiales de construccion', 'materiales de construcción',
+      'vendo cemento', 'vendo arena', 'vendo materiales de construcción'
+    ],
+  },
+  ferreteria_general: {
+    name: 'Ferretería - herramientas y fijaciones',
+    keywords: [
+      'tornillo', 'tornillos', 'torniyo', 'tuerca', 'tuercas', 'arandela',
+      'arandelas', 'clavo', 'clavos', 'tarugo', 'tarugos', 'mecha', 'broca',
+      'martillo', 'pinza', 'alicate', 'destornillador', 'llave inglesa',
+      'taladro', 'amoladora', 'sierra', 'herramienta', 'herramientas',
+      'cinta metrica', 'cinta métrica', 'silicona', 'sellador',
+      'vendo herramientas', 'vendo tornillos'
+    ],
+  },
+  automotor_repuestos: {
+    name: 'Automotor - repuestos, baterías y aceite',
+    keywords: [
+      'repuesto', 'repuestos', 'respuesto', 'repueso', 'repuestoo',
+      'repuesto toyota', 'toyota', 'nissan', 'hyundai', 'kia', 'chevrolet',
+      'volkswagen', 'vw', 'ford', 'fiat', 'bateria', 'batería', 'batria',
+      'bateri', 'cubierta', 'cubierta usada', 'rueda', 'llanta', 'llantas',
+      'aceite', 'aseite', 'lubricante', 'filtro', 'pastilla de freno',
+      'amortiguador', 'radiador', 'embrague', 'correa', 'bujia', 'bujía',
+      'vendo repuestos toyota'
+    ],
+  },
+  motos_repuestos: {
+    name: 'Motos - repuestos y accesorios',
+    keywords: [
+      'moto', 'motos', 'repuesto de moto', 'repuestos de moto', 'cubierta moto',
+      'cadena', 'piñon', 'piñón', 'corona', 'camara', 'cámara', 'casco',
+      'aceite moto', 'bateria moto', 'batería moto', 'pastilla moto',
+      'manija', 'espejo moto', 'faro moto', 'yamaha', 'honda', 'kentón',
+      'kenton', 'taiga', 'star', 'vendo repuesto de moto'
+    ],
+  },
+  refrigeracion_insumos: {
+    name: 'Refrigeración - gas, cobre y repuestos',
+    keywords: [
+      'gas aire', 'gas para aire', 'gas refrigerante', 'r410', 'r410a', 'r22',
+      'r134', 'r134a', 'cobre', 'caño de cobre', 'cano de cobre', 'aislante',
+      'manguera aire', 'capacitor', 'compresor', 'control aire', 'filtro aire',
+      'manifold', 'vacío', 'vacio', 'refrigerante', 'vendo gas para aire'
+    ],
+  },
+  informatica_tecnologia: {
+    name: 'Informática y tecnología',
+    keywords: [
+      'notebook', 'noutbuk', 'laptop', 'pc', 'computadora', 'mouse', 'teclado',
+      'monitor', 'ssd', 'disco', 'memoria ram', 'ram', 'router', 'wifi',
+      'impresora', 'cartucho', 'toner', 'tóner', 'celular', 'iphone', 'samsung',
+      'xiaomi', 'motorola', 'cargador', 'cable usb', 'auricular', 'parlante'
+    ],
+  },
+  gastronomia_insumos: {
+    name: 'Gastronomía - alimentos y bebidas',
+    keywords: [
+      'pollo', 'carne', 'harina', 'queso', 'bebidas', 'gaseosa', 'agua mineral',
+      'aceite cocina', 'arroz', 'azucar', 'azúcar', 'sal', 'condimento',
+      'pan', 'huevo', 'huevos', 'leche', 'crema', 'jamon', 'jamón',
+      'mozzarella', 'salsa', 'embutido', 'insumos gastronomicos',
+      'insumos gastronómicos'
+    ],
+  },
+  limpieza_insumos: {
+    name: 'Limpieza - químicos y descartables',
+    keywords: [
+      'detergente', 'lavandina', 'desinfectante', 'desengrasante', 'jabon',
+      'jabón', 'suavizante', 'trapo', 'rejilla', 'escoba', 'secador',
+      'mopa', 'balde', 'guante', 'guantes', 'bolsa basura', 'papel higienico',
+      'papel higiénico', 'toalla papel', 'alcohol', 'cloro',
+      'vendo insumos de limpieza'
+    ],
+  },
+  belleza_insumos: {
+    name: 'Belleza - peluquería, uñas y estética',
+    keywords: [
+      'shampoo', 'shampu', 'acondicionador', 'tintura', 'decolorante',
+      'oxidante', 'uñas', 'unas', 'gel', 'kapping', 'esmalte', 'cabello',
+      'barberia', 'barbería', 'maquina de cortar', 'máquina de cortar',
+      'secador pelo', 'plancha pelo', 'cera', 'crema', 'pestañas', 'pestanas',
+      'vendo productos de peluqueria', 'vendo productos de peluquería'
+    ],
+  },
+  carpinteria_maderas: {
+    name: 'Carpintería - maderas y herrajes',
+    keywords: [
+      'madera', 'melamina', 'mdf', 'placa', 'placa mdf', 'fenolico',
+      'fenólico', 'terciada', 'bisagra', 'corredera', 'tirador', 'tapacanto',
+      'cola vinilica', 'cola vinílica', 'barniz', 'lija', 'tornillo madera',
+      'liston', 'listón', 'machimbre', 'enchapado'
+    ],
+  },
+  pintura_insumos: {
+    name: 'Pintura - látex, enduido y accesorios',
+    keywords: [
+      'pintura', 'pinturas', 'pintura suvinil', 'suvinil', 'sherwin',
+      'sherwin williams', 'enduido', 'latex', 'látex', 'esmalte sintetico',
+      'esmalte sintético', 'rodillo', 'pincel', 'bandeja pintura', 'lija',
+      'sellador', 'fijador', 'thinner', 'aguarras', 'aguarrás',
+      'vendo pinturas'
+    ],
+  },
+  jardineria_insumos: {
+    name: 'Jardinería - herramientas, tierra y plantas',
+    keywords: [
+      'tierra', 'abono', 'fertilizante', 'semilla', 'semillas', 'maceta',
+      'manguera', 'regadera', 'pala', 'rastrillo', 'tijera poda',
+      'motosierra', 'desmalezadora', 'césped', 'cesped', 'veneno planta',
+      'insecticida jardin', 'insecticida jardín'
+    ],
+  },
+  seguridad_epp: {
+    name: 'Seguridad y EPP',
+    keywords: [
+      'epp', 'casco', 'guante seguridad', 'guantes seguridad', 'lente seguridad',
+      'antiparra', 'botin', 'botín', 'zapato seguridad', 'chaleco reflectivo',
+      'arnes', 'arnés', 'barbijo', 'mascara', 'máscara', 'protector auditivo',
+      'matafuego', 'extintor'
+    ],
+  },
+  agro_veterinaria: {
+    name: 'Agro y veterinaria',
+    keywords: [
+      'balanceado', 'alimento perro', 'alimento gato', 'forraje', 'maiz',
+      'maíz', 'semilla agro', 'fertilizante agro', 'herbicida', 'insecticida',
+      'veterinario', 'veterinaria', 'vacuna animal', 'antipulgas',
+      'desparasitante', 'productos veterinarios', 'vendo balanceado',
+      'vendo productos veterinarios'
+    ],
+  },
+  packaging_descartables: {
+    name: 'Packaging y descartables',
+    keywords: [
+      'descartable', 'descartables', 'vaso descartable', 'plato descartable',
+      'bandeja', 'bandejas', 'bolsa', 'bolsas', 'film', 'papel aluminio',
+      'servilleta', 'caja pizza', 'caja hamburguesa', 'envase', 'envases',
+      'delivery', 'packaging', 'sorbete', 'cubierto descartable',
+      'vendo descartables', 'vendo insumos para delivery'
+    ],
+  },
+};
+
 function normalizeText(value) {
   return String(value || '')
     .normalize('NFD')
@@ -661,7 +836,179 @@ function detectServiceCandidates(message) {
     .slice(0, 6);
 }
 
+function scoreSupplierMatch(slug, category, text) {
+  let score = 0;
+  const cleanText = normalizeText(text);
+  const categoryName = normalizeText(category.name);
+  const slugText = normalizeText(slug).replace(/_/g, ' ');
+  const keywords = category.keywords || [];
+
+  if (fuzzyIncludes(cleanText, categoryName)) score += 26;
+  if (fuzzyIncludes(cleanText, slugText)) score += 18;
+
+  const supplierSignals = [
+    'vendo',
+    'tengo',
+    'proveedor',
+    'distribuyo',
+    'distribuidor',
+    'insumos',
+    'materiales',
+    'repuestos',
+    'mayorista',
+    'minorista',
+  ];
+
+  if (supplierSignals.some((signal) => fuzzyIncludes(cleanText, signal))) {
+    score += 8;
+  }
+
+  for (const keyword of keywords) {
+    const k = normalizeText(keyword);
+    if (!k) continue;
+
+    if (fuzzyIncludes(cleanText, k)) {
+      if (k.includes(' ')) score += 14;
+      else if (k.length >= 10) score += 9;
+      else if (k.length >= 7) score += 7;
+      else if (k.length >= 5) score += 5;
+      else score += 3;
+    }
+  }
+
+  if (slug === 'plomeria_insumos') {
+    if (
+      cleanText.includes('pvc') ||
+      cleanText.includes('pbc') ||
+      cleanText.includes('kaño') ||
+      cleanText.includes('cano') ||
+      cleanText.includes('caño') ||
+      cleanText.includes('canilla')
+    ) {
+      score += 18;
+    }
+  }
+
+  if (slug === 'electricidad_insumos') {
+    if (
+      cleanText.includes('kable') ||
+      cleanText.includes('cavle') ||
+      cleanText.includes('cable') ||
+      cleanText.includes('foko') ||
+      cleanText.includes('foco') ||
+      cleanText.includes('lampra') ||
+      cleanText.includes('lampara')
+    ) {
+      score += 18;
+    }
+  }
+
+  if (slug === 'automotor_repuestos' || slug === 'motos_repuestos') {
+    if (
+      cleanText.includes('respuesto') ||
+      cleanText.includes('repueso') ||
+      cleanText.includes('repuestoo') ||
+      cleanText.includes('batria') ||
+      cleanText.includes('bateri') ||
+      cleanText.includes('cubierta') ||
+      cleanText.includes('aseite')
+    ) {
+      score += 16;
+    }
+  }
+
+  if (slug === 'refrigeracion_insumos') {
+    if (
+      cleanText.includes('gas aire') ||
+      cleanText.includes('gas para aire') ||
+      cleanText.includes('r410') ||
+      cleanText.includes('r22')
+    ) {
+      score += 18;
+    }
+  }
+
+  if (slug === 'construccion_materiales') {
+    if (
+      cleanText.includes('semento') ||
+      cleanText.includes('siminto') ||
+      cleanText.includes('cemento') ||
+      cleanText.includes('arena')
+    ) {
+      score += 16;
+    }
+  }
+
+  return score;
+}
+
+function detectSupplierCandidates(message) {
+  const text = normalizeText(message)
+    .replace(/[.,!?¿?¡!]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!text) return [];
+
+  const SUPPLIER_INTENTS = {
+    'vendo caños': 'plomeria_insumos',
+    'vendo canos': 'plomeria_insumos',
+    'vendo pvc': 'plomeria_insumos',
+    'tengo cables': 'electricidad_insumos',
+    'vendo focos led': 'electricidad_insumos',
+    'vendo cemento': 'construccion_materiales',
+    'vendo arena': 'construccion_materiales',
+    'vendo repuestos toyota': 'automotor_repuestos',
+    'vendo repuesto de moto': 'motos_repuestos',
+    'vendo gas para aire': 'refrigeracion_insumos',
+    'vendo insumos de limpieza': 'limpieza_insumos',
+    'vendo productos de peluqueria': 'belleza_insumos',
+    'vendo productos de peluquería': 'belleza_insumos',
+    'vendo materiales de construcción': 'construccion_materiales',
+    'vendo materiales de construccion': 'construccion_materiales',
+    'vendo herramientas': 'ferreteria_general',
+    'vendo tornillos': 'ferreteria_general',
+    'vendo pinturas': 'pintura_insumos',
+    'vendo descartables': 'packaging_descartables',
+    'vendo insumos para delivery': 'packaging_descartables',
+    'vendo balanceado': 'agro_veterinaria',
+    'vendo productos veterinarios': 'agro_veterinaria',
+  };
+
+  for (const phrase in SUPPLIER_INTENTS) {
+    if (text.includes(normalizeText(phrase))) {
+      const slug = SUPPLIER_INTENTS[phrase];
+      const category = SUPPLIER_ALIASES[slug];
+      return category
+        ? [{ slug, name: category.name, keywords: category.keywords, score: 999 }]
+        : [];
+    }
+  }
+
+  return Object.entries(SUPPLIER_ALIASES)
+    .map(([slug, category]) => ({
+      slug,
+      name: category.name,
+      keywords: category.keywords,
+      score: scoreSupplierMatch(slug, category, text),
+    }))
+    .filter((category) => category.score >= 10)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
+}
+
 function guessFlowFromMessage(text) {
+  const supplierHints = [
+    'vendo',
+    'proveedor',
+    'ferreteria',
+    'ferretería',
+    'insumos',
+    'materiales',
+    'repuestos',
+    'tengo productos',
+  ];
+
   const workerHints = [
     'ofrezco',
     'trabajo de',
@@ -675,6 +1022,7 @@ function guessFlowFromMessage(text) {
   ];
 
   const normalized = normalizeText(text);
+  if (supplierHints.some((hint) => normalized.includes(hint))) return 'supplier';
   return workerHints.some((hint) => normalized.includes(hint)) ? 'worker' : 'client';
 }
 
@@ -682,6 +1030,7 @@ function getRedirectPathFromRole(role) {
   const normalizedRole = String(role || '').trim().toLowerCase();
   if (normalizedRole === 'worker') return '/worker';
   if (normalizedRole === 'client') return '/client';
+  if (normalizedRole === 'supplier') return '/supplier';
   return '/role-selector';
 }
 
@@ -742,7 +1091,7 @@ function ChoicePill({ active, label, onClick }) {
         },
       }}
       className={[
-        'relative flex h-[158px] w-[158px] items-center justify-center overflow-hidden rounded-full px-5 text-center transition-all duration-300',
+        'relative flex h-[118px] w-[118px] items-center justify-center overflow-hidden rounded-full px-4 text-center transition-all duration-300 sm:h-[158px] sm:w-[158px] sm:px-5',
         active
           ? 'scale-[1.03] bg-[#06182a] text-white shadow-[0_20px_48px_rgba(6,24,42,0.26)]'
           : 'bg-white/96 text-[#071a27] shadow-[0_20px_46px_rgba(8,15,52,0.14)] hover:bg-white',
@@ -751,7 +1100,7 @@ function ChoicePill({ active, label, onClick }) {
       <span className="pointer-events-none absolute inset-[10px] rounded-full border border-white/70" />
       <span className="pointer-events-none absolute left-6 top-5 h-10 w-16 rounded-full bg-white/45 blur-xl" />
 
-      <span className="relative whitespace-pre-line text-[17px] font-black leading-[1.18] tracking-[-0.03em]">
+      <span className="relative whitespace-pre-line text-[14px] font-black leading-[1.18] tracking-[-0.03em] sm:text-[17px]">
         {label}
       </span>
     </motion.button>
@@ -1178,11 +1527,11 @@ function handleAlreadyHaveAccount() {
   setTimeout(() => inputRef.current?.focus(), 120);
 }
 function getLockedFlow() {
-  if (flowRef.current === 'client' || flowRef.current === 'worker') {
+  if (flowRef.current === 'client' || flowRef.current === 'worker' || flowRef.current === 'supplier') {
     return flowRef.current;
   }
 
-  if (flow === 'client' || flow === 'worker') {
+  if (flow === 'client' || flow === 'worker' || flow === 'supplier') {
     return flow;
   }
 
@@ -1216,6 +1565,20 @@ function startWorkerFlow() {
 
   appendPrompt('¿QUÉ SERVICIO HACÉS?', '');
 }
+
+function startSupplierFlow() {
+  flowRef.current = 'supplier';
+  setFlow('supplier');
+
+  setSelectedTiming('');
+  setSelectedNeed(null);
+  setServiceSuggestions([]);
+  setAssistantInput('');
+
+  setDraftStage('need');
+
+  appendPrompt('¿QUÉ INSUMOS VENDÉS?', '');
+}
  function handleNeedDetection(raw) {
   const clean = String(raw || '').trim();
 
@@ -1228,7 +1591,9 @@ function startWorkerFlow() {
 
   const lockedFlow = getLockedFlow();
 
-  const candidates = detectServiceCandidates(clean);
+  const candidates = lockedFlow === 'supplier'
+    ? detectSupplierCandidates(clean)
+    : detectServiceCandidates(clean);
   setServiceSuggestions(candidates);
 
   const top = candidates[0] || null;
@@ -1247,11 +1612,11 @@ function startWorkerFlow() {
     timing: selectedTiming || null,
   });
 
-  if (lockedFlow === 'worker') {
+  if (lockedFlow === 'worker' || lockedFlow === 'supplier') {
     setDraftStage('email');
     appendPrompt(
-      `Genial. Te ubico en ${top.name}.`,
-      'Pasame tu correo y activamos tu perfil.'
+      lockedFlow === 'supplier' ? `Perfecto. Vas a vender para ${top.name}.` : `Genial. Te ubico en ${top.name}.`,
+      lockedFlow === 'supplier' ? 'Pasame tu correo y activamos tu tienda.' : 'Pasame tu correo y activamos tu perfil.'
     );
     return;
   }
@@ -1526,7 +1891,7 @@ ctx.clearRect(0, 0, width, height);
     }
 
     if (!flow) {
-      toast.error('Elegí si necesitás ayuda o querés trabajar');
+      toast.error('Elegí cómo querés entrar');
       return;
     }
 
@@ -1566,7 +1931,7 @@ if (!photoFile || !capturedPreview) {
       const avatarUrl = await uploadAvatar(userId);
 
      const finalFlow = getLockedFlow();
-const roleToSave = finalFlow === 'worker' ? 'worker' : 'client';
+const roleToSave = finalFlow === 'worker' ? 'worker' : finalFlow === 'supplier' ? 'supplier' : 'client';
 
       const { error: profileError } = await supabase
         .from('profiles')
@@ -1592,7 +1957,7 @@ const roleToSave = finalFlow === 'worker' ? 'worker' : 'client';
         role: finalFlow,
         serviceSlug: selectedNeed.slug,
         serviceName: selectedNeed.name,
-        timing: flow === 'client' ? selectedTiming : null,
+        timing: finalFlow === 'client' ? selectedTiming : null,
       });
 
       toast.success('Cuenta creada correctamente');
@@ -1736,7 +2101,7 @@ function handleMainContinue(latestValue = '') {
 
     appendPrompt(
       `Un gusto, ${firstNameOf(nameToUse)} 👌`,
-      '¿Venís a pedir ayuda o querés ofrecer tu trabajo?',
+      '¿Venís a pedir ayuda, ofrecer tu trabajo o vender insumos?',
       { mergeSubtitle: false }
     );
 
@@ -1829,7 +2194,7 @@ function handleMainContinue(latestValue = '') {
   key={`${currentPrompt.id}-${draftStage}-${getLockedFlow()}`}
   title={
     draftStage === 'need'
-      ? getLockedFlow() === 'worker'
+      ? getLockedFlow() === 'supplier' ? '¿QUÉ INSUMOS VENDÉS?' : getLockedFlow() === 'worker'
         ? '¿QUÉ SERVICIO HACÉS?'
         : '¿QUÉ NECESITÁS HOY?'
       : currentPrompt.title
@@ -1852,7 +2217,7 @@ function handleMainContinue(latestValue = '') {
             ) : (
               <>
                {draftStage === 'name' && (
-  <div className="mx-auto flex w-full max-w-[760px] items-center justify-center gap-6 sm:gap-16">
+  <div className="mx-auto flex w-full max-w-[820px] flex-wrap items-center justify-center gap-5 sm:gap-8">
    <ChoicePill
   active={false}
   label={'Sí, ya\ntengo cuenta'}
@@ -1902,7 +2267,7 @@ function handleMainContinue(latestValue = '') {
 
       appendPrompt(
         `Un gusto, ${firstNameOf(nameToUse)} 👌`,
-        '¿Venís a pedir ayuda o querés ofrecer tu trabajo?',
+        '¿Venís a pedir ayuda, ofrecer tu trabajo o vender insumos?',
         { mergeSubtitle: false }
       );
 
@@ -1912,7 +2277,7 @@ function handleMainContinue(latestValue = '') {
 )}
 
               {draftStage === 'flow' && (
-  <div className="mx-auto flex w-full max-w-[760px] items-center justify-center gap-6 sm:gap-16">
+  <div className="mx-auto flex w-full max-w-[760px] flex-wrap items-center justify-center gap-3 sm:gap-8">
     <ChoicePill
       active={false}
       label={'Necesito\nayuda'}
@@ -1924,6 +2289,12 @@ function handleMainContinue(latestValue = '') {
       label={'Quiero ofrecer\nmi trabajo'}
       onClick={startWorkerFlow}
     />
+
+    <ChoicePill
+      active={false}
+      label={'Vendo\ninsumos'}
+      onClick={startSupplierFlow}
+    />
   </div>
 )}
 
@@ -1934,7 +2305,7 @@ function handleMainContinue(latestValue = '') {
       value={assistantInput}
       onChange={setAssistantInput}
       placeholder={
-        getLockedFlow() === 'worker'
+        getLockedFlow() === 'supplier' ? 'Ej: vendo caños, cables, ferretería...' : getLockedFlow() === 'worker'
           ? 'Ej: hago plomería, electricidad, parrilla...'
           : 'Ej: necesito plomero, electricista, chofer...'
       }
@@ -1961,11 +2332,11 @@ function handleMainContinue(latestValue = '') {
                 timing: selectedTiming || null,
               });
 
-              if (lockedFlow === 'worker') {
+              if (lockedFlow === 'worker' || lockedFlow === 'supplier') {
                 setDraftStage('email');
                 appendPrompt(
-                  `Perfecto. ${service.name}.`,
-                  'Ahora pasame tu correo.'
+                  lockedFlow === 'supplier' ? `Perfecto. Insumos para ${service.name}.` : `Perfecto. ${service.name}.`,
+                  lockedFlow === 'supplier' ? 'Ahora pasame tu correo para activar tu tienda.' : 'Ahora pasame tu correo.'
                 );
                 return;
               }

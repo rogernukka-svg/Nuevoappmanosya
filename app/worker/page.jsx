@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useMemo, Fragment } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Loader2,
@@ -24,6 +24,8 @@ import {
   XCircle,
   Bot,
   ShieldCheck,
+  Wrench,
+  WalletCards,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
@@ -41,6 +43,46 @@ const Marker = dynamic(() => import('react-leaflet').then((m) => m.Marker), { ss
 const Polyline = dynamic(() => import('react-leaflet').then((m) => m.Polyline), { ssr: false });
 
 const supabase = getSupabase();
+
+const CHAT_SERVICE_WATERMARKS = [
+  'Taxi', 'Chofer', 'Plomeria', 'Electricidad', 'Limpieza', 'Jardineria', 'Pintura', 'Albanileria',
+  'Carpinteria', 'Cerrajeria', 'Mecanica', 'Refrigeracion', 'Mudanza', 'Fletes', 'Parrillero', 'Cocina',
+  'Niñera', 'Cuidador', 'Enfermeria', 'Belleza', 'Maquillaje', 'Peluqueria', 'Masajes', 'Costura',
+  'Tecnico PC', 'Celulares', 'Internet', 'Camara CCTV', 'Soldadura', 'Herreria', 'Vidrieria', 'Tapiceria',
+  'Piscina', 'Fumigacion', 'Lavadero', 'Delivery', 'Mensajeria', 'Eventos', 'Fotografia', 'Video',
+  'DJ', 'Musica', 'Profesor', 'Traduccion', 'Contabilidad', 'Abogacia', 'Arquitectura', 'Diseño',
+  'Veterinaria', 'Mascotas', 'Seguridad', 'Servicio general',
+];
+
+function ChatServicePattern() {
+  const icons = [Wrench, Briefcase, WalletCards, Sparkles, MapPin, ShieldCheck];
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div
+        className="absolute inset-0 opacity-[0.16]"
+        style={{
+          backgroundImage: `
+            radial-gradient(circle at 16px 16px, rgba(255,255,255,.58) 1.2px, transparent 1.4px),
+            linear-gradient(135deg, transparent 0 44%, rgba(255,255,255,.25) 45% 46%, transparent 47% 100%)
+          `,
+          backgroundSize: '82px 82px, 118px 118px',
+        }}
+      />
+      <div className="absolute inset-0 grid grid-cols-4 content-start gap-x-8 gap-y-9 p-6 text-white/20 sm:grid-cols-6">
+        {CHAT_SERVICE_WATERMARKS.map((service, index) => {
+          const Icon = icons[index % icons.length];
+          return (
+            <div key={`${service}-${index}`} className="flex -rotate-[18deg] flex-col items-center gap-1">
+              <Icon size={22 + (index % 3) * 5} strokeWidth={2.4} />
+              <span className="max-w-[74px] truncate text-[8px] font-black uppercase tracking-wide">{service}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /* =========================
    HELPERS
@@ -562,6 +604,8 @@ function WorkerFeedPlaceholder({ onOpenProfile }) {
 
 export default function WorkerPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const deepLinkChatId = searchParams.get('chat');
 
   const [user, setUser] = useState(null);
   const [jobs, setJobs] = useState([]);
@@ -591,6 +635,7 @@ const bottomRef = useRef(null);
 const soundRef = useRef(null);
 const typingTimeoutRef = useRef(null);
 const workerChatIdsRef = useRef(new Set());
+const openedChatParamRef = useRef(null);
 
   const [status, setStatus] = useState(() => {
     if (typeof window === 'undefined') return 'available';
@@ -1810,6 +1855,60 @@ setWorkerUnreadByJob((prev) => {
   }
 }
 
+useEffect(() => {
+  if (!user?.id || !deepLinkChatId) return;
+  if (openedChatParamRef.current === deepLinkChatId) return;
+
+  let alive = true;
+
+  async function openDeepLinkedChat() {
+    try {
+      openedChatParamRef.current = deepLinkChatId;
+
+      const { data: chat, error: chatError } = await supabase
+        .from('chats')
+        .select('id, job_id, client_id, worker_id')
+        .eq('id', deepLinkChatId)
+        .eq('worker_id', user.id)
+        .maybeSingle();
+
+      if (chatError) throw chatError;
+      if (!chat?.job_id || !chat?.client_id) {
+        toast.error('No encontramos este chat en tus pedidos');
+        return;
+      }
+
+      let job = jobs.find((item) => String(item.id) === String(chat.job_id));
+
+      if (!job) {
+        const { data: jobData, error: jobError } = await supabase
+          .from('jobs')
+          .select('*')
+          .eq('id', chat.job_id)
+          .maybeSingle();
+
+        if (jobError) throw jobError;
+        job = jobData;
+      }
+
+      if (!alive || !job) return;
+
+      setWorkerTab('jobs');
+      await openChat({ ...job, client_id: chat.client_id, worker_id: chat.worker_id, chat_id: chat.id });
+      router.replace('/worker', { scroll: false });
+    } catch (error) {
+      console.error('open worker chat deeplink error:', error);
+      toast.error('No se pudo abrir el chat del panel');
+    }
+  }
+
+  openDeepLinkedChat();
+
+  return () => {
+    alive = false;
+  };
+}, [deepLinkChatId, user?.id, jobs.length]);
+
 /* === SEND MESSAGE === */
 async function sendMessage() {
   const text = inputRef.current?.value?.trim();
@@ -2241,7 +2340,7 @@ const unreadMessages =
             </button>
 
             <img
-              src={selectedJob?.client?.avatar_url || '/avatar-fallback.png'}
+              src={selectedJob?.client?.avatar_url || clientProfile?.avatar_url || '/avatar-fallback.png'}
               onError={(e) => {
                 e.currentTarget.src = '/avatar-fallback.png';
               }}
@@ -2295,35 +2394,7 @@ const unreadMessages =
         </header>
 
         <main className="relative flex-1 overflow-y-auto px-3 py-4">
-          <div className="pointer-events-none absolute inset-0 opacity-[0.18]">
-            <div
-              className="h-full w-full"
-              style={{
-                backgroundImage: `
-                  radial-gradient(circle at 16px 16px, rgba(255,255,255,.55) 1.2px, transparent 1.4px),
-                  linear-gradient(135deg, transparent 0 44%, rgba(255,255,255,.26) 45% 46%, transparent 47% 100%)
-                `,
-                backgroundSize: '82px 82px, 118px 118px',
-              }}
-            />
-          </div>
-
-          <div className="pointer-events-none absolute inset-0 opacity-[0.12]">
-            <div className="grid grid-cols-4 gap-12 p-8 text-white">
-              {Array.from({ length: 36 }).map((_, i) => {
-                const icons = [Briefcase, Sparkles, ShieldCheck];
-                const Icon = icons[i % icons.length];
-
-                return (
-                  <Icon
-                    key={i}
-                    size={28 + (i % 3) * 8}
-                    className="rotate-[-18deg]"
-                  />
-                );
-              })}
-            </div>
-          </div>
+          <ChatServicePattern />
 
           <div className="relative z-10">
             <div className="mx-auto mb-4 w-fit rounded-lg bg-white/28 px-3 py-1 text-[12px] font-black text-[#1e4e53] backdrop-blur-md">

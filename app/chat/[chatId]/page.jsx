@@ -7,6 +7,17 @@ import { motion } from 'framer-motion';
 import { SendHorizontal, ChevronLeft } from 'lucide-react';
 
 const supabase = getSupabase();
+const WORKER_CHAT_SEEN_MAP_KEY = 'manosya_worker_chat_seen_map';
+
+function markWorkerChatRead(chatId) {
+  if (typeof window === 'undefined' || !chatId) return;
+  try {
+    const raw = localStorage.getItem(WORKER_CHAT_SEEN_MAP_KEY);
+    const seenMap = raw ? JSON.parse(raw) : {};
+    seenMap[String(chatId)] = Date.now();
+    localStorage.setItem(WORKER_CHAT_SEEN_MAP_KEY, JSON.stringify(seenMap));
+  } catch {}
+}
 
 export default function ChatPage() {
   const { chatId } = useParams();
@@ -36,6 +47,7 @@ export default function ChatPage() {
         .eq('chat_id', chatId)
         .order('created_at', { ascending: true });
       setMessages(data || []);
+      markWorkerChatRead(chatId);
     };
     load();
   }, [chatId]);
@@ -49,7 +61,10 @@ export default function ChatPage() {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` },
-        (payload) => setMessages((prev) => [...prev, payload.new])
+        (payload) => {
+          setMessages((prev) => [...prev, payload.new]);
+          markWorkerChatRead(chatId);
+        }
       )
       .subscribe();
 
@@ -65,7 +80,7 @@ export default function ChatPage() {
     if (!text) return;
 
     setSending(true);
-    await supabase.from('messages').insert([{ chat_id: chatId, sender_id: user.id, content: text }]);
+    await supabase.from('messages').insert([{ chat_id: chatId, sender_id: user.id, content: text, text }]);
     setSending(false);
     inputRef.current.value = '';
   }
@@ -101,7 +116,7 @@ export default function ChatPage() {
                     : 'bg-gray-100 text-gray-800 rounded-bl-md'
                 }`}
               >
-                {m.content}
+                {m.content || m.text}
                 <div
                   className={`text-[10px] mt-1 opacity-70 ${
                     mine ? 'text-white' : 'text-gray-500'

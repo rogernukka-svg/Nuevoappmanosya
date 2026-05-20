@@ -13,7 +13,8 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text,
   full_name text,
-  role text not null default 'client' check (role in ('client','worker','admin')),
+  role text not null default 'client' check (role in ('client','worker','admin','supplier')),
+  avatar_url text,
   photo_url text,
   phone text,
   created_at timestamptz not null default now(),
@@ -47,6 +48,7 @@ create policy "profiles_update_own" on public.profiles
 create table if not exists public.worker_profiles (
   user_id uuid primary key references public.profiles(id) on delete cascade,
   bio text,
+  cover_url text,
   is_active boolean not null default true,
   is_verified boolean not null default false,
   service_radius_km numeric not null default 5,
