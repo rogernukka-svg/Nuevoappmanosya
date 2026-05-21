@@ -297,15 +297,12 @@ export default function FounderPageClient() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.68, ease: [0.22, 1, 0.36, 1] }}
           >
-            <Link href="/" className="inline-flex items-center">
-              <Image
-                src="/logo-manosya.png"
-                alt="ManosYA"
-                width={170}
-                height={56}
-                priority
-                className="h-11 w-auto object-contain sm:h-12"
-              />
+            <Link
+              href="/"
+              aria-label="Ir a ManosYA"
+              className="inline-flex h-12 items-center rounded-full border border-[#62bfb9]/28 bg-white px-5 text-xl font-black tracking-[-0.04em] text-[#217a74] shadow-[0_14px_34px_rgba(15,23,42,0.07)] transition duration-200 hover:-translate-y-0.5 hover:border-[#62bfb9]/60 sm:h-14 sm:px-6 sm:text-2xl"
+            >
+              Manos<span className="text-[#62bfb9]">YA</span>
             </Link>
 
             <div className="mt-6 inline-flex items-center rounded-full border border-[#62bfb9]/30 bg-white/82 px-4 py-2 text-sm font-semibold text-[#217a74] shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur">
