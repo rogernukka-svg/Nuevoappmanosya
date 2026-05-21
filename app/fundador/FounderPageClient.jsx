@@ -8,9 +8,11 @@ import {
   BrainCircuit,
   BriefcaseBusiness,
   Building2,
+  Facebook,
   Globe2,
-  Linkedin,
+  Instagram,
   Mail,
+  MessageCircle,
   MapPin,
   Mic2,
   Newspaper,
@@ -23,8 +25,10 @@ const founder = {
   name: 'Roger Núñez',
   role: 'Fundador de ManosYA',
   photo: '/founder-roger-nunez.png',
-  linkedin: 'https://www.linkedin.com/in/roger-nunez',
-  contact: 'mailto:contacto@manosya.app',
+  whatsapp: 'https://wa.me/message/PRXLIIJV27NVD1',
+  email: 'mailto:manosya.py@gmail.com',
+  instagram: 'https://www.instagram.com/manosya.py?igsh=MTdobXp2dzlvNHJ3Zw==',
+  facebook: 'https://www.facebook.com/profile.php?id=61583934836185',
 };
 
 const storyParagraphs = [
@@ -168,6 +172,29 @@ function PremiumButton({ href, children, variant = 'dark', icon: Icon }) {
   );
 }
 
+const contactButtons = [
+  {
+    label: 'WhatsApp',
+    href: founder.whatsapp,
+    icon: MessageCircle,
+  },
+  {
+    label: 'Gmail',
+    href: founder.email,
+    icon: Mail,
+  },
+  {
+    label: 'Instagram',
+    href: founder.instagram,
+    icon: Instagram,
+  },
+  {
+    label: 'Facebook',
+    href: founder.facebook,
+    icon: Facebook,
+  },
+];
+
 function FounderPortrait() {
   return (
     <motion.aside
@@ -195,9 +222,6 @@ function FounderPortrait() {
           <p className="mt-1 text-sm text-white/78">{founder.role}</p>
         </div>
       </div>
-      <p className="mt-3 hidden text-center text-xs font-medium leading-5 text-slate-500 sm:block">
-        Foto oficial provisional. Reemplazar public/founder-roger-nunez.png con la imagen final.
-      </p>
     </motion.aside>
   );
 }
@@ -273,7 +297,18 @@ export default function FounderPageClient() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.68, ease: [0.22, 1, 0.36, 1] }}
           >
-            <div className="inline-flex items-center rounded-full border border-[#62bfb9]/30 bg-white/82 px-4 py-2 text-sm font-semibold text-[#217a74] shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur">
+            <Link href="/" className="inline-flex items-center">
+              <Image
+                src="/logo-manosya.png"
+                alt="ManosYA"
+                width={170}
+                height={56}
+                priority
+                className="h-11 w-auto object-contain sm:h-12"
+              />
+            </Link>
+
+            <div className="mt-6 inline-flex items-center rounded-full border border-[#62bfb9]/30 bg-white/82 px-4 py-2 text-sm font-semibold text-[#217a74] shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur">
               <Sparkles className="mr-2 h-4 w-4" aria-hidden="true" />
               Perfil oficial del fundador
             </div>
@@ -292,12 +327,16 @@ export default function FounderPageClient() {
               <PremiumButton href="/" icon={ArrowRight}>
                 Conocer ManosYA
               </PremiumButton>
-              <PremiumButton href={founder.linkedin} variant="light" icon={Linkedin}>
-                LinkedIn
-              </PremiumButton>
-              <PremiumButton href={founder.contact} variant="light" icon={Mail}>
-                Contacto
-              </PremiumButton>
+              {contactButtons.map((item) => (
+                <PremiumButton
+                  key={item.label}
+                  href={item.href}
+                  variant="light"
+                  icon={item.icon}
+                >
+                  {item.label}
+                </PremiumButton>
+              ))}
             </div>
 
             <dl className="mt-9 grid max-w-2xl grid-cols-3 gap-2 sm:gap-3">
@@ -427,9 +466,18 @@ export default function FounderPageClient() {
                 Para entrevistas, alianzas o cobertura editorial sobre ManosYA y Roger Núñez.
               </p>
             </div>
-            <PremiumButton href={founder.contact} icon={Mail}>
-              Escribir contacto
-            </PremiumButton>
+            <div className="flex flex-wrap gap-3">
+              {contactButtons.map((item) => (
+                <PremiumButton
+                  key={item.label}
+                  href={item.href}
+                  variant={item.label === 'WhatsApp' ? 'dark' : 'light'}
+                  icon={item.icon}
+                >
+                  {item.label}
+                </PremiumButton>
+              ))}
+            </div>
           </motion.div>
         </div>
       </section>
