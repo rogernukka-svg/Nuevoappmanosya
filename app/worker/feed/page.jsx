@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
+import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
 
 const supabase = getSupabase();
 const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
@@ -1838,6 +1839,23 @@ async function fetchWorkers(serviceFilter = '') {
 }, [mounted, me?.id, selectedService, hasMeCoords, feedMode]);
   const feedWorkers = useMemo(() => { const base = Array.isArray(workers) ? workers : []; const q = normalizeText(serviceQuery); if (q) return base.map((worker) => ({ ...worker, _searchScore: workerSearchScore(worker, q) })).filter((worker) => worker._searchScore > 0).sort((a, b) => b._searchScore - a._searchScore).slice(0, 60); if (feedMode === 'near') { const nearby = base.filter((worker) => Number.isFinite(Number(worker?._distKm))).filter((worker) => Number(worker._distKm) <= 15).sort((a, b) => Number(a._distKm) - Number(b._distKm)); return [...nearby.slice(0, 6), ...shuffleBySeed(nearby.slice(6), feedSeed)].slice(0, 24); } const online = base.filter((worker) => isOnlineRecent(worker)); const offline = base.filter((worker) => !isOnlineRecent(worker)); return [...shuffleBySeed(online, feedSeed), ...shuffleBySeed(offline, feedSeed + 77)].slice(0, 60); }, [workers, feedMode, feedSeed, serviceQuery]);
   const currentWorker = feedWorkers[feedIndex] || null;
+  useEffect(() => {
+    if (!feedWorkers.length) return;
+
+    const mediaUrls = collectWorkerMediaUrls(feedWorkers, {
+      limit: 12,
+      minVideos: 3,
+      minImages: 4,
+    });
+    const scheduleCache = window.requestIdleCallback || ((callback) => setTimeout(callback, 900));
+    const cancelSchedule = window.cancelIdleCallback || clearTimeout;
+    const handle = scheduleCache(() => {
+      cacheMediaUrls(mediaUrls, 'manosya-worker-feed-media-v1');
+    });
+
+    return () => cancelSchedule(handle);
+  }, [feedWorkers]);
+
   const productsForWorker = (worker) => {
     const tokens = worker?._serviceTokens?.length
       ? worker._serviceTokens

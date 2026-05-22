@@ -33,6 +33,7 @@ Bell,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
+import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
 
 const supabase = getSupabase();
 
@@ -2111,6 +2112,24 @@ const feedWorkers = useMemo(() => {
 }, [workers, feedMode, feedSeed, serviceQuery]);
 
 const currentWorker = feedWorkers[feedIndex] || null;
+
+useEffect(() => {
+  if (!feedWorkers.length) return;
+
+  const mediaUrls = collectWorkerMediaUrls(feedWorkers, {
+    limit: 12,
+    minVideos: 3,
+    minImages: 4,
+  });
+  const scheduleCache = window.requestIdleCallback || ((callback) => setTimeout(callback, 900));
+  const cancelSchedule = window.cancelIdleCallback || clearTimeout;
+  const handle = scheduleCache(() => {
+    cacheMediaUrls(mediaUrls, 'manosya-client-feed-media-v1');
+  });
+
+  return () => cancelSchedule(handle);
+}, [feedWorkers]);
+
 const productsForWorker = (worker) => {
   const tokens = worker?._serviceTokens?.length
     ? worker._serviceTokens

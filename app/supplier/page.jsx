@@ -21,6 +21,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
+import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
 
 const supabase = getSupabase();
 const LAST_GPS_KEY = 'manosya_supplier_feed_gps';
@@ -269,6 +270,23 @@ export default function SupplierPage() {
     loadProducts();
     loadWorkers();
   }, [me?.id]);
+
+  useEffect(() => {
+    if (!workers.length) return;
+
+    const mediaUrls = collectWorkerMediaUrls(workers, {
+      limit: 12,
+      minVideos: 3,
+      minImages: 4,
+    });
+    const scheduleCache = window.requestIdleCallback || ((callback) => setTimeout(callback, 900));
+    const cancelSchedule = window.cancelIdleCallback || clearTimeout;
+    const handle = scheduleCache(() => {
+      cacheMediaUrls(mediaUrls, 'manosya-supplier-feed-media-v1');
+    });
+
+    return () => cancelSchedule(handle);
+  }, [workers]);
 
   async function loadSupplierProfile() {
     const { data, error } = await supabase

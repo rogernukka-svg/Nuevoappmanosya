@@ -77,6 +77,37 @@ const withPWA = require("next-pwa")({
         cacheableResponse: { statuses: [0, 200] },
       },
     },
+
+    // 5) Media publica de Supabase: fotos de perfiles, trabajos y publicaciones
+    {
+      urlPattern:
+        /^https:\/\/.*\.supabase\.co\/storage\/v1\/object\/public\/.*\.(?:png|jpg|jpeg|webp|gif|ico)(?:\?.*)?$/i,
+      handler: "CacheFirst",
+      options: {
+        cacheName: "supabase-images-v1",
+        expiration: {
+          maxEntries: 220,
+          maxAgeSeconds: 60 * 60 * 24 * 30,
+        },
+        cacheableResponse: { statuses: [0, 200] },
+      },
+    },
+
+    // 6) Videos del feed: guardar varios para que cliente/trabajador entren sin espera
+    {
+      urlPattern: ({ request, url }) =>
+        request.destination === "video" ||
+        /\.(?:mp4|webm|mov|m4v)(?:\?.*)?$/i.test(url.href),
+      handler: "CacheFirst",
+      options: {
+        cacheName: "feed-videos-v1",
+        expiration: {
+          maxEntries: 24,
+          maxAgeSeconds: 60 * 60 * 24 * 14,
+        },
+        cacheableResponse: { statuses: [0, 200, 206] },
+      },
+    },
   ],
 });
 
