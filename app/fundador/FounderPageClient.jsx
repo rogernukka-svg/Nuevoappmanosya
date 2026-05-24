@@ -141,13 +141,13 @@ function Header() {
     <header className="border-b border-[#62bfb9]/24 bg-white">
       <div className="mx-auto flex min-h-[116px] max-w-[1800px] flex-col justify-between gap-6 px-5 py-6 sm:px-8 lg:min-h-[164px] lg:flex-row lg:items-center lg:px-12">
         <Link href="/" className="group inline-flex items-center gap-4" aria-label="ManosYA">
-          <span className="relative flex h-16 w-24 items-center justify-center overflow-hidden rounded-sm bg-[#62bfb9] shadow-[0_10px_24px_rgba(0,0,0,0.08)] sm:h-20 sm:w-32">
+          <span className="relative flex h-16 w-28 items-center justify-center overflow-hidden sm:h-20 sm:w-36">
             <Image
               src="/logo-manosya.png"
               alt="ManosYA"
               width={320}
               height={170}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-contain"
             />
           </span>
           <span className="leading-none">
