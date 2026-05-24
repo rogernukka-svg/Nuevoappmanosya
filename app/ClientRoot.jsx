@@ -98,6 +98,8 @@ export default function ClientRoot({ children }) {
     pathname?.startsWith("/auth") ||
     pathname?.startsWith("/role-selector") ||
     pathname?.startsWith("/client") ||
+    pathname?.startsWith("/fundador") ||
+    pathname?.startsWith("/founder") ||
     pathname?.startsWith("/settings");
 
   const homeLink = isWorker
