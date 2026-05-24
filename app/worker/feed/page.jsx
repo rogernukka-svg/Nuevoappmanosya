@@ -43,6 +43,7 @@ const LAST_GPS_KEY = 'manosya_worker_feed_gps';
 const FEED_SOUND_KEY = 'manosya_feed_sound_enabled';
 const WORKER_NOTIFICATIONS_SEEN_KEY = 'manosya_worker_notifications_seen_at';
 const WORKER_CHAT_SEEN_MAP_KEY = 'manosya_worker_chat_seen_map';
+const VIDEO_REMINDER_KEY = 'manosya_video_upload_reminder_at';
 const HOME_VIEW = { center: [-25.5097, -54.6111], zoom: 12 };
 
 function isFeedSoundEnabled() {
@@ -218,10 +219,55 @@ async function fetchWorkerReviewStats(workerIds) {
   }, {});
 }
 function shuffleBySeed(list, seed = 1) {
+  const seededRandom = (index) => {
+    const x = Math.sin(index + seed * 9999) * 10000;
+    return x - Math.floor(x);
+  };
+
   return [...(list || [])]
-    .map((item, index) => ({ item, sort: Math.sin(index + seed * 9999) * 10000 % 1 }))
+    .map((item, index) => ({ item, sort: seededRandom(index) }))
     .sort((a, b) => a.sort - b.sort)
     .map(({ item }) => item);
+}
+
+function workerHasVideo(worker) {
+  if (String(worker?.media_type || '').toLowerCase() === 'video') return true;
+
+  return Array.isArray(worker?.profile_media)
+    ? worker.profile_media.some((item) => String(item?.media_type || '').toLowerCase() === 'video')
+    : false;
+}
+
+function prioritizeVideoWorkers(list, seed = 1) {
+  const videos = [];
+  const rest = [];
+
+  for (const worker of list || []) {
+    if (workerHasVideo(worker)) videos.push(worker);
+    else rest.push(worker);
+  }
+
+  return [
+    ...shuffleBySeed(videos, seed + 17),
+    ...shuffleBySeed(rest, seed + 91),
+  ];
+}
+
+function prioritizeSearchResultsByVideo(list, seed = 1) {
+  const buckets = new Map();
+
+  for (const worker of list || []) {
+    const score = Number(worker?._searchScore || 0);
+    const key = String(score);
+    const bucket = buckets.get(key) || [];
+    bucket.push(worker);
+    buckets.set(key, bucket);
+  }
+
+  return [...buckets.keys()]
+    .map(Number)
+    .sort((a, b) => b - a)
+    .flatMap((score, index) => prioritizeVideoWorkers(buckets.get(String(score)), seed + index * 19));
 }
 function splitWorkerServices(worker) {
   const raw = [];
@@ -1208,18 +1254,57 @@ async function requestBrowserNotificationPermission() {
   return Notification.permission;
 }
 
-function notifyWorkerDevice(title, body) {
+async function notifyWorkerDevice(title, body, options = {}) {
   playWorkerNotificationSound();
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
 
+  const notificationOptions = {
+    body,
+    icon: '/icon-192x192.png',
+    badge: '/icon-192x192.png',
+    tag: options.tag || 'manosya-worker-notification',
+    renotify: true,
+    requireInteraction: Boolean(options.requireInteraction),
+    vibrate: options.vibrate || [180, 80, 180],
+    data: {
+      url: options.url || '/worker/feed',
+    },
+  };
+
   try {
-    new Notification(title, {
-      body,
-      icon: '/icon-192x192.png',
-      badge: '/icon-192x192.png',
-      tag: 'manosya-worker-notification',
-    });
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.ready;
+      if (registration?.showNotification) {
+        await registration.showNotification(title, notificationOptions);
+        return;
+      }
+    }
+
+    new Notification(title, notificationOptions);
+  } catch {}
+}
+
+function hasUploadedVideo(posts) {
+  return (posts || []).some((post) => String(post?.media_type || '').toLowerCase() === 'video');
+}
+
+function shouldShowVideoReminder(posts) {
+  if (typeof window === 'undefined') return false;
+  if (hasUploadedVideo(posts)) return false;
+
+  try {
+    const lastShownAt = Number(localStorage.getItem(VIDEO_REMINDER_KEY) || 0);
+    return Date.now() - lastShownAt > 1000 * 60 * 60 * 20;
+  } catch {
+    return true;
+  }
+}
+
+function markVideoReminderShown() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(VIDEO_REMINDER_KEY, String(Date.now()));
   } catch {}
 }
 
@@ -1279,6 +1364,7 @@ export default function WorkerFeedPage() {
 const [workers, setWorkers] = useState([]);
 const [supplierProducts, setSupplierProducts] = useState([]);
 const [workerPosts, setWorkerPosts] = useState([]);
+const [workerPostsLoaded, setWorkerPostsLoaded] = useState(false);
 const [profilePosts, setProfilePosts] = useState([]);
 const [showMyPosts, setShowMyPosts] = useState(false);
 const [showFriendRequests, setShowFriendRequests] = useState(false);
@@ -1342,6 +1428,8 @@ const fileInputRef = useRef(null);
 async function fetchWorkerPosts() {
   if (!me?.id) return;
 
+  setWorkerPostsLoaded(false);
+
   const { data, error } = await supabase
     .from('worker_posts')
     .select('*')
@@ -1351,10 +1439,12 @@ async function fetchWorkerPosts() {
   if (error) {
     console.error('worker_posts error', error);
     toast.error('No pudimos cargar tus publicaciones');
+    setWorkerPostsLoaded(true);
     return;
   }
 
   setWorkerPosts(data || []);
+  setWorkerPostsLoaded(true);
 }
 
 async function fetchProfilePosts(workerId) {
@@ -1837,7 +1927,60 @@ async function fetchWorkers(serviceFilter = '') {
 
   fetchWorkers(selectedService);
 }, [mounted, me?.id, selectedService, hasMeCoords, feedMode]);
-  const feedWorkers = useMemo(() => { const base = Array.isArray(workers) ? workers : []; const q = normalizeText(serviceQuery); if (q) return base.map((worker) => ({ ...worker, _searchScore: workerSearchScore(worker, q) })).filter((worker) => worker._searchScore > 0).sort((a, b) => b._searchScore - a._searchScore).slice(0, 60); if (feedMode === 'near') { const nearby = base.filter((worker) => Number.isFinite(Number(worker?._distKm))).filter((worker) => Number(worker._distKm) <= 15).sort((a, b) => Number(a._distKm) - Number(b._distKm)); return [...nearby.slice(0, 6), ...shuffleBySeed(nearby.slice(6), feedSeed)].slice(0, 24); } const online = base.filter((worker) => isOnlineRecent(worker)); const offline = base.filter((worker) => !isOnlineRecent(worker)); return [...shuffleBySeed(online, feedSeed), ...shuffleBySeed(offline, feedSeed + 77)].slice(0, 60); }, [workers, feedMode, feedSeed, serviceQuery]);
+
+  useEffect(() => {
+    if (!mounted || !me?.id || !workerPostsLoaded) return;
+    if (!shouldShowVideoReminder(workerPosts)) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const permission = await requestBrowserNotificationPermission();
+      if (cancelled || permission !== 'granted') return;
+
+      markVideoReminderShown();
+      await notifyWorkerDevice(
+        'Subí un video y aparecé primero',
+        'Los perfiles con video tienen prioridad en ManosYA. Mostrá tu trabajo en movimiento.',
+        {
+          tag: 'manosya-video-upload-reminder',
+          url: '/worker/feed',
+        }
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, me?.id, workerPostsLoaded, workerPosts]);
+
+  const feedWorkers = useMemo(() => {
+    const base = Array.isArray(workers) ? workers : [];
+    const q = normalizeText(serviceQuery);
+
+    if (q) {
+      const matches = base
+        .map((worker) => ({
+          ...worker,
+          _searchScore: workerSearchScore(worker, q),
+        }))
+        .filter((worker) => worker._searchScore > 0)
+        .sort((a, b) => b._searchScore - a._searchScore);
+
+      return prioritizeSearchResultsByVideo(matches, feedSeed).slice(0, 60);
+    }
+
+    if (feedMode === 'near') {
+      const nearby = base
+        .filter((worker) => Number.isFinite(Number(worker?._distKm)))
+        .filter((worker) => Number(worker._distKm) <= 15)
+        .sort((a, b) => Number(a._distKm) - Number(b._distKm));
+
+      return prioritizeVideoWorkers(nearby, feedSeed).slice(0, 24);
+    }
+
+    return prioritizeVideoWorkers(base, feedSeed).slice(0, 60);
+  }, [workers, feedMode, feedSeed, serviceQuery]);
   const currentWorker = feedWorkers[feedIndex] || null;
   useEffect(() => {
     if (!feedWorkers.length) return;
@@ -2365,6 +2508,16 @@ const path = `${me.id}/posts/${Date.now()}.${ext}`;
     setUploadLabel('Â¡Publicado con Ã©xito!');
 
     toast.success('PublicaciÃ³n creada');
+    notifyWorkerDevice(
+      isVideo ? 'Tu video ya tiene prioridad' : 'Probá subir un video',
+      isVideo
+        ? 'Tu publicación con video puede aparecer primero en el feed de ManosYA.'
+        : 'Los videos ayudan a que los clientes te vean antes y confíen más rápido.',
+      {
+        tag: isVideo ? 'manosya-video-published' : 'manosya-video-upload-reminder',
+        url: '/worker/feed',
+      }
+    );
 
     setTimeout(() => {
   setCreatePostOpen(false);

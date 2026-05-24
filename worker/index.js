@@ -16,6 +16,7 @@ self.addEventListener("push", (event) => {
     renotify: true,
     requireInteraction: Boolean(payload.requireInteraction),
     vibrate: payload.vibrate || [180, 80, 180],
+    actions: Array.isArray(payload.actions) ? payload.actions : [],
     data: {
       url: payload.url || "/worker",
     },

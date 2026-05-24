@@ -351,6 +351,46 @@ function shuffleBySeed(list, seed = 1) {
     .sort((a, b) => a.sort - b.sort)
     .map(({ item }) => item);
 }
+
+function workerHasVideo(worker) {
+  if (String(worker?.media_type || '').toLowerCase() === 'video') return true;
+
+  return Array.isArray(worker?.profile_media)
+    ? worker.profile_media.some((item) => String(item?.media_type || '').toLowerCase() === 'video')
+    : false;
+}
+
+function prioritizeVideoWorkers(list, seed = 1) {
+  const videos = [];
+  const rest = [];
+
+  for (const worker of list || []) {
+    if (workerHasVideo(worker)) videos.push(worker);
+    else rest.push(worker);
+  }
+
+  return [
+    ...shuffleBySeed(videos, seed + 17),
+    ...shuffleBySeed(rest, seed + 91),
+  ];
+}
+
+function prioritizeSearchResultsByVideo(list, seed = 1) {
+  const buckets = new Map();
+
+  for (const worker of list || []) {
+    const score = Number(worker?._searchScore || 0);
+    const key = String(score);
+    const bucket = buckets.get(key) || [];
+    bucket.push(worker);
+    buckets.set(key, bucket);
+  }
+
+  return [...buckets.keys()]
+    .map(Number)
+    .sort((a, b) => b - a)
+    .flatMap((score, index) => prioritizeVideoWorkers(buckets.get(String(score)), seed + index * 19));
+}
 function splitWorkerServices(worker) {
   const raw = [];
 
@@ -2076,7 +2116,7 @@ const feedWorkers = useMemo(() => {
   const q = normalizeText(serviceQuery);
 
   if (q) {
-    return base
+    const matches = base
       .map((worker) => ({
         ...worker,
         _searchScore: workerSearchScore(worker, q),
@@ -2086,8 +2126,9 @@ const feedWorkers = useMemo(() => {
         if (b._searchScore !== a._searchScore) return b._searchScore - a._searchScore;
         if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
         return Number(b?.avg_rating || 0) - Number(a?.avg_rating || 0);
-      })
-      .slice(0, 60);
+      });
+
+    return prioritizeSearchResultsByVideo(matches, feedSeed).slice(0, 60);
   }
 
   if (feedMode === 'near') {
@@ -2096,19 +2137,10 @@ const feedWorkers = useMemo(() => {
       .filter((worker) => Number(worker._distKm) <= 15)
       .sort((a, b) => Number(a._distKm) - Number(b._distKm));
 
-    const topNear = nearby.slice(0, 6);
-    const restNear = shuffleBySeed(nearby.slice(6), feedSeed);
-
-    return [...topNear, ...restNear].slice(0, 24);
+    return prioritizeVideoWorkers(nearby, feedSeed).slice(0, 24);
   }
 
-  const online = base.filter((worker) => isOnlineRecent(worker));
-  const offline = base.filter((worker) => !isOnlineRecent(worker));
-
-  return [
-    ...shuffleBySeed(online, feedSeed),
-    ...shuffleBySeed(offline, feedSeed + 77),
-  ].slice(0, 60);
+  return prioritizeVideoWorkers(base, feedSeed).slice(0, 60);
 }, [workers, feedMode, feedSeed, serviceQuery]);
 
 const currentWorker = feedWorkers[feedIndex] || null;
