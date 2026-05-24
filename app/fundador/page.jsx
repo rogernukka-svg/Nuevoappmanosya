@@ -3,6 +3,7 @@ import FounderPageClient from './FounderPageClient';
 const siteUrl = 'https://www.manosya.app';
 const pageUrl = `${siteUrl}/fundador`;
 const founderImage = `${siteUrl}/founder-roger-nunez.png`;
+const directorImage = `${siteUrl}/ivan-armoa-director-general.jpeg`;
 const title = 'Roger Núñez | Fundador de ManosYA';
 const description =
   'Perfil oficial de Roger Núñez, fundador de ManosYA, la startup tecnológica paraguaya que conecta trabajadores y clientes en tiempo real mediante geolocalización, inteligencia artificial y confianza digital.';
@@ -16,6 +17,9 @@ export const metadata = {
     'Roger Núñez fundador',
     'Roger Núñez ManosYA',
     'Fundador de ManosYA',
+    'Iván Armoa',
+    'Iván Armoa ManosYA',
+    'Director General de ManosYA',
     'ManosYA founder',
     'ManosYA Paraguay',
     'startup paraguaya',
@@ -122,9 +126,35 @@ const organizationSchema = {
     '@id': `${pageUrl}#roger-nunez`,
     name: 'Roger Núñez',
   },
+  employee: [
+    {
+      '@type': 'Person',
+      '@id': `${pageUrl}#ivan-armoa`,
+      name: 'Iván Armoa',
+      jobTitle: 'Director General',
+    },
+  ],
   foundingLocation: {
     '@type': 'Place',
     name: 'Ciudad del Este, Paraguay',
+  },
+};
+
+const directorSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Person',
+  '@id': `${pageUrl}#ivan-armoa`,
+  name: 'Iván Armoa',
+  jobTitle: 'Director General',
+  url: `${pageUrl}#direccion`,
+  image: directorImage,
+  description:
+    'Iván Armoa es Director General de ManosYA, con experiencia en publicidad, diseño, comunicación, campañas políticas, empresas y construcción de marcas.',
+  worksFor: {
+    '@type': 'Organization',
+    '@id': `${siteUrl}/#organization`,
+    name: 'ManosYA',
+    url: siteUrl,
   },
 };
 
@@ -182,6 +212,12 @@ const founderStorySchema = {
       '@id': `${siteUrl}/#organization`,
       name: 'ManosYA',
     },
+    {
+      '@type': 'Person',
+      '@id': `${pageUrl}#ivan-armoa`,
+      name: 'Iván Armoa',
+      jobTitle: 'Director General',
+    },
   ],
   articleSection: 'Founder Story',
   keywords:
@@ -210,6 +246,7 @@ const breadcrumbSchema = {
 export default function FounderPage() {
   const structuredData = [
     personSchema,
+    directorSchema,
     organizationSchema,
     profilePageSchema,
     founderStorySchema,

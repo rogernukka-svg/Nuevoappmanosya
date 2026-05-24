@@ -32,8 +32,15 @@ const founder = {
   facebook: 'https://www.facebook.com/profile.php?id=61583934836185',
 };
 
+const director = {
+  name: 'Iván Armoa',
+  role: 'Director General de ManosYA',
+  photo: '/ivan-armoa-director-general.jpeg',
+};
+
 const navItems = [
   { label: 'Historia', href: '#historia' },
+  { label: 'Dirección', href: '#direccion' },
   { label: 'Visión', href: '#vision' },
   { label: 'Archivo', href: '#archivo' },
   { label: 'Prensa', href: '#prensa' },
@@ -54,6 +61,15 @@ const storyParagraphs = [
   'Durante más de tres años, esa idea fue creciendo entre bocetos, aprendizajes, desvelos y una obsesión constante por construir algo grande desde Paraguay. Así nació ManosYA: una plataforma tecnológica creada para conectar trabajadores y clientes mediante geolocalización, comunicación instantánea y tecnología pensada para la realidad de Latinoamérica.',
   'Más que una aplicación, ManosYA representa una continuidad de valores entre generaciones: la lucha por el trabajo digno, las oportunidades y la modernización del acceso al empleo.',
   'Desde Ciudad del Este, Roger Núñez transformó aquella conversación con su padre en una visión tecnológica que hoy busca cambiar la manera en que las personas trabajan y se conectan en Paraguay.',
+];
+
+const directorParagraphs = [
+  'Hay historias que no empiezan en una oficina. Empiezan cruzando fronteras, aprendiendo de nuevo y entendiendo cómo se mueve la gente cuando necesita salir adelante.',
+  'Iván Armoa llegó a Paraguay después de construir una trayectoria de más de dos décadas en el mundo de la publicidad, el diseño y la comunicación. Desde entonces, trabajó en campañas políticas, empresas, marcas nacionales e internacionales, desarrollando estrategias, construyendo identidades y transformando ideas en proyectos reales.',
+  'Fue justamente en ese camino donde conoció a Roger Núñez. Lo que comenzó como una colaboración profesional durante campañas políticas en Ciudad del Este terminó convirtiéndose, con los años, en una relación construida sobre trabajo, visión y confianza. Mientras cada uno seguía desarrollando su propio recorrido, las ideas volvieron a cruzarlos una y otra vez.',
+  'Tiempo después, Roger lo invitó a formar parte de ManosYA. Y algo hizo clic.',
+  'Porque detrás de la tecnología, Iván encontró algo mucho más grande: una herramienta capaz de cambiar la manera en que las personas trabajan, se conectan y generan oportunidades en Paraguay.',
+  'Hoy, como Director General de ManosYA, apuesta su experiencia, creatividad y visión estratégica al crecimiento del proyecto, con un objetivo claro: llevar esta idea a lo más alto y convertirla en una plataforma que impacte de verdad en la vida de miles de personas.',
 ];
 
 const updates = [
@@ -309,6 +325,69 @@ function StorySection() {
   );
 }
 
+function DirectorSection() {
+  return (
+    <section id="direccion" className="relative overflow-hidden bg-[#06182a] px-5 py-10 text-white sm:px-8 lg:py-14">
+      <div className="absolute -right-24 top-4 h-56 w-56 rounded-full bg-[#62bfb9]/16 blur-3xl" />
+      <div className="absolute -left-24 bottom-4 h-56 w-56 rounded-full bg-[#62bfb9]/10 blur-3xl" />
+
+      <div className="relative mx-auto grid max-w-[1120px] gap-7 lg:grid-cols-[0.62fr_1.38fr] lg:items-center">
+        <motion.div
+          {...fadeUp}
+          className="relative mx-auto w-full max-w-[360px] overflow-hidden rounded-[26px] border border-white/12 bg-white/6 shadow-[0_18px_54px_rgba(0,0,0,0.26)]"
+        >
+          <Image
+            src={director.photo}
+            alt="Iván Armoa, Director General de ManosYA"
+            width={1200}
+            height={760}
+            className="aspect-[4/3] w-full object-cover grayscale"
+          />
+          <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,rgba(6,24,42,0)_0%,rgba(6,24,42,0.72)_36%,rgba(6,24,42,0.98)_100%)] p-4 pt-14">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#62bfb9]">
+              Dirección General
+            </p>
+            <h3 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_10px_rgba(0,0,0,0.72)]">
+              {director.name}
+            </h3>
+            <p className="mt-1 text-sm font-semibold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">{director.role}</p>
+          </div>
+        </motion.div>
+
+        <div>
+          <motion.div {...fadeUp}>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#62bfb9]">
+              Equipo directivo
+            </p>
+            <h2 className="mt-3 max-w-3xl text-[30px] font-black leading-[1.05] tracking-[-0.04em] text-white sm:text-[44px]">
+              Iván Armoa, Director General de ManosYA.
+            </h2>
+            <p className="mt-4 max-w-3xl text-base leading-7 text-white/72 sm:text-lg">
+              Estrategia, comunicación y crecimiento institucional al servicio de una plataforma nacida para crear oportunidades reales.
+            </p>
+          </motion.div>
+
+          <motion.article
+            {...fadeUp}
+            className="mt-6 border-l-4 border-[#62bfb9] pl-4 sm:pl-6"
+          >
+            <div className="space-y-3 text-[15px] leading-7 text-white/82 sm:text-[17px] sm:leading-8">
+              {directorParagraphs.map((paragraph, index) => (
+                <p
+                  key={paragraph}
+                  className={index === directorParagraphs.length - 1 ? 'font-bold text-white' : ''}
+                >
+                  {paragraph}
+                </p>
+              ))}
+            </div>
+          </motion.article>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function VisionCard({ item }) {
   const Icon = item.icon;
 
@@ -471,6 +550,7 @@ export default function FounderPageClient() {
       <Header />
       <Hero />
       <StorySection />
+      <DirectorSection />
       <VisionSection />
       <ArchiveSection />
       <MilestonesSection />
