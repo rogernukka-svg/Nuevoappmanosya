@@ -101,7 +101,11 @@ const personSchema = {
     name: 'ManosYA',
     url: siteUrl,
   },
-  sameAs: ['https://www.linkedin.com/in/roger-nunez'],
+  sameAs: [
+    'https://wa.me/message/PRXLIIJV27NVD1',
+    'https://www.instagram.com/manosya.py?igsh=MTdobXp2dzlvNHJ3Zw==',
+    'https://www.facebook.com/profile.php?id=61583934836185',
+  ],
 };
 
 const organizationSchema = {

@@ -7,16 +7,17 @@ import {
   ArrowRight,
   BrainCircuit,
   BriefcaseBusiness,
-  Building2,
   Facebook,
+  FileText,
   Globe2,
   Instagram,
   Mail,
-  MessageCircle,
   MapPin,
+  MessageCircle,
   Mic2,
   Newspaper,
   RadioTower,
+  Search,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
@@ -31,6 +32,20 @@ const founder = {
   facebook: 'https://www.facebook.com/profile.php?id=61583934836185',
 };
 
+const navItems = [
+  { label: 'Historia', href: '#historia' },
+  { label: 'Visión', href: '#vision' },
+  { label: 'Archivo', href: '#archivo' },
+  { label: 'Prensa', href: '#prensa' },
+];
+
+const contactButtons = [
+  { label: 'WhatsApp', href: founder.whatsapp, icon: MessageCircle },
+  { label: 'Gmail', href: founder.email, icon: Mail },
+  { label: 'Instagram', href: founder.instagram, icon: Instagram },
+  { label: 'Facebook', href: founder.facebook, icon: Facebook },
+];
+
 const storyParagraphs = [
   'ManosYA nació mucho antes de convertirse en una aplicación. Nació en una conversación familiar, compartiendo una comida sencilla entre padre e hijo, hablando sobre trabajadores, oportunidades y las dificultades que vive la gente todos los días para encontrar empleo o conseguir ayuda confiable.',
   'Roger Núñez, fundador de ManosYA, creció viendo a su padre, Rogelio Núñez Arzamendia, luchar durante años por los derechos y la dignidad de los trabajadores en Ciudad del Este. Su padre siempre tuvo una visión clara: crear una gran agencia de trabajadores que pudiera conectar personas honestas con oportunidades reales.',
@@ -41,77 +56,77 @@ const storyParagraphs = [
   'Desde Ciudad del Este, Roger Núñez transformó aquella conversación con su padre en una visión tecnológica que hoy busca cambiar la manera en que las personas trabajan y se conectan en Paraguay.',
 ];
 
-const achievements = [
+const updates = [
   {
-    label: 'Trabajadores conectados',
-    value: 'Red activa',
-    text: 'Infraestructura para que profesionales independientes ganen visibilidad, confianza y nuevas oportunidades.',
-    icon: BriefcaseBusiness,
+    title: 'La conversación familiar que originó ManosYA',
+    date: 'Historia oficial',
+    text: 'El punto de partida fue una visión compartida entre padre e hijo: trabajo digno, oportunidades reales y tecnología al servicio de la gente.',
   },
   {
-    label: 'Servicios digitales',
-    value: 'On demand',
-    text: 'Categorías de trabajo, solicitudes inteligentes y flujos preparados para resolver necesidades reales en minutos.',
-    icon: RadioTower,
-  },
-  {
-    label: 'Expansión',
-    value: 'Paraguay primero',
-    text: 'Un modelo escalable que nace desde el mercado paraguayo y se proyecta hacia una economía de servicios más conectada.',
-    icon: Globe2,
-  },
-  {
-    label: 'Innovación tecnológica',
-    value: 'IA + ubicación',
-    text: 'Búsqueda semántica, geolocalización y automatización para reducir fricción entre quien necesita ayuda y quien puede resolverla.',
-    icon: BrainCircuit,
+    title: 'ManosYA como plataforma tecnológica paraguaya',
+    date: 'Archivo institucional',
+    text: 'El proyecto documenta una nueva forma de conectar clientes, trabajadores y proveedores mediante geolocalización, confianza digital e inteligencia artificial.',
   },
 ];
 
 const vision = [
   {
-    title: 'Inteligencia artificial aplicada',
-    text: 'ManosYA usa IA para interpretar necesidades, clasificar servicios y acercar respuestas más precisas en menos tiempo.',
+    title: 'Inteligencia artificial',
+    text: 'IA aplicada para interpretar necesidades, clasificar servicios y acercar respuestas más precisas.',
     icon: BrainCircuit,
   },
   {
-    title: 'Geolocalización en tiempo real',
-    text: 'La cercanía importa. La plataforma conecta demanda y oferta alrededor del lugar exacto donde ocurre la necesidad.',
+    title: 'Geolocalización',
+    text: 'La cercanía se vuelve infraestructura: encontrar ayuda alrededor del lugar donde ocurre la necesidad.',
     icon: MapPin,
   },
   {
-    title: 'Economía digital paraguaya',
-    text: 'Cada solicitud digital crea una oportunidad para formalizar trabajo, profesionalizar servicios y mover valor dentro del país.',
-    icon: Building2,
+    title: 'Economía digital',
+    text: 'Cada solicitud digital crea una oportunidad para formalizar y profesionalizar servicios en Paraguay.',
+    icon: Globe2,
   },
   {
-    title: 'Oportunidades para trabajadores',
-    text: 'El producto está diseñado para construir identidad, reputación y trazabilidad para trabajadores honestos y clientes reales.',
+    title: 'Oportunidad laboral',
+    text: 'Perfiles, reputación y trazabilidad para trabajadores honestos que quieren crecer.',
+    icon: BriefcaseBusiness,
+  },
+];
+
+const archiveStats = [
+  { label: 'País', value: 'Paraguay' },
+  { label: 'Ciudad origen', value: 'Ciudad del Este' },
+  { label: 'Compañía', value: 'ManosYA' },
+  { label: 'Rol', value: 'Founder' },
+];
+
+const milestones = [
+  {
+    title: 'Trabajadores conectados',
+    text: 'Base digital para visibilidad, confianza y nuevas oportunidades.',
     icon: ShieldCheck,
+  },
+  {
+    title: 'Servicios digitales',
+    text: 'Categorías, búsquedas y solicitudes pensadas para necesidades reales.',
+    icon: Search,
+  },
+  {
+    title: 'Expansión',
+    text: 'Un modelo paraguayo con vocación regional para la economía de servicios.',
+    icon: RadioTower,
+  },
+  {
+    title: 'Innovación tecnológica',
+    text: 'IA, ubicación y comunicación instantánea integradas en una app útil.',
+    icon: Sparkles,
   },
 ];
 
 const pressItems = [
-  {
-    title: 'Entrevistas',
-    text: 'Espacio reservado para conversaciones con medios, comunidades tecnológicas y ecosistema emprendedor.',
-    icon: Mic2,
-  },
-  {
-    title: 'Noticias',
-    text: 'Actualizaciones oficiales sobre producto, crecimiento, alianzas y expansión territorial de ManosYA.',
-    icon: Newspaper,
-  },
-  {
-    title: 'Medios',
-    text: 'Kit institucional, biografía del fundador, imágenes oficiales y materiales para prensa.',
-    icon: Sparkles,
-  },
-  {
-    title: 'Podcasts',
-    text: 'Charlas sobre tecnología paraguaya, economía digital, trabajo independiente e inteligencia artificial.',
-    icon: RadioTower,
-  },
+  { title: 'Entrevistas', text: 'Conversaciones con medios, comunidad tecnológica y ecosistema emprendedor.', icon: Mic2 },
+  { title: 'Noticias', text: 'Actualizaciones oficiales sobre producto, crecimiento, alianzas y expansión.', icon: Newspaper },
+  { title: 'Medios', text: 'Biografía, imágenes oficiales y datos institucionales para prensa.', icon: FileText },
+  { title: 'Podcasts', text: 'Charlas sobre tecnología paraguaya, trabajo independiente e inteligencia artificial.', icon: RadioTower },
 ];
 
 const fadeUp = {
@@ -121,363 +136,346 @@ const fadeUp = {
   transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
 };
 
-function SectionHeading({ eyebrow, title, text, align = 'center', light = false }) {
-  const centered = align === 'center';
-
+function Header() {
   return (
-    <motion.div
-      {...fadeUp}
-      className={centered ? 'mx-auto max-w-3xl text-center' : 'max-w-3xl'}
-    >
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#258f88]">
-        {eyebrow}
-      </p>
-      <h2
-        className={[
-          'mt-4 text-3xl font-semibold leading-[1.05] tracking-[-0.03em] sm:text-5xl',
-          light ? 'text-white' : 'text-slate-950',
-        ].join(' ')}
-      >
-        {title}
-      </h2>
-      {text ? (
-        <p
-          className={[
-            'mt-5 max-w-2xl text-base leading-8 sm:text-lg',
-            light ? 'text-slate-300' : 'text-slate-600',
-            centered ? 'mx-auto' : '',
-          ].join(' ')}
-        >
-          {text}
-        </p>
-      ) : null}
-    </motion.div>
+    <header className="border-b border-[#62bfb9]/24 bg-white">
+      <div className="mx-auto flex min-h-[116px] max-w-[1800px] flex-col justify-between gap-6 px-5 py-6 sm:px-8 lg:min-h-[164px] lg:flex-row lg:items-center lg:px-12">
+        <Link href="/" className="group inline-flex items-center gap-4" aria-label="ManosYA">
+          <span className="relative flex h-16 w-24 items-center justify-center overflow-hidden rounded-sm bg-[#62bfb9] shadow-[0_10px_24px_rgba(0,0,0,0.08)] sm:h-20 sm:w-32">
+            <Image
+              src="/logo-manosya.png"
+              alt="ManosYA"
+              width={320}
+              height={170}
+              className="h-full w-full object-cover"
+            />
+          </span>
+          <span className="leading-none">
+            <span className="block text-[30px] font-black tracking-[-0.06em] text-[#06182a] sm:text-[48px]">
+              founder files
+            </span>
+            <span className="mt-1 block text-[16px] font-semibold tracking-[-0.03em] text-[#06182a]/62 sm:text-[22px]">
+              Roger Núñez archive
+            </span>
+          </span>
+        </Link>
+
+        <nav className="flex flex-wrap items-center gap-4 text-[15px] font-semibold text-[#06182a] sm:gap-6 sm:text-lg">
+          {navItems.map((item) => (
+            <Link key={item.href} href={item.href} className="transition hover:text-[#0f8f88]">
+              {item.label}
+            </Link>
+          ))}
+          <Link
+            href={founder.whatsapp}
+            className="rounded-full border-2 border-[#62bfb9] px-4 py-2 text-[#0f746f] transition hover:bg-[#62bfb9] hover:text-white"
+          >
+            Contacto
+          </Link>
+          <Link href={founder.instagram} aria-label="Instagram" className="text-[#06182a] transition hover:text-[#0f8f88]">
+            <Instagram className="h-5 w-5" />
+          </Link>
+          <Link href={founder.facebook} aria-label="Facebook" className="text-[#06182a] transition hover:text-[#0f8f88]">
+            <Facebook className="h-5 w-5" />
+          </Link>
+        </nav>
+      </div>
+    </header>
   );
 }
 
-function PremiumButton({ href, children, variant = 'dark', icon: Icon }) {
-  const classes =
-    variant === 'dark'
-      ? 'bg-slate-950 text-white shadow-[0_18px_38px_rgba(15,23,42,0.22)] hover:bg-slate-800'
-      : 'border border-slate-200 bg-white/88 text-slate-950 shadow-[0_12px_30px_rgba(15,23,42,0.07)] hover:border-[#62bfb9]/70';
-
+function PrimaryButton({ href, children, dark = false, icon: Icon = ArrowRight }) {
   return (
     <Link
       href={href}
-      className={`inline-flex h-11 items-center justify-center rounded-full px-4 text-sm font-semibold transition duration-200 hover:-translate-y-0.5 sm:h-12 sm:px-5 ${classes}`}
+      className={[
+        'inline-flex h-12 items-center justify-center rounded-md border-2 px-5 text-base font-black transition hover:-translate-y-0.5',
+        dark
+          ? 'border-[#06182a] bg-[#06182a] text-white shadow-[0_12px_26px_rgba(6,24,42,0.2)]'
+          : 'border-[#06182a] bg-[#62bfb9] text-[#06182a] hover:bg-white',
+      ].join(' ')}
     >
-      <span>{children}</span>
+      {children}
       {Icon ? <Icon className="ml-2 h-4 w-4" aria-hidden="true" /> : null}
     </Link>
   );
 }
 
-const contactButtons = [
-  {
-    label: 'WhatsApp',
-    href: founder.whatsapp,
-    icon: MessageCircle,
-  },
-  {
-    label: 'Gmail',
-    href: founder.email,
-    icon: Mail,
-  },
-  {
-    label: 'Instagram',
-    href: founder.instagram,
-    icon: Instagram,
-  },
-  {
-    label: 'Facebook',
-    href: founder.facebook,
-    icon: Facebook,
-  },
-];
-
-function FounderPortrait() {
+function FounderImage() {
   return (
-    <motion.aside
-      initial={{ opacity: 0, scale: 0.97, y: 14 }}
+    <motion.div
+      initial={{ opacity: 0, scale: 0.96, y: 18 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ duration: 0.62, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
-      className="mx-auto w-full max-w-[230px] sm:max-w-[320px] lg:max-w-[380px]"
+      transition={{ duration: 0.7, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
+      className="relative mx-auto w-full max-w-[500px] lg:max-w-[720px]"
     >
-      <div className="relative overflow-hidden rounded-lg border border-white bg-white shadow-[0_28px_72px_rgba(15,23,42,0.14)]">
+      <div className="relative aspect-[1.16/1] overflow-hidden rounded-[50%] bg-black shadow-[0_28px_80px_rgba(0,0,0,0.22)]">
         <Image
           src={founder.photo}
-          alt="Roger Núñez, fundador oficial de ManosYA"
-          width={900}
-          height={1100}
+          alt="Roger Núñez, fundador de ManosYA"
+          width={1000}
+          height={1000}
           priority
-          className="aspect-[4/5] w-full object-cover"
+          className="h-full w-full scale-[1.06] object-cover grayscale"
         />
-        <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(15,23,42,0.88))] p-5 text-white">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-white/72">
-            Founder Profile
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_55%_30%,transparent_0%,rgba(0,0,0,0.18)_58%,rgba(0,0,0,0.5)_100%)]" />
+      </div>
+    </motion.div>
+  );
+}
+
+function Hero() {
+  return (
+    <section className="relative overflow-hidden bg-[#62bfb9]">
+      <div className="absolute -right-[18vw] -top-[19vw] h-[46vw] w-[58vw] rounded-[50%] bg-white" />
+      <div className="absolute -bottom-[24vw] left-[10vw] h-[48vw] w-[56vw] rounded-[50%] bg-[#eafffb]" />
+
+      <div className="relative mx-auto grid min-h-[680px] max-w-[1800px] items-center gap-10 px-5 py-12 sm:px-8 lg:grid-cols-[0.94fr_1.06fr] lg:px-12 lg:py-16">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.68, ease: [0.22, 1, 0.36, 1] }}
+          className="max-w-4xl"
+        >
+          <p className="text-[16px] font-black uppercase tracking-[0.1em] text-[#063b42] sm:text-xl">
+            Archivo oficial del fundador
           </p>
-          <p className="mt-2 text-2xl font-semibold tracking-[-0.03em]">
-            {founder.name}
-          </p>
-          <p className="mt-1 text-sm text-white/78">{founder.role}</p>
+          <h1 className="mt-7 max-w-4xl text-[44px] font-black leading-[1.05] tracking-[-0.04em] text-[#06182a] sm:text-[64px] lg:text-[74px]">
+            Roger Núñez es el fundador de ManosYA.
+          </h1>
+          <div className="mt-8 space-y-7 text-[24px] leading-[1.55] tracking-[-0.02em] text-[#06182a] sm:text-[30px]">
+            <p>
+              <strong>ManosYA</strong> es una plataforma tecnológica paraguaya creada para conectar trabajadores,
+              clientes y proveedores en tiempo real.
+            </p>
+            <p>
+              Su historia nace en Ciudad del Este, en una conversación familiar sobre trabajo digno,
+              oportunidades reales y una pregunta simple: <strong>¿y si el trabajo pudiera estar en la palma de la mano?</strong>
+            </p>
+          </div>
+
+          <div className="mt-9 flex flex-wrap gap-4">
+            <PrimaryButton href="#historia" dark>
+              Leer historia
+            </PrimaryButton>
+            <PrimaryButton href="/" icon={ArrowRight}>
+              Conocer ManosYA
+            </PrimaryButton>
+          </div>
+        </motion.div>
+
+        <FounderImage />
+      </div>
+    </section>
+  );
+}
+
+function SectionTitle({ eyebrow, title, text }) {
+  return (
+    <motion.div {...fadeUp} className="mx-auto max-w-4xl text-center">
+      <p className="text-sm font-black uppercase tracking-[0.16em] text-[#0f8f88]">{eyebrow}</p>
+      <h2 className="mt-4 text-[34px] font-black leading-[1.08] tracking-[-0.04em] text-[#06182a] sm:text-[52px]">
+        {title}
+      </h2>
+      {text ? <p className="mx-auto mt-5 max-w-3xl text-lg leading-8 text-[#06182a]/66">{text}</p> : null}
+    </motion.div>
+  );
+}
+
+function StorySection() {
+  return (
+    <section id="historia" className="relative bg-white px-5 py-16 sm:px-8 lg:py-24">
+      <div className="mx-auto max-w-[1280px]">
+        <SectionTitle
+          eyebrow="Founder story"
+          title="La historia oficial de ManosYA"
+          text="Este texto está estructurado para que Google pueda entender el vínculo entre Roger Núñez, ManosYA y el origen de la plataforma."
+        />
+
+        <motion.article
+          {...fadeUp}
+          className="mx-auto mt-12 max-w-5xl border-l-8 border-[#62bfb9] pl-5 sm:pl-8"
+        >
+          <div className="space-y-7 text-[22px] leading-[1.65] tracking-[-0.02em] text-[#06182a] sm:text-[27px]">
+            {storyParagraphs.map((paragraph, index) => (
+              <p key={paragraph} className={index === 2 ? 'font-black text-[#0f8f88]' : ''}>
+                {paragraph}
+              </p>
+            ))}
+          </div>
+        </motion.article>
+      </div>
+    </section>
+  );
+}
+
+function VisionCard({ item }) {
+  const Icon = item.icon;
+
+  return (
+    <motion.article {...fadeUp} className="border-t-4 border-[#62bfb9] bg-white p-6 shadow-[0_18px_42px_rgba(6,24,42,0.07)]">
+      <Icon className="h-7 w-7 text-[#0f8f88]" />
+      <h3 className="mt-5 text-2xl font-black tracking-[-0.03em] text-[#06182a]">{item.title}</h3>
+      <p className="mt-3 text-lg leading-8 text-[#06182a]/66">{item.text}</p>
+    </motion.article>
+  );
+}
+
+function VisionSection() {
+  return (
+    <section id="vision" className="bg-[#eafffb] px-5 py-16 sm:px-8 lg:py-24">
+      <div className="mx-auto max-w-[1280px]">
+        <SectionTitle
+          eyebrow="Visión"
+          title="Tecnología paraguaya para una economía de servicios más justa."
+          text="ManosYA combina inteligencia artificial, geolocalización, comunicación instantánea y confianza digital para crear oportunidades laborales reales."
+        />
+        <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+          {vision.map((item) => (
+            <VisionCard key={item.title} item={item} />
+          ))}
         </div>
       </div>
-    </motion.aside>
+    </section>
   );
 }
 
-function FeatureCard({ item }) {
-  const Icon = item.icon;
-
+function ArchiveSection() {
   return (
-    <motion.article
-      {...fadeUp}
-      className="rounded-lg border border-slate-200/80 bg-white/86 p-5 shadow-[0_16px_42px_rgba(15,23,42,0.06)] backdrop-blur sm:p-6"
-    >
-      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#62bfb9]/12 text-[#217a74]">
-        <Icon className="h-5 w-5" aria-hidden="true" />
-      </div>
-      <h3 className="mt-5 text-lg font-semibold tracking-[-0.02em] text-slate-950 sm:text-xl">
-        {item.title}
-      </h3>
-      <p className="mt-3 text-sm leading-7 text-slate-600">{item.text}</p>
-    </motion.article>
-  );
-}
+    <section id="archivo" className="relative overflow-hidden bg-white px-5 py-16 sm:px-8 lg:py-24">
+      <div className="absolute left-1/2 top-0 h-[360px] w-[720px] -translate-x-1/2 -translate-y-1/2 rounded-[50%] bg-[#62bfb9]" />
+      <div className="relative mx-auto max-w-[1280px]">
+        <h2 className="text-center text-[38px] font-black tracking-[-0.04em] text-[#06182a] sm:text-[56px]">
+          Latest Updates:
+        </h2>
 
-function AchievementCard({ item }) {
-  const Icon = item.icon;
+        <motion.div {...fadeUp} className="mx-auto mt-10 max-w-5xl border-l-8 border-[#62bfb9] pl-5 sm:pl-8">
+          <p className="text-[23px] font-black leading-[1.4] tracking-[-0.03em] text-[#06182a] sm:text-[32px]">
+            ManosYA documenta la visión de Roger Núñez como fundador, el origen familiar del proyecto y
+            la construcción de una plataforma tecnológica hecha desde Paraguay.
+          </p>
+          <p className="mt-6 text-lg font-semibold text-[#06182a]/56">ManosYA Founder Files</p>
+        </motion.div>
 
-  return (
-    <motion.article
-      {...fadeUp}
-      className="rounded-lg border border-white/80 bg-white p-5 shadow-[0_18px_48px_rgba(15,23,42,0.07)] sm:p-6"
-    >
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
-          <Icon className="h-5 w-5" aria-hidden="true" />
+        <div className="mt-12 grid gap-8 lg:grid-cols-2">
+          {updates.map((item) => (
+            <motion.article key={item.title} {...fadeUp}>
+              <h3 className="text-[27px] font-black leading-tight tracking-[-0.03em] text-[#06182a]">
+                {item.title}
+              </h3>
+              <p className="mt-5 text-[20px] leading-9 text-[#06182a]/76">{item.text}</p>
+              <p className="mt-5 text-lg text-[#06182a]/46">{item.date}</p>
+            </motion.article>
+          ))}
         </div>
-        <span className="rounded-full bg-[#62bfb9]/12 px-3 py-1 text-xs font-semibold text-[#217a74]">
-          {item.label}
-        </span>
+
+        <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {archiveStats.map((item) => (
+            <motion.div key={item.label} {...fadeUp} className="border border-[#62bfb9]/24 bg-white p-5 shadow-[0_14px_34px_rgba(6,24,42,0.05)]">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#06182a]/48">{item.label}</p>
+              <p className="mt-3 text-2xl font-black tracking-[-0.03em] text-[#06182a]">{item.value}</p>
+            </motion.div>
+          ))}
+        </div>
       </div>
-      <div className="mt-7 text-2xl font-semibold tracking-[-0.03em] text-slate-950 sm:text-3xl">
-        {item.value}
-      </div>
-      <p className="mt-3 text-sm leading-7 text-slate-600">{item.text}</p>
-    </motion.article>
+    </section>
   );
 }
 
-function PressCard({ item }) {
-  const Icon = item.icon;
-
+function MilestonesSection() {
   return (
-    <motion.article
-      {...fadeUp}
-      className="rounded-lg border border-white/10 bg-white/[0.04] p-5 backdrop-blur transition duration-200 hover:-translate-y-1 hover:border-[#62bfb9]/60 sm:p-6"
-    >
-      <Icon className="h-6 w-6 text-[#62bfb9]" aria-hidden="true" />
-      <h3 className="mt-5 text-lg font-semibold text-white">{item.title}</h3>
-      <p className="mt-3 text-sm leading-7 text-slate-300">{item.text}</p>
-    </motion.article>
+    <section className="bg-[#62bfb9] px-5 py-16 sm:px-8 lg:py-24">
+      <div className="mx-auto max-w-[1280px]">
+        <SectionTitle
+          eyebrow="Logros"
+          title="Una infraestructura para conectar trabajo real."
+          text="El archivo del fundador también registra los pilares de producto: trabajadores conectados, servicios digitales, expansión e innovación tecnológica."
+        />
+        <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+          {milestones.map((item) => {
+            const Icon = item.icon;
+            return (
+              <motion.article key={item.title} {...fadeUp} className="bg-white p-6 shadow-[0_18px_44px_rgba(0,0,0,0.12)]">
+                <Icon className="h-7 w-7 text-[#0f8f88]" />
+                <h3 className="mt-5 text-2xl font-black tracking-[-0.03em] text-[#06182a]">{item.title}</h3>
+                <p className="mt-3 text-lg leading-8 text-[#06182a]/66">{item.text}</p>
+              </motion.article>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PressSection() {
+  return (
+    <section id="prensa" className="bg-white px-5 py-16 sm:px-8 lg:py-24">
+      <div className="mx-auto max-w-[1280px]">
+        <SectionTitle
+          eyebrow="Prensa"
+          title="Recursos oficiales para medios, entrevistas y podcasts."
+          text="Un espacio público para ordenar la evolución de ManosYA, su historia fundacional y su impacto en el trabajo independiente paraguayo."
+        />
+        <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+          {pressItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <motion.article key={item.title} {...fadeUp} className="border border-[#62bfb9]/24 bg-white p-6 shadow-[0_14px_34px_rgba(6,24,42,0.05)]">
+                <Icon className="h-7 w-7 text-[#0f8f88]" />
+                <h3 className="mt-5 text-2xl font-black tracking-[-0.03em] text-[#06182a]">{item.title}</h3>
+                <p className="mt-3 text-lg leading-8 text-[#06182a]/66">{item.text}</p>
+              </motion.article>
+            );
+          })}
+        </div>
+
+        <div className="mt-14 flex flex-wrap justify-center gap-4">
+          {contactButtons.map((item) => (
+            <PrimaryButton key={item.label} href={item.href} icon={item.icon} dark={item.label === 'WhatsApp'}>
+              {item.label}
+            </PrimaryButton>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="border-t border-[#62bfb9]/24 bg-white px-5 py-8 sm:px-8">
+      <div className="mx-auto flex max-w-[1800px] flex-col gap-5 text-base font-semibold text-[#06182a]/62 sm:flex-row sm:items-center sm:justify-between">
+        <Link href="/" className="underline decoration-black/35 underline-offset-4">
+          ManosYA Founder Files
+        </Link>
+        <div className="flex flex-wrap gap-5">
+          <Link href="#historia" className="underline decoration-black/35 underline-offset-4">
+            Historia
+          </Link>
+          <Link href="#vision" className="underline decoration-black/35 underline-offset-4">
+            Visión
+          </Link>
+          <Link href={founder.email} className="underline decoration-black/35 underline-offset-4">
+            Contacto
+          </Link>
+        </div>
+      </div>
+    </footer>
   );
 }
 
 export default function FounderPageClient() {
   return (
-    <main className="min-h-screen overflow-hidden bg-[#f8fffd] text-slate-950">
-      <section className="relative border-b border-slate-200/70 bg-[linear-gradient(135deg,#fbfffe_0%,#ffffff_54%,#eafffb_100%)]">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(15,23,42,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.04)_1px,transparent_1px)] bg-[size:56px_56px]" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.92))]" />
-
-        <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-5 py-12 sm:px-8 sm:py-16 lg:grid-cols-[1.12fr_0.88fr] lg:py-20">
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.68, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <Link
-              href="/"
-              aria-label="Ir a ManosYA"
-              className="inline-flex h-12 items-center rounded-full border border-[#62bfb9]/28 bg-white px-5 text-xl font-black tracking-[-0.04em] text-[#217a74] shadow-[0_14px_34px_rgba(15,23,42,0.07)] transition duration-200 hover:-translate-y-0.5 hover:border-[#62bfb9]/60 sm:h-14 sm:px-6 sm:text-2xl"
-            >
-              Manos<span className="text-[#62bfb9]">YA</span>
-            </Link>
-
-            <div className="mt-6 inline-flex items-center rounded-full border border-[#62bfb9]/30 bg-white/82 px-4 py-2 text-sm font-semibold text-[#217a74] shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur">
-              <Sparkles className="mr-2 h-4 w-4" aria-hidden="true" />
-              Perfil oficial del fundador
-            </div>
-
-            <h1 className="mt-7 max-w-4xl text-5xl font-semibold leading-[0.98] tracking-[-0.06em] text-slate-950 sm:text-7xl lg:text-[88px]">
-              Roger Núñez
-            </h1>
-            <p className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-[#217a74] sm:text-3xl">
-              Fundador de ManosYA
-            </p>
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600 sm:text-xl">
-              Construyendo la plataforma tecnológica que conecta trabajadores y clientes en tiempo real en Paraguay.
-            </p>
-
-            <div className="mt-8 flex flex-wrap gap-3">
-              <PremiumButton href="/" icon={ArrowRight}>
-                Conocer ManosYA
-              </PremiumButton>
-              {contactButtons.map((item) => (
-                <PremiumButton
-                  key={item.label}
-                  href={item.href}
-                  variant="light"
-                  icon={item.icon}
-                >
-                  {item.label}
-                </PremiumButton>
-              ))}
-            </div>
-
-            <dl className="mt-9 grid max-w-2xl grid-cols-3 gap-2 sm:gap-3">
-              {[
-                ['País', 'Paraguay'],
-                ['Compañía', 'ManosYA'],
-                ['Rol', 'Founder'],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="rounded-lg border border-white/70 bg-white/72 p-3 shadow-[0_10px_28px_rgba(15,23,42,0.05)] backdrop-blur sm:p-4"
-                >
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 sm:text-xs">
-                    {label}
-                  </dt>
-                  <dd className="mt-2 text-xs font-semibold text-slate-950 sm:text-base">
-                    {value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </motion.div>
-
-          <FounderPortrait />
-        </div>
-      </section>
-
-      <section className="px-5 py-16 sm:px-8 lg:py-24" id="historia">
-        <article className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.72fr_1.28fr] lg:items-start">
-          <div className="lg:sticky lg:top-8">
-            <SectionHeading
-              eyebrow="Historia oficial"
-              title="La historia que explica por qué existe ManosYA."
-              text="Un relato familiar, laboral y tecnológico desde Ciudad del Este. Esta es la base pública de la visión de Roger Núñez como fundador de ManosYA."
-              align="left"
-            />
-
-            <motion.blockquote
-              {...fadeUp}
-              className="mt-8 rounded-lg border border-[#62bfb9]/28 bg-[#62bfb9]/10 p-5 text-2xl font-semibold leading-tight tracking-[-0.04em] text-slate-950 shadow-[0_16px_46px_rgba(15,23,42,0.06)] sm:text-3xl"
-            >
-              “¿Y si el trabajo pudiera estar en la palma de la mano?”
-            </motion.blockquote>
-          </div>
-
-          <motion.div
-            {...fadeUp}
-            className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.07)] sm:p-8 lg:p-10"
-          >
-            <div className="space-y-5 text-[16px] leading-8 text-slate-700 sm:text-lg sm:leading-9">
-              {storyParagraphs.map((paragraph, index) => (
-                <p
-                  key={paragraph}
-                  className={index === 0 ? 'text-xl font-medium leading-9 text-slate-950 sm:text-2xl sm:leading-10' : ''}
-                >
-                  {paragraph}
-                </p>
-              ))}
-            </div>
-          </motion.div>
-        </article>
-      </section>
-
-      <section
-        className="border-y border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f1fffc_100%)] px-5 py-16 sm:px-8 lg:py-24"
-        id="vision"
-      >
-        <div className="mx-auto max-w-6xl">
-          <SectionHeading
-            eyebrow="Visión"
-            title="Tecnología paraguaya para la nueva economía de servicios."
-            text="La visión de ManosYA une inteligencia artificial, ubicación, confianza digital y oportunidades económicas para que más trabajadores entren a la economía digital desde Paraguay."
-          />
-
-          <div className="mt-10 grid gap-4 md:grid-cols-2">
-            {vision.map((item) => (
-              <FeatureCard key={item.title} item={item} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="px-5 py-16 sm:px-8 lg:py-24" id="logros">
-        <div className="mx-auto max-w-6xl">
-          <SectionHeading
-            eyebrow="Logros"
-            title="Infraestructura para conectar trabajo real."
-            text="Cada módulo de ManosYA está diseñado para crear más confianza, más velocidad y más oportunidades para clientes, trabajadores y proveedores."
-          />
-
-          <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {achievements.map((item) => (
-              <AchievementCard key={item.label} item={item} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="border-t border-slate-200 bg-slate-950 px-5 py-16 text-white sm:px-8 lg:py-24" id="prensa">
-        <div className="mx-auto max-w-6xl">
-          <SectionHeading
-            eyebrow="Prensa"
-            title="Recursos oficiales para medios y entrevistas."
-            text="Un espacio preparado para documentar la evolución pública de ManosYA, su fundador y el impacto de la tecnología en el trabajo independiente paraguayo."
-            align="left"
-            light
-          />
-
-          <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {pressItems.map((item) => (
-              <PressCard key={item.title} item={item} />
-            ))}
-          </div>
-
-          <motion.div
-            {...fadeUp}
-            className="mt-12 flex flex-col items-start justify-between gap-6 rounded-lg border border-white/10 bg-white/[0.04] p-6 sm:flex-row sm:items-center"
-          >
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#62bfb9]">
-                Contacto institucional
-              </p>
-              <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">
-                ManosYA Founder Office
-              </h3>
-              <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-300">
-                Para entrevistas, alianzas o cobertura editorial sobre ManosYA y Roger Núñez.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              {contactButtons.map((item) => (
-                <PremiumButton
-                  key={item.label}
-                  href={item.href}
-                  variant={item.label === 'WhatsApp' ? 'dark' : 'light'}
-                  icon={item.icon}
-                >
-                  {item.label}
-                </PremiumButton>
-              ))}
-            </div>
-          </motion.div>
-        </div>
-      </section>
+    <main className="min-h-screen bg-white text-black">
+      <Header />
+      <Hero />
+      <StorySection />
+      <VisionSection />
+      <ArchiveSection />
+      <MilestonesSection />
+      <PressSection />
+      <Footer />
     </main>
   );
 }
