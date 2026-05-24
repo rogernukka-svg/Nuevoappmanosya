@@ -157,7 +157,7 @@ function Header() {
     <header className="border-b border-[#62bfb9]/24 bg-white">
       <div className="mx-auto flex min-h-[116px] max-w-[1800px] flex-col justify-between gap-6 px-5 py-6 sm:px-8 lg:min-h-[164px] lg:flex-row lg:items-center lg:px-12">
         <Link href="/" className="group inline-flex items-center gap-4" aria-label="ManosYA">
-          <span className="relative flex h-16 w-28 items-center justify-center overflow-hidden sm:h-20 sm:w-36">
+          <span className="relative flex h-14 w-32 items-center justify-center overflow-hidden rounded-md bg-[#62bfb9] px-3 shadow-[0_12px_28px_rgba(6,24,42,0.10)] sm:h-16 sm:w-40 sm:px-4">
             <Image
               src="/logo-manosya.png"
               alt="ManosYA"
