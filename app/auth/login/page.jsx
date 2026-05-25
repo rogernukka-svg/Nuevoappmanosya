@@ -1948,6 +1948,26 @@ const roleToSave = finalFlow === 'worker' ? 'worker' : finalFlow === 'supplier' 
 
       if (profileError) throw profileError;
 
+      if (roleToSave === 'worker') {
+        const { error: workerProfileError } = await supabase
+          .from('worker_profiles')
+          .upsert(
+            [
+              {
+                user_id: userId,
+                is_active: true,
+                radius_km: 5,
+                skills: selectedNeed?.slug ? [selectedNeed.slug] : [],
+              },
+            ],
+            { onConflict: 'user_id' }
+          );
+
+        if (workerProfileError) {
+          console.warn('No se pudo guardar el rubro inicial del trabajador:', workerProfileError.message);
+        }
+      }
+
       if (typeof window !== 'undefined') {
         localStorage.setItem(LS_LAST_EMAIL, cleanEmail);
         localStorage.setItem(LS_APP_ROLE, roleToSave);

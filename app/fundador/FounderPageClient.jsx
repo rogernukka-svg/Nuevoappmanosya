@@ -2,7 +2,9 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { getSupabase } from '@/lib/supabase';
 import {
   ArrowRight,
   BrainCircuit,
@@ -21,6 +23,8 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
+
+const supabase = getSupabase();
 
 const founder = {
   name: 'Roger Núñez',
@@ -545,6 +549,24 @@ function Footer() {
 }
 
 export default function FounderPageClient() {
+  useEffect(() => {
+    const trackFounderView = async () => {
+      try {
+        await supabase.from('page_views').insert({
+          path: '/fundador',
+          page: 'founder',
+          referrer: document.referrer || null,
+          user_agent: navigator.userAgent || null,
+          created_at: new Date().toISOString(),
+        });
+      } catch {
+        // Optional analytics table. The public page must never fail because of tracking.
+      }
+    };
+
+    trackFounderView();
+  }, []);
+
   return (
     <main className="min-h-screen bg-white text-black">
       <Header />

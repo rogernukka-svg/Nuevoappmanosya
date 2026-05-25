@@ -40,6 +40,10 @@ import {
   CheckCircle2,
   Clock3,
   Filter,
+  Eye,
+  MessageCircle,
+  Video,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 /* 📊 Recharts */
@@ -106,6 +110,17 @@ const EXPENSE_STATUSES = ['pending', 'paid', 'cancelled'];
 
 const ADMIN_EXPENSES_TABLE = 'admin_expenses';
 const ADMIN_INVOICES_TABLE = 'admin_invoices';
+
+async function safeRead(table, select = '*') {
+  try {
+    const { data, error } = await supabase.from(table).select(select);
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.warn(`Analytics opcional no disponible (${table}):`, err?.message || err);
+    return [];
+  }
+}
 
 /* =========================
    HELPERS
@@ -308,6 +323,18 @@ export default function AdminAnalyticsPage() {
     avgRating: 0,
   });
 
+  const [control, setControl] = useState({
+    founderViews: 0,
+    totalPageViews: 0,
+    appViews: 0,
+    posts: 0,
+    videos: 0,
+    photos: 0,
+    chats: 0,
+    messages: 0,
+    trackerReady: false,
+  });
+
   const [modal, setModal] = useState(null);
 
   const [expenseForm, setExpenseForm] = useState({
@@ -333,12 +360,6 @@ export default function AdminAnalyticsPage() {
   });
  async function checkAdminAccess() {
   try {
-    const ALLOWED_EMAILS = [
-      'mirian@manosya.com',
-      'maria@manosya.com',
-      'roger@manosya.com',
-    ];
-
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -348,8 +369,6 @@ export default function AdminAnalyticsPage() {
       window.location.href = '/auth/login';
       return false;
     }
-
-    const userEmail = (user.email || '').trim().toLowerCase();
 
     const { data: profile, error } = await supabase
       .from('profiles')
@@ -365,16 +384,9 @@ export default function AdminAnalyticsPage() {
       return false;
     }
 
-    const profileEmail = (profile?.email || '').trim().toLowerCase();
+    const allowed = ['admin', 'superadmin'].includes(profile?.admin_role || '');
 
-    const isAllowedEmail =
-      ALLOWED_EMAILS.includes(userEmail) || ALLOWED_EMAILS.includes(profileEmail);
-
-    const isAllowedAdminRole = ['admin', 'superadmin'].includes(
-      (profile?.admin_role || '').trim().toLowerCase()
-    );
-
-    if (!isAllowedEmail || !isAllowedAdminRole) {
+    if (!allowed) {
       toast.error('No tenés permiso para entrar a este panel');
       window.location.href = '/';
       return false;
@@ -407,6 +419,10 @@ export default function AdminAnalyticsPage() {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_profiles' }, fetchAll)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, fetchAll)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, fetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_posts' }, fetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, fetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'page_views' }, fetchAll)
         .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_EXPENSES_TABLE }, fetchAll)
         .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_INVOICES_TABLE }, fetchAll)
         .subscribe();
@@ -468,6 +484,41 @@ export default function AdminAnalyticsPage() {
       const jobsCancelled = jobs.filter((j) => j.status === 'cancelled').length;
       const jobsOpen = jobs.filter((j) => j.status === 'open').length;
       const jobsAccepted = jobs.filter((j) => j.status === 'accepted' || j.status === 'assigned').length;
+
+      const [pageViews, workerPosts, chats, messages] = await Promise.all([
+        safeRead('page_views', 'path, pathname, route, page, created_at'),
+        safeRead('worker_posts', 'media_type, created_at'),
+        safeRead('chats', 'id, created_at'),
+        safeRead('messages', 'id, created_at'),
+      ]);
+
+      const pathOf = (row) =>
+        String(row?.path || row?.pathname || row?.route || row?.page || '').toLowerCase();
+      const founderViews = pageViews.filter((row) => {
+        const path = pathOf(row);
+        return path.includes('/fundador') || path.includes('/founder');
+      }).length;
+      const appViews = pageViews.filter((row) => {
+        const path = pathOf(row);
+        return (
+          path.includes('/client') ||
+          path.includes('/worker') ||
+          path.includes('/supplier') ||
+          path.includes('/auth')
+        );
+      }).length;
+
+      setControl({
+        founderViews,
+        totalPageViews: pageViews.length,
+        appViews,
+        posts: workerPosts.length,
+        videos: workerPosts.filter((post) => post.media_type === 'video').length,
+        photos: workerPosts.filter((post) => post.media_type !== 'video').length,
+        chats: chats.length,
+        messages: messages.length,
+        trackerReady: pageViews.length > 0,
+      });
 
       const usersWithDocs = new Set(docs.map((d) => d.user_id));
       const totalWorkers = workersCountRes.count || 0;
@@ -884,11 +935,11 @@ export default function AdminAnalyticsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#06111A] text-white">
+    <div className="min-h-screen bg-[#69c4c0] text-[#06182a]">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -top-20 left-[-8%] h-80 w-80 rounded-full bg-emerald-500/15 blur-3xl" />
-        <div className="absolute top-[10%] right-[-6%] h-[28rem] w-[28rem] rounded-full bg-cyan-500/15 blur-3xl" />
-        <div className="absolute bottom-[-10%] left-[20%] h-[24rem] w-[24rem] rounded-full bg-violet-500/10 blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_0%,rgba(255,255,255,0.46),transparent_30%),radial-gradient(circle_at_88%_10%,rgba(255,255,255,0.24),transparent_28%)]" />
+        <div className="absolute bottom-[-14%] left-[10%] h-96 w-96 rounded-full bg-[#06182a]/14 blur-3xl" />
+        <div className="absolute right-[-8%] top-[28%] h-[460px] w-[460px] rounded-full bg-[#06182a]/16 blur-3xl" />
       </div>
 
       <main className="relative z-10 mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8">
@@ -899,6 +950,7 @@ export default function AdminAnalyticsPage() {
           healthUI={healthUI}
           stats={stats}
           finance={finance}
+          control={control}
           loading={loading}
         />
 
@@ -910,14 +962,15 @@ export default function AdminAnalyticsPage() {
           <>
             {activeTab === 'overview' && (
               <>
-                <KpiGrid stats={stats} finance={finance} ops={ops} />
+                <KpiGrid stats={stats} finance={finance} ops={ops} control={control} />
+                <DigitalControlPanel control={control} stats={stats} ops={ops} />
                 <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_0.9fr]">
                   <ChartCard title="Radiografía del negocio" icon={<Radar />}>
                     <ResponsiveContainer width="100%" height={320}>
                       <RadarChart data={radarData}>
-                        <PolarGrid />
-                        <PolarAngleAxis dataKey="subject" />
-                        <PolarRadiusAxis domain={[0, 100]} />
+                        <PolarGrid stroke="#0f766e" strokeOpacity={0.32} />
+                        <PolarAngleAxis dataKey="subject" tick={{ fill: '#06182a', fontWeight: 800, fontSize: 13 }} />
+                        <PolarRadiusAxis domain={[0, 100]} tick={{ fill: '#475569', fontWeight: 700 }} axisLine={{ stroke: '#0f766e', strokeOpacity: 0.25 }} />
                         <RadarShape
                           name="ManosYA"
                           dataKey="value"
@@ -941,9 +994,9 @@ export default function AdminAnalyticsPage() {
                   <ChartCard title="Crecimiento acumulado — Usuarios vs Trabajadores" icon={<TrendingUp />}>
                     <ResponsiveContainer width="100%" height={300}>
                       <LineChart data={join2(series.users, series.workers, 'users', 'workers')}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-                        <XAxis dataKey="day" stroke="#94A3B8" />
-                        <YAxis stroke="#94A3B8" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                        <XAxis dataKey="day" stroke="#334155" />
+                        <YAxis stroke="#334155" />
                         <Tooltip />
                         <Legend />
                         <Line type="monotone" dataKey="users" name="Usuarios" stroke="#06B6D4" dot={false} />
@@ -961,9 +1014,9 @@ export default function AdminAnalyticsPage() {
                             <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.08} />
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-                        <XAxis dataKey="day" stroke="#94A3B8" />
-                        <YAxis stroke="#94A3B8" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                        <XAxis dataKey="day" stroke="#334155" />
+                        <YAxis stroke="#334155" />
                         <Tooltip />
                         <Area type="monotone" dataKey="value" name="Trabajos" stroke="#8B5CF6" fill="url(#jobsGradientJarvis)" />
                       </AreaChart>
@@ -980,9 +1033,9 @@ export default function AdminAnalyticsPage() {
                           { k: 'Ingresos', actual: yearCompare.revenueThis, previo: yearCompare.revenuePrev },
                         ]}
                       >
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-                        <XAxis dataKey="k" stroke="#94A3B8" />
-                        <YAxis stroke="#94A3B8" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                        <XAxis dataKey="k" stroke="#334155" />
+                        <YAxis stroke="#334155" />
                         <Tooltip />
                         <Legend />
                         <Bar dataKey="actual" name="Últimos 12m" fill="#14B8A6" />
@@ -1208,31 +1261,37 @@ export default function AdminAnalyticsPage() {
 ========================= */
 function TopHeader({ range, setRange }) {
   return (
-    <div className="mb-6 rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-300">
-            <Cpu className="h-3.5 w-3.5" />
-            ManosYA Command Center
+    <div className="mb-6 overflow-hidden rounded-[34px] border border-white/55 bg-white/88 p-5 text-[#06182a] shadow-[0_24px_70px_rgba(8,35,52,0.14)] backdrop-blur-xl">
+      <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-5 md:flex-row md:items-center">
+          <div className="flex h-[86px] w-[160px] shrink-0 items-center justify-center rounded-[28px] bg-[#69c4c0] shadow-[0_18px_38px_rgba(105,196,192,0.25)]">
+            <img src="/logo-manosya.png" alt="ManosYA" className="h-12 w-auto object-contain" />
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-white md:text-4xl">
-            Panel Administrativo Inteligente
+
+          <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[#69c4c0]/35 bg-[#69c4c0]/12 px-3 py-1 text-xs font-black text-[#137d78]">
+            <Cpu className="h-3.5 w-3.5" />
+            Centro de mando ManosYA
+          </div>
+          <h1 className="text-3xl font-black tracking-[-0.045em] text-[#06182a] md:text-5xl">
+            Control absoluto
           </h1>
-          <p className="mt-2 max-w-3xl text-sm text-white/65 md:text-base">
+          <p className="mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-slate-600 md:text-base">
             Control ejecutivo, operación, finanzas, proyecciones y radiografía del futuro de ManosYA.
           </p>
         </div>
+        </div>
 
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-2">
-          <CalendarClock className="ml-2 h-4 w-4 text-white/45" />
+        <div className="flex items-center gap-2 rounded-2xl border border-[#69c4c0]/25 bg-[#69c4c0]/10 p-2">
+          <CalendarClock className="ml-2 h-4 w-4 text-[#137d78]" />
           {RANGES.map((r) => (
             <button
               key={r.key}
               onClick={() => setRange(r.key)}
               className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
                 range === r.key
-                  ? 'bg-emerald-500 text-white'
-                  : 'text-white/70 hover:bg-white/10'
+                  ? 'bg-[#06182a] text-white'
+                  : 'text-[#06182a]/65 hover:bg-white/70'
               }`}
             >
               {r.label}
@@ -1319,7 +1378,7 @@ function TabsBar({ activeTab, setActiveTab, alerts }) {
   ];
 
   return (
-    <div className="mb-6 rounded-[28px] border border-white/10 bg-white/5 p-3 backdrop-blur-xl shadow-[0_20px_80px_rgba(0,0,0,0.28)]">
+    <div className="mb-6 rounded-[28px] border border-white/60 bg-white/86 p-3 text-[#06182a] shadow-[0_18px_46px_rgba(8,35,52,0.13)] backdrop-blur-xl">
       <div className="grid gap-3 md:grid-cols-5">
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -1330,19 +1389,19 @@ function TabsBar({ activeTab, setActiveTab, alerts }) {
               onClick={() => setActiveTab(tab.key)}
               className={`flex items-center justify-between rounded-2xl px-4 py-4 text-left transition ${
                 active
-                  ? 'border border-emerald-400/20 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20'
-                  : 'border border-white/10 bg-black/20 hover:bg-white/[0.06]'
+                  ? 'border border-[#69c4c0]/35 bg-[#69c4c0]/18 shadow-[0_12px_30px_rgba(98,191,185,0.16)]'
+                  : 'border border-slate-200/70 bg-white/72 hover:bg-white'
               }`}
             >
               <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-white/10 p-2">
-                  <Icon className="h-4 w-4 text-white" />
+                <div className="rounded-xl bg-[#69c4c0]/15 p-2">
+                  <Icon className="h-4 w-4 text-[#137d78]" />
                 </div>
-                <div className="text-sm font-bold text-white">{tab.label}</div>
+                <div className="text-sm font-black text-[#06182a]">{tab.label}</div>
               </div>
 
               {tab.badge ? (
-                <div className="rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-bold text-red-200">
+                <div className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-black text-red-600">
                   {tab.badge}
                 </div>
               ) : null}
@@ -1354,7 +1413,7 @@ function TabsBar({ activeTab, setActiveTab, alerts }) {
   );
 }
 
-function KpiGrid({ stats, finance, ops }) {
+function KpiGrid({ stats, finance, ops, control }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <KpiCard icon={<Users className="h-5 w-5" />} label="Usuarios registrados" value={stats.totalUsers} sub={`${pct(stats.totalUsers, GOALS.users).toFixed(1)}% de meta`} />
@@ -1365,6 +1424,81 @@ function KpiGrid({ stats, finance, ops }) {
       <KpiCard icon={<TrendingDown className="h-5 w-5" />} label="Gastos" value={gs(finance.totalExpenses)} sub="Gasto administrativo total" />
       <KpiCard icon={<BadgeDollarSign className="h-5 w-5" />} label="Resultado neto" value={gs(finance.netProfit)} sub={finance.netProfit >= 0 ? 'Rentabilidad positiva' : 'Rentabilidad negativa'} />
       <KpiCard icon={<ShieldCheck className="h-5 w-5" />} label="Rating promedio" value={ops.avgRating} sub="Señal de experiencia del usuario" />
+      <KpiCard icon={<Eye className="h-5 w-5" />} label="Vistas fundador" value={control.founderViews} sub={control.trackerReady ? 'Lectura desde page_views' : 'Tracker web pendiente'} />
+      <KpiCard icon={<Video className="h-5 w-5" />} label="Videos subidos" value={control.videos} sub="Contenido que empuja confianza" />
+      <KpiCard icon={<ImageIcon className="h-5 w-5" />} label="Fotos subidas" value={control.photos} sub="Trabajos publicados por perfiles" />
+      <KpiCard icon={<MessageCircle className="h-5 w-5" />} label="Mensajes" value={control.messages} sub={`${control.chats} conversaciones abiertas`} />
+    </div>
+  );
+}
+
+function DigitalControlPanel({ control, stats, ops }) {
+  const contentTotal = Math.max(control.posts, 1);
+  const verifiedPct = stats.totalWorkers ? pct(stats.verifiedWorkers, stats.totalWorkers) : 0;
+  const docPct = stats.totalWorkers ? pct(ops.workersWithDocs, stats.totalWorkers) : 0;
+
+  return (
+    <div className="mt-6 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="rounded-[32px] border border-white/55 bg-white/86 p-5 text-[#06182a] shadow-[0_22px_60px_rgba(8,35,52,0.13)] backdrop-blur-xl">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#69c4c0]/35 bg-[#69c4c0]/12 px-3 py-1 text-xs font-black text-[#137d78]">
+              <ScanSearch className="h-3.5 w-3.5" />
+              Web y app intelligence
+            </div>
+            <h2 className="mt-3 text-2xl font-black tracking-[-0.04em] text-[#06182a]">
+              Todo lo que se mueve en ManosYA
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-relaxed text-slate-600">
+              Vistas del fundador, contenido de trabajadores, conversaciones y actividad operativa conectadas al mismo tablero.
+            </p>
+          </div>
+
+          <div className="rounded-[26px] bg-[#06182a] px-5 py-4 text-white">
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-[#94fff5]">
+              Estado tracker
+            </div>
+            <div className="mt-1 text-2xl font-black">
+              {control.trackerReady ? 'Conectado' : 'Pendiente'}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          <ControlSignal icon={<Eye />} label="Founder views" value={control.founderViews} />
+          <ControlSignal icon={<Activity />} label="Page views" value={control.totalPageViews} />
+          <ControlSignal icon={<MessageCircle />} label="Chats" value={control.chats} />
+          <ControlSignal icon={<ClipboardList />} label="Posts" value={control.posts} />
+        </div>
+      </div>
+
+      <div className="rounded-[32px] border border-white/55 bg-[#06182a] p-5 text-white shadow-[0_22px_60px_rgba(8,35,52,0.18)]">
+        <div className="mb-4 flex items-center gap-2 text-sm font-black text-[#94fff5]">
+          <Brain className="h-4 w-4" />
+          Lectura rapida
+        </div>
+        <div className="space-y-4">
+          <MiniProgress label="Videos dentro del contenido" value={control.videos} total={contentTotal} colorClass="bg-[#62bfb9]" />
+          <MiniProgress label="Fotos dentro del contenido" value={control.photos} total={contentTotal} colorClass="bg-cyan-300" />
+          <MiniProgress label="Trabajadores verificados" value={stats.verifiedWorkers} total={Math.max(stats.totalWorkers, 1)} colorClass="bg-emerald-300" />
+          <MiniProgress label="Documentacion cargada" value={ops.workersWithDocs} total={Math.max(stats.totalWorkers, 1)} colorClass="bg-sky-300" />
+        </div>
+        <p className="mt-5 text-sm font-semibold leading-relaxed text-white/68">
+          Verificados {verifiedPct.toFixed(1)}% - documentos {docPct.toFixed(1)}%. La prioridad es subir mas videos y conectar page views reales para medir fundador, app y conversion.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ControlSignal({ icon, label, value }) {
+  return (
+    <div className="rounded-[24px] border border-slate-200/80 bg-white/72 p-4">
+      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-[#69c4c0]/16 text-[#137d78]">
+        {icon}
+      </div>
+      <div className="text-2xl font-black text-[#06182a]">{Number(value || 0).toLocaleString('es-PY')}</div>
+      <div className="mt-1 text-xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</div>
     </div>
   );
 }
@@ -1382,22 +1516,22 @@ function KpiFinance({ finance }) {
 
 function KpiCard({ icon, label, value, sub }) {
   return (
-    <div className="rounded-[26px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+    <div className="rounded-[26px] border border-white/60 bg-white/88 p-5 text-[#06182a] shadow-[0_18px_46px_rgba(8,35,52,0.13)] backdrop-blur-xl">
       <div className="mb-4 flex items-center justify-between">
-        <div className="rounded-2xl border border-white/10 bg-white/10 p-3">{icon}</div>
-        <div className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.8)]" />
+        <div className="rounded-2xl border border-[#69c4c0]/25 bg-[#69c4c0]/15 p-3 text-[#137d78]">{icon}</div>
+        <div className="h-2.5 w-2.5 rounded-full bg-[#62bfb9] shadow-[0_0_18px_rgba(98,191,185,0.8)]" />
       </div>
-      <div className="text-sm text-white/55">{label}</div>
-      <div className="mt-2 text-3xl font-black tracking-tight text-white">{value}</div>
-      <div className="mt-1 text-xs text-white/40">{sub}</div>
+      <div className="text-sm font-black text-slate-500">{label}</div>
+      <div className="mt-2 text-3xl font-black tracking-tight text-[#06182a]">{value}</div>
+      <div className="mt-1 text-xs font-semibold text-slate-500">{sub}</div>
     </div>
   );
 }
 
 function ChartCard({ title, icon, children }) {
   return (
-    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-xl">
-      <div className="mb-4 flex items-center gap-2 text-sm font-bold text-white/85">
+    <div className="rounded-[28px] border border-white/60 bg-white/92 p-5 text-[#06182a] shadow-[0_18px_46px_rgba(8,35,52,0.13)] backdrop-blur-xl [&_.recharts-cartesian-axis-tick_text]:fill-[#06182a] [&_.recharts-legend-item-text]:!text-[#06182a] [&_.recharts-polar-angle-axis-tick-value]:fill-[#06182a] [&_.recharts-polar-radius-axis-tick-value]:fill-[#475569] [&_.recharts-text]:font-semibold">
+      <div className="mb-4 flex items-center gap-2 text-sm font-black text-[#06182a]">
         {icon}
         <span>{title}</span>
       </div>
@@ -1408,8 +1542,8 @@ function ChartCard({ title, icon, children }) {
 
 function ExecutiveAlerts({ alerts }) {
   return (
-    <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-xl">
-      <div className="mb-4 flex items-center gap-2 text-sm font-bold text-white/85">
+    <div className="rounded-[28px] border border-white/60 bg-white/88 p-5 text-[#06182a] shadow-[0_18px_46px_rgba(8,35,52,0.13)] backdrop-blur-xl">
+      <div className="mb-4 flex items-center gap-2 text-sm font-black text-[#06182a]">
         <Siren className="h-4 w-4" />
         Centro de alertas estratégicas
       </div>
@@ -1421,18 +1555,18 @@ function ExecutiveAlerts({ alerts }) {
               key={`${a.title}-${idx}`}
               className={`rounded-2xl border p-4 ${
                 a.level === 'high'
-                  ? 'border-red-400/20 bg-red-500/10'
+                  ? 'border-red-300 bg-red-50'
                   : a.level === 'medium'
-                  ? 'border-amber-400/20 bg-amber-500/10'
-                  : 'border-emerald-400/20 bg-emerald-500/10'
+                  ? 'border-amber-300 bg-amber-50'
+                  : 'border-emerald-300 bg-emerald-50'
               }`}
             >
-              <div className="font-bold text-white">{a.title}</div>
-              <div className="mt-1 text-sm text-white/70">{a.detail}</div>
+              <div className="font-black text-[#06182a]">{a.title}</div>
+              <div className="mt-1 text-sm font-semibold text-slate-600">{a.detail}</div>
             </div>
           ))
         ) : (
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/45">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-500">
             No hay alertas críticas por ahora.
           </div>
         )}

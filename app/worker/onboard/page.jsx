@@ -2,6 +2,7 @@
 
 import '../../globals.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { getSupabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 const supabase = getSupabase();
@@ -69,6 +70,20 @@ const ALL_SKILLS = [
 ];
 
 const RADII = [3, 5, 10, 15, 20];
+const POPULAR_SKILL_SLUGS = [
+  'limpieza',
+  'plomeria',
+  'electricidad',
+  'jardineria',
+  'taxi',
+  'fletes',
+  'mecanica',
+  'peluqueria',
+  'albanileria',
+  'pintor',
+  'delivery',
+  'informatica',
+];
 
 const DOC_TYPES = [
   { value: 'CI', label: 'Cédula de Identidad (CI)' },
@@ -106,35 +121,22 @@ export default function WorkerOnboardPage() {
 }, [router]);
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7fffc_0%,#ffffff_45%,#f8fafc_100%)] px-4 py-6">
-      <div className="max-w-3xl mx-auto">
-        
-<div className="flex items-center mb-5">
-  <button
-    type="button"
-    onClick={() => router.push('/worker')}
-    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-[15px] font-semibold text-slate-700 shadow-[0_10px_28px_rgba(15,23,42,0.10)] transition-all duration-200 hover:-translate-y-[1px] hover:border-emerald-200 hover:text-emerald-700 hover:shadow-[0_16px_34px_rgba(16,185,129,0.14)] active:scale-[0.98]"
-  >
-    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full">
-      ←
-    </span>
-    <span>Volver</span>
-  </button>
-</div>
-        <header className="text-center mb-6">
-          <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 border border-emerald-200 px-4 py-2 text-emerald-700 text-sm font-bold mb-4">
-            ManosYA Profesional
+    <div className="min-h-screen overflow-hidden bg-[#69c4c0] bg-[radial-gradient(circle_at_18%_0%,rgba(255,255,255,0.45),transparent_32%),radial-gradient(circle_at_88%_18%,rgba(255,255,255,0.26),transparent_30%)] px-4 py-5 text-slate-950">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => router.push('/worker')}
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-5 py-3 text-[15px] font-black text-slate-700 shadow-[0_12px_30px_rgba(15,23,42,0.08)] backdrop-blur transition active:scale-[0.98]"
+          >
+            <span>←</span>
+            <span>Volver</span>
+          </button>
+
+          <div className="rounded-full border border-white/55 bg-white/28 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm backdrop-blur">
+            ManosYA
           </div>
-
-          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-500 to-cyan-500 text-transparent bg-clip-text">
-            Activá tu perfil profesional
-          </h1>
-
-          <p className="text-gray-600 text-sm md:text-base mt-3 max-w-2xl mx-auto leading-relaxed">
-            Completá tus datos, subí tu documento y dejá listo tu perfil para empezar a recibir
-            pedidos con más confianza.
-          </p>
-        </header>
+        </div>
 
         {user ? (
           <OnboardForm user={user} />
@@ -150,7 +152,11 @@ export default function WorkerOnboardPage() {
 
 /* ====================== FORM ====================== */
 function OnboardForm({ user }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [submittedForReview, setSubmittedForReview] = useState(false);
+  const [reviewEditMode, setReviewEditMode] = useState(false);
 
   // Perfil base
   const [fullName, setFullName] = useState('');
@@ -383,6 +389,75 @@ const visibleAvailableSkillItems = useMemo(() => {
   if (showAllSkills || normalizedSkillQuery) return filteredAvailableSkillItems;
   return filteredAvailableSkillItems.slice(0, 12);
 }, [filteredAvailableSkillItems, showAllSkills, normalizedSkillQuery]);
+
+  const popularSkillItems = useMemo(() => {
+    return POPULAR_SKILL_SLUGS
+      .map((slug) => ALL_SKILLS.find((skill) => skill.slug === slug))
+      .filter(Boolean)
+      .filter((skill) => !skills.includes(skill.slug));
+  }, [skills]);
+
+  const hasMinimumProfile = useMemo(() => {
+    return Boolean(
+      fullName?.trim() &&
+        phone?.trim() &&
+        city?.trim() &&
+        skills.length > 0 &&
+        acceptedPrivacy
+    );
+  }, [fullName, phone, city, skills, acceptedPrivacy]);
+
+  const showReviewScreen = !isVerified && !reviewEditMode && (submittedForReview || hasMinimumProfile);
+
+  const wizardSteps = useMemo(() => [
+    {
+      eyebrow: 'Paso 1 de 7',
+      title: 'Activemos tu perfil profesional',
+      subtitle:
+        'Yo te guio paso a paso. Sin vueltas, sin papeles eternos. Tu trabajo merece verse profesional.',
+    },
+    {
+      eyebrow: 'Paso 2 de 7',
+      title: 'Datos basicos',
+      subtitle: 'Primero lo simple: quien sos, donde trabajas y una foto que genere confianza.',
+    },
+    {
+      eyebrow: 'Paso 3 de 7',
+      title: 'Que servicios ofreces',
+      subtitle: 'Contame que haces mejor. Mientras mas claro seas, mas facil te encuentran.',
+    },
+    {
+      eyebrow: 'Paso 4 de 7',
+      title: 'Zona de trabajo',
+      subtitle: 'Marcamos tu zona para que no te lleguen pedidos imposibles.',
+    },
+    {
+      eyebrow: 'Paso 5 de 7',
+      title: 'Presentacion profesional',
+      subtitle: 'Unas pocas palabras bien dichas valen mas que un formulario eterno.',
+    },
+    {
+      eyebrow: 'Paso 6 de 7',
+      title: 'Verificacion segura',
+      subtitle: 'Esto cuida a los clientes y tambien te cuida a vos como profesional.',
+    },
+    {
+      eyebrow: 'Paso 7 de 7',
+      title: 'Enviar perfil',
+      subtitle: 'Ultima mirada. Si todo esta bien, lo mandamos a revision.',
+    },
+  ], []);
+
+  const activeWizardStep = wizardSteps[currentStep] || wizardSteps[0];
+  const wizardProgress = Math.round(((currentStep + 1) / wizardSteps.length) * 100);
+
+  function goNextStep() {
+    setCurrentStep((step) => Math.min(step + 1, wizardSteps.length - 1));
+  }
+
+  function goPrevStep() {
+    setCurrentStep((step) => Math.max(step - 1, 0));
+  }
 
   async function createSignedWorkerDocUrl(path) {
     if (!path) return null;
@@ -891,11 +966,339 @@ function getCurrentTrackFacingMode() {
         { onConflict: 'user_id' }
       );
 
-      setMsg('Perfil guardado y listo correctamente.');
+      setMsg('Perfil enviado a revision correctamente.');
+      setSubmittedForReview(true);
+      setReviewEditMode(false);
+      setCurrentStep(0);
     } catch (e) {
       setErr('No se pudo guardar: ' + (e.message || e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  function renderCameraOverlay() {
+    if (!cameraOpen) return null;
+
+    return (
+      <div className="fixed inset-0 z-[100] flex flex-col bg-black">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white">
+          <div>
+            <div className="text-sm font-black">
+              {cameraMode === 'avatar' ? 'Foto de perfil' : 'Foto del documento'}
+            </div>
+            <div className="text-xs text-white/70">
+              {cameraMode === 'avatar'
+                ? 'Ubica tu rostro dentro del circulo.'
+                : 'Alinea el documento dentro del marco.'}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={closeCamera}
+            className="rounded-xl bg-white/10 px-3 py-2 text-sm font-bold text-white"
+          >
+            Cerrar
+          </button>
+        </div>
+
+        <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-black">
+          {!capturedPreview ? (
+            <>
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`absolute inset-0 h-full w-full object-cover ${
+                  cameraMode === 'avatar' ? 'scale-x-[-1]' : ''
+                }`}
+              />
+
+              {cameraMode === 'avatar' ? (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
+                  <div className="relative h-[58vh] min-h-[320px] max-h-[460px] w-[82vw] max-w-[360px]">
+                    <div className="absolute inset-0 rounded-[50%] border-[4px] border-[#62bfb9] shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
+                    <div className="absolute left-1/2 top-[18%] h-10 w-10 -translate-x-1/2 rounded-full border-2 border-white/70" />
+                    <div className="absolute left-1/2 top-[38%] h-[24%] w-[38%] -translate-x-1/2 rounded-[999px] border border-white/25" />
+                  </div>
+                </div>
+              ) : (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="relative w-[88%] max-w-[340px] overflow-hidden rounded-2xl border-[4px] border-[#62bfb9] shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] aspect-[1.6/1]">
+                    <div className="absolute left-3 top-3 h-8 w-8 rounded-tl-md border-l-4 border-t-4 border-white" />
+                    <div className="absolute right-3 top-3 h-8 w-8 rounded-tr-md border-r-4 border-t-4 border-white" />
+                    <div className="absolute bottom-3 left-3 h-8 w-8 rounded-bl-md border-b-4 border-l-4 border-white" />
+                    <div className="absolute bottom-3 right-3 h-8 w-8 rounded-br-md border-b-4 border-r-4 border-white" />
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <img
+              src={capturedPreview}
+              alt="captura previa"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          )}
+
+          <canvas ref={canvasRef} className="hidden" />
+        </div>
+
+        <div className="border-t border-white/10 bg-black px-4 py-4">
+          {!capturedPreview ? (
+            <div className="flex items-center justify-center">
+              <button
+                type="button"
+                onClick={captureFromCamera}
+                disabled={isCheckingPhoto}
+                className="h-20 w-20 rounded-full border-[6px] border-white bg-[#62bfb9] shadow-lg disabled:opacity-60"
+              >
+                <span className="sr-only">Capturar</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={retakePhoto}
+                className="flex-1 rounded-2xl bg-white/10 px-4 py-3 font-bold text-white"
+              >
+                Volver a sacar
+              </button>
+
+              <button
+                type="button"
+                onClick={confirmCapturedPhoto}
+                className="flex-1 rounded-2xl bg-[#62bfb9] px-4 py-3 font-black text-white"
+              >
+                Usar esta foto
+              </button>
+            </div>
+          )}
+
+          <p className="mt-3 text-center text-xs text-white/70">
+            {capturedPreview
+              ? 'Si se ve bien y nitida, confirma la foto.'
+              : 'Buena luz, pulso firme y listo.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  function renderStepContent() {
+    switch (currentStep) {
+      case 0:
+        return (
+          <div className="space-y-3">
+            <div className="rounded-[28px] bg-[#69c4c0]/12 p-5">
+              <div className="text-lg font-black leading-snug text-[#06182a]">
+                Te voy a pedir solo lo necesario.
+              </div>
+              <p className="mt-2 text-sm font-bold leading-relaxed text-slate-600">
+                La idea es que un cliente te vea y piense: esta persona sabe lo que hace.
+              </p>
+            </div>
+
+            {['Tus datos basicos', 'Tus servicios', 'Tu zona de trabajo', 'Tu verificacion'].map((item) => (
+              <div key={item} className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#69c4c0]" />
+                <span className="text-sm font-black text-[#06182a]">{item}</span>
+              </div>
+            ))}
+          </div>
+        );
+
+      case 1:
+        return (
+          <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
+            <div className="rounded-[32px] border border-slate-200 bg-white p-5 text-center shadow-sm">
+              <button
+                type="button"
+                onClick={() => avatarUrl && setOpenAvatar(true)}
+                className="mx-auto block h-32 w-32 overflow-hidden rounded-full border-4 border-white bg-slate-100 shadow-[0_18px_36px_rgba(15,23,42,0.14)] ring-4 ring-[#62bfb9]/25"
+              >
+                <img src={avatarUrl || '/avatar-fallback.png'} alt="avatar" className="h-full w-full object-cover" />
+              </button>
+              <div className="mt-4 text-sm font-black text-slate-900">Tu foto genera confianza</div>
+              <div className="mt-4 grid gap-2">
+                <button type="button" onClick={() => openCamera('avatar')} className="rounded-2xl bg-[#69c4c0] px-4 py-3 text-sm font-black text-white shadow-[0_12px_24px_rgba(105,196,192,0.30)]">
+                  Sacar foto
+                </button>
+                <label className="cursor-pointer rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700">
+                  Elegir archivo
+                  <input type="file" hidden accept="image/*" onChange={handleAvatar} />
+                </label>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Nombre y apellido">
+                <ModernInput value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Ej: Juan Perez" />
+              </Field>
+              <Field label="Numero de telefono">
+                <ModernInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ej: 0984 123 456" />
+              </Field>
+              <div className="md:col-span-2">
+                <Field label="Ciudad donde trabajas">
+                  <CitySelect value={city} onChange={(e) => setCity(e.target.value)} />
+                </Field>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 2:
+        return (
+          <div className="space-y-5">
+            <Field label="Buscar rubro">
+              <ModernInput
+                value={skillQuery}
+                onChange={(e) => setSkillQuery(e.target.value)}
+                placeholder="Ej: plomeria, chofer, limpieza..."
+              />
+            </Field>
+
+            <SkillPanel
+              title="Tus servicios"
+              empty="Todavia no elegiste ningun rubro."
+              items={selectedSkillItems}
+              active
+              onClick={(skill) => setSkills(skills.filter((slug) => slug !== skill.slug))}
+            />
+
+            {!normalizedSkillQuery && !showAllSkills ? (
+              <SkillPanel
+                title="Rubros populares"
+                items={popularSkillItems}
+                onClick={(skill) => setSkills([...skills, skill.slug])}
+              />
+            ) : (
+              <SkillPanel
+                title="Todos los rubros"
+                empty="No encontramos rubros con esa busqueda."
+                items={visibleAvailableSkillItems}
+                onClick={(skill) => setSkills([...skills, skill.slug])}
+              />
+            )}
+
+            {filteredAvailableSkillItems.length > 12 && !normalizedSkillQuery && (
+              <button
+                type="button"
+                onClick={() => setShowAllSkills((prev) => !prev)}
+                className="w-full rounded-2xl border border-[#62bfb9]/35 bg-[#62bfb9]/10 px-4 py-3 text-sm font-black text-[#137d78]"
+              >
+                {showAllSkills ? 'Ver menos rubros' : 'Ver todos los rubros'}
+              </button>
+            )}
+          </div>
+        );
+
+      case 3:
+        return (
+          <div className="grid gap-5 md:grid-cols-2">
+            <Field label="Hasta donde queres trabajar">
+              <select value={radius} onChange={(e) => setRadius(Number(e.target.value))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-bold outline-none focus:ring-2 focus:ring-[#62bfb9]">
+                {RADII.map((km) => (
+                  <option key={km} value={km}>{km} km</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Estado de tu perfil">
+              <select value={active ? 'activo' : 'inactivo'} onChange={(e) => setActive(e.target.value === 'activo')} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-bold outline-none focus:ring-2 focus:ring-[#62bfb9]">
+                <option value="activo">Disponible</option>
+                <option value="inactivo">Pausado</option>
+              </select>
+            </Field>
+            <div className="md:col-span-2 rounded-[28px] border border-[#62bfb9]/25 bg-[#62bfb9]/10 p-5">
+              <div className="text-lg font-black text-slate-950">Asi los clientes cercanos pueden encontrarte mas rapido.</div>
+              <button type="button" onClick={saveLocation} className="mt-4 rounded-2xl bg-[#69c4c0] px-5 py-4 text-sm font-black text-white shadow-[0_12px_24px_rgba(105,196,192,0.30)]">
+                Usar mi ubicacion actual
+              </button>
+              {coords && <p className="mt-3 text-sm font-bold text-[#137d78]">Ubicacion guardada correctamente.</p>}
+            </div>
+          </div>
+        );
+
+      case 4:
+        return (
+          <div className="grid gap-5">
+            <Field label="Descripcion corta">
+              <textarea
+                rows={5}
+                className="w-full resize-none rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold outline-none focus:ring-2 focus:ring-[#62bfb9]"
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="Ej: Soy responsable, puntual y tengo experiencia atendiendo clientes."
+              />
+            </Field>
+            <Field label="Anios de experiencia">
+              <ModernInput type="number" min={0} value={yearsExp} onChange={(e) => setYearsExp(e.target.value)} placeholder="Ej: 3" />
+            </Field>
+          </div>
+        );
+
+      case 5:
+        return (
+          <div className="space-y-5">
+            <div className="rounded-[28px] border border-white/40 bg-[#69c4c0] p-5 text-white shadow-[0_16px_34px_rgba(105,196,192,0.24)]">
+              <div className="text-lg font-black">Esto nos ayuda a cuidar la comunidad ManosYA.</div>
+              <p className="mt-2 text-sm font-semibold text-white/70">Tus documentos se guardan de forma privada y se usan para revisar tu perfil.</p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Field label="Tipo de documento">
+                <select value={docType} onChange={(e) => setDocType(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-bold outline-none focus:ring-2 focus:ring-[#62bfb9]">
+                  {DOC_TYPES.map((doc) => <option key={doc.value} value={doc.value}>{doc.label}</option>)}
+                </select>
+              </Field>
+              <div className="md:col-span-2">
+                <Field label="Numero de documento">
+                  <ModernInput value={docNumber} onChange={(e) => setDocNumber(e.target.value)} placeholder="Ej: 12345678" />
+                </Field>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <UploadCard title="Frente del documento" subtitle="Ponelo dentro del marco y sacá la foto." uploaded={!!frontUrl} uploadLabel="Sacar frente" fileHref={frontUrl} onFileChange={(file) => uploadIdentity('front', file)} onOpenCamera={() => openCamera('front')} frame="document" />
+              <UploadCard title="Dorso del documento" subtitle="Mostrá bien el reverso del documento." uploaded={!!backUrl} uploadLabel="Sacar dorso" fileHref={backUrl} onFileChange={(file) => uploadIdentity('back', file)} onOpenCamera={() => openCamera('back')} frame="document" />
+            </div>
+            {showPolice && (
+              <UploadCard title="Antecedente policial" subtitle="Podés sacar foto o subir archivo." uploaded={!!policeUrl} uploadLabel="Sacar foto" fileHref={policeUrl} onFileChange={(file) => uploadPoliceRecord(file)} onOpenCamera={() => openCamera('police')} accept="application/pdf,image/*" frame="document" />
+            )}
+            <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600">
+              <input type="checkbox" required checked={acceptedPrivacy} onChange={(e) => setAcceptedPrivacy(e.target.checked)} className="mt-1 accent-[#62bfb9]" />
+              <span>
+                Declaro haber leido y aceptado la{' '}
+                <a href="/privacy-policy" target="_blank" className="font-black text-[#137d78] underline">Politica de Privacidad</a>.
+              </span>
+            </label>
+          </div>
+        );
+
+      default:
+        return (
+          <div className="space-y-5">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <ReviewPill label="Datos" done={!!fullName && !!phone && !!city} />
+              <ReviewPill label="Servicios" done={skills.length > 0} />
+              <ReviewPill label="Privacidad" done={acceptedPrivacy} />
+            </div>
+            <div className="rounded-[32px] border border-[#62bfb9]/25 bg-white p-6 shadow-sm">
+              <h3 className="text-2xl font-black tracking-[-0.035em] text-slate-950">Listo para enviar</h3>
+              <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-500">
+                Al enviar, el equipo ManosYA revisa tus datos para activar tu perfil con confianza.
+              </p>
+              <button
+                type="submit"
+                disabled={!canSave || busy}
+                className="mt-5 w-full rounded-3xl bg-[#69c4c0] px-5 py-5 text-lg font-black text-white shadow-[0_18px_38px_rgba(105,196,192,0.30)] disabled:opacity-50"
+              >
+                {busy ? 'Enviando...' : 'Enviar mi perfil a revision'}
+              </button>
+            </div>
+          </div>
+        );
     }
   }
 
@@ -905,6 +1308,205 @@ function getCurrentTrackFacingMode() {
       <div className="rounded-3xl bg-white border border-gray-200 shadow-sm p-10 text-center text-gray-500">
         Cargando perfil profesional...
       </div>
+    );
+  }
+
+  if (isVerified) {
+    return (
+      <div className="relative overflow-hidden rounded-[36px] border border-white/45 bg-[#69c4c0] p-6 text-white shadow-[0_28px_70px_rgba(8,35,52,0.18)] sm:p-10">
+        <CelebrationParticles />
+        <motion.div
+          initial={{ opacity: 0, y: 18, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.45 }}
+          className="relative z-10 mx-auto max-w-2xl text-center"
+        >
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[#62bfb9] text-4xl font-black text-white shadow-[0_20px_44px_rgba(98,191,185,0.35)]">
+            ✓
+          </div>
+          <div className="mt-6 inline-flex rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-[#94fff5]">
+            Perfil verificado
+          </div>
+          <h1 className="mt-5 text-4xl font-black tracking-[-0.055em] sm:text-6xl">
+            ¡Perfil aprobado!
+          </h1>
+          <p className="mt-4 text-lg font-semibold text-white/78">
+            Ya podes recibir pedidos en ManosYA.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push('/worker')}
+            className="mt-8 w-full rounded-3xl bg-white px-6 py-5 text-lg font-black text-[#06182a] shadow-[0_18px_44px_rgba(255,255,255,0.20)] sm:w-auto"
+          >
+            Ir a mi panel
+          </button>
+          <p className="mt-5 text-sm font-semibold text-white/60">
+            Bienvenido al lado profesional de ManosYA.
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (showReviewScreen) {
+    return (
+      <div className="rounded-[36px] border border-white/65 bg-white/92 p-6 shadow-[0_24px_70px_rgba(8,35,52,0.10)] backdrop-blur sm:p-10">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="mx-auto max-w-3xl text-center"
+        >
+          <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-amber-700">
+            En revision
+          </div>
+          <h1 className="mt-6 text-4xl font-black leading-[1.02] tracking-[-0.055em] text-slate-950 sm:text-6xl">
+            Tu perfil ya esta en la mesa de verificacion
+          </h1>
+          <p className="mx-auto mt-5 max-w-2xl text-base font-semibold leading-relaxed text-slate-600">
+            El equipo ManosYA esta revisando tus datos para activar tu perfil con confianza.
+            Estas a un paso de aparecer frente a clientes reales.
+          </p>
+          <div className="mt-6 rounded-[28px] bg-[#62bfb9]/10 p-5 text-sm font-black text-[#137d78]">
+            Estamos preparando tu entrada al mapa. Cuando te aprobemos, se prende la maquina.
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setReviewEditMode(true);
+              setCurrentStep(1);
+            }}
+            className="mt-7 rounded-3xl border border-slate-200 bg-white px-6 py-4 text-sm font-black text-slate-800 shadow-sm"
+          >
+            Actualizar datos
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  const showModernExperience = progress >= 0;
+  const wizardAvatar =
+    currentStep <= 1
+      ? '/ROGER SALUDANDO.png'
+      : currentStep <= 4
+        ? '/ROGER DEFINITIVO pensativo.png'
+        : '/ROGER OK.png';
+
+  if (showModernExperience) {
+    return (
+      <form onSubmit={saveAll} className="space-y-5">
+        <section className="rounded-[36px] border border-white/35 bg-white/12 p-4 shadow-[0_24px_70px_rgba(8,35,52,0.10)] backdrop-blur sm:p-6">
+          <div className="mx-auto max-w-[760px] text-center">
+            <motion.img
+              key={wizardAvatar}
+              src={wizardAvatar}
+              alt="Roger ManosYA"
+              initial={{ opacity: 0, y: 12, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.24 }}
+              className="mx-auto h-[210px] w-auto object-contain sm:h-[280px]"
+            />
+
+            <motion.div
+              key={`${currentStep}-${activeWizardStep.title}`}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22 }}
+              className="mx-auto -mt-3 rounded-[34px] bg-white px-5 py-6 text-center shadow-[0_18px_42px_rgba(8,35,52,0.12)] sm:px-8"
+            >
+              <div className="text-xs font-black uppercase tracking-[0.18em] text-[#137d78]">
+                {activeWizardStep.eyebrow}
+              </div>
+              <h1 className="mt-3 text-[34px] font-black leading-[1.02] tracking-[-0.055em] text-[#06182a] sm:text-5xl">
+                {activeWizardStep.title}
+              </h1>
+              <p className="mx-auto mt-4 max-w-xl text-base font-bold leading-relaxed text-slate-600">
+                {activeWizardStep.subtitle}
+              </p>
+
+              <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-slate-100">
+                <motion.div
+                  className="h-full rounded-full bg-[#69c4c0]"
+                  animate={{ width: `${wizardProgress}%` }}
+                  transition={{ duration: 0.28 }}
+                />
+              </div>
+            </motion.div>
+          </div>
+
+          <div className="mx-auto mt-5 max-w-[760px] rounded-[34px] bg-white/94 p-5 shadow-[0_18px_44px_rgba(8,35,52,0.10)] sm:p-6">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="text-sm font-black text-[#137d78]">
+                Tu respuesta
+              </div>
+              <div className="rounded-full bg-[#69c4c0]/14 px-3 py-1 text-xs font-black text-[#137d78]">
+                {progress}% listo
+              </div>
+            </div>
+
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentStep}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.22 }}
+              >
+                {renderStepContent()}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          {(msg || err) && (
+            <div className="mx-auto mt-5 max-w-[760px]">
+              {msg && <div className="rounded-2xl border border-[#62bfb9]/25 bg-[#62bfb9]/10 px-4 py-3 text-sm font-black text-[#137d78]">{msg}</div>}
+              {err && <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-600">{err}</div>}
+            </div>
+          )}
+        </section>
+
+        <div className="sticky bottom-3 z-20 mx-auto grid max-w-[760px] grid-cols-[auto_1fr] gap-3 rounded-[28px] border border-white/70 bg-white/90 p-3 shadow-[0_18px_48px_rgba(15,23,42,0.12)] backdrop-blur">
+          <button
+            type="button"
+            onClick={goPrevStep}
+            disabled={currentStep === 0}
+            className="rounded-2xl border border-slate-200 px-5 py-4 text-sm font-black text-slate-700 disabled:opacity-35"
+          >
+            Atras
+          </button>
+          {currentStep < wizardSteps.length - 1 ? (
+            <button
+              type="button"
+              onClick={goNextStep}
+              className="rounded-2xl bg-white px-5 py-4 text-sm font-black text-[#06182a] shadow-sm"
+            >
+              Continuar
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!canSave || busy}
+              className="rounded-2xl bg-[#62bfb9] px-5 py-4 text-sm font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.35)] disabled:opacity-50"
+            >
+              {busy ? 'Enviando...' : 'Enviar mi perfil a revision'}
+            </button>
+          )}
+        </div>
+
+        {openAvatar && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"
+            onClick={() => setOpenAvatar(false)}
+          >
+            <div className="relative h-80 w-80 overflow-hidden rounded-[32px] border-4 border-white bg-white shadow-2xl">
+              <img src={avatarUrl || '/avatar-fallback.png'} alt="avatar grande" className="h-full w-full object-cover" />
+            </div>
+          </div>
+        )}
+
+        {renderCameraOverlay()}
+      </form>
     );
   }
 
@@ -1727,6 +2329,170 @@ function Field({ label, children }) {
     <div>
       <label className="block text-sm font-bold text-gray-700 mb-2">{label}</label>
       {children}
+    </div>
+  );
+}
+
+function ModernInput(props) {
+  return (
+    <input
+      {...props}
+      className={[
+        'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-bold text-slate-900 outline-none transition focus:border-[#62bfb9] focus:bg-white focus:ring-2 focus:ring-[#62bfb9]/35',
+        props.className || '',
+      ].join(' ')}
+    />
+  );
+}
+
+function CitySelect({ value, onChange }) {
+  return (
+    <select
+      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-bold text-slate-900 outline-none transition focus:border-[#62bfb9] focus:bg-white focus:ring-2 focus:ring-[#62bfb9]/35"
+      value={value}
+      onChange={onChange}
+    >
+      <option value="">Selecciona una ciudad</option>
+      <option value="asuncion">Asuncion</option>
+      <optgroup label="Central">
+        <option value="sanlorenzo">San Lorenzo</option>
+        <option value="luque">Luque</option>
+        <option value="fernando">Fernando de la Mora</option>
+        <option value="lambare">Lambare</option>
+        <option value="nemby">Nemby</option>
+        <option value="capiata">Capiata</option>
+        <option value="itaugua">Itaugua</option>
+        <option value="villaelisa">Villa Elisa</option>
+        <option value="limpio">Limpio</option>
+        <option value="mariano">Mariano Roque Alonso</option>
+      </optgroup>
+      <optgroup label="Alto Parana">
+        <option value="cde">Ciudad del Este</option>
+        <option value="minga">Minga Guazu</option>
+        <option value="hernandarias">Hernandarias</option>
+        <option value="pfranco">Presidente Franco</option>
+        <option value="itambe">Itambe</option>
+      </optgroup>
+      <optgroup label="Itapua">
+        <option value="encarnacion">Encarnacion</option>
+        <option value="cambyreta">Cambyreta</option>
+        <option value="hnaguazu">Hohenau</option>
+        <option value="obligado">Obligado</option>
+        <option value="bella-vista">Bella Vista</option>
+      </optgroup>
+      <optgroup label="Caaguazu">
+        <option value="coroneloviedo">Coronel Oviedo</option>
+        <option value="jidominguez">J. Eulogio Estigarribia</option>
+        <option value="repatriacion">Repatriacion</option>
+        <option value="raul-pena">Raul Pena</option>
+      </optgroup>
+      <optgroup label="Cordillera">
+        <option value="caacupe">Caacupe</option>
+        <option value="sanber">San Bernardino</option>
+        <option value="eusebio-ayala">Eusebio Ayala</option>
+      </optgroup>
+      <optgroup label="Guaira">
+        <option value="villarrica">Villarrica</option>
+      </optgroup>
+      <optgroup label="Paraguari">
+        <option value="paraguari">Paraguari</option>
+        <option value="itas">Ybycui</option>
+      </optgroup>
+      <optgroup label="Misiones">
+        <option value="sanjuan">San Juan Bautista</option>
+      </optgroup>
+      <optgroup label="Concepcion">
+        <option value="concepcion">Concepcion</option>
+        <option value="horqueta">Horqueta</option>
+      </optgroup>
+      <optgroup label="Amambay">
+        <option value="pedrojuan">Pedro Juan Caballero</option>
+        <option value="capitan-bado">Capitan Bado</option>
+      </optgroup>
+      <optgroup label="Presidente Hayes">
+        <option value="villa-hayes">Villa Hayes</option>
+        <option value="benjamin-aceval">Benjamin Aceval</option>
+      </optgroup>
+      <optgroup label="Boqueron">
+        <option value="filadelfia">Filadelfia</option>
+        <option value="loma-plata">Loma Plata</option>
+        <option value="neuland">Neuland</option>
+      </optgroup>
+    </select>
+  );
+}
+
+function SkillPanel({ title, empty = 'No hay rubros para mostrar.', items = [], active = false, onClick }) {
+  return (
+    <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 text-sm font-black uppercase tracking-[0.14em] text-slate-500">
+        {title}
+      </div>
+      {items.length ? (
+        <div className="flex flex-wrap gap-2">
+          {items.map((skill) => (
+            <button
+              key={skill.slug}
+              type="button"
+              onClick={() => onClick?.(skill)}
+              className={[
+                'rounded-2xl px-4 py-3 text-sm font-black transition active:scale-[0.98]',
+                active
+            ? 'bg-[#69c4c0] text-white shadow-[0_12px_24px_rgba(105,196,192,0.28)]'
+            : 'border border-slate-200 bg-white text-slate-800 hover:border-[#69c4c0]/50 hover:bg-[#69c4c0]/10',
+              ].join(' ')}
+            >
+              {skill.name}
+              {active ? <span className="ml-2 text-white/70">x</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm font-semibold text-slate-500">
+          {empty}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReviewPill({ label, done }) {
+  return (
+    <div className={`rounded-2xl border px-4 py-4 text-sm font-black ${
+      done
+        ? 'border-[#62bfb9]/30 bg-[#62bfb9]/10 text-[#137d78]'
+        : 'border-slate-200 bg-slate-50 text-slate-400'
+    }`}>
+      {done ? '✓ ' : '• '}
+      {label}
+    </div>
+  );
+}
+
+function CelebrationParticles() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {Array.from({ length: 16 }).map((_, index) => (
+        <motion.span
+          key={index}
+          className="absolute h-2 w-2 rounded-full bg-[#62bfb9]"
+          style={{
+            left: `${8 + (index * 6) % 86}%`,
+            top: `${10 + (index * 11) % 74}%`,
+          }}
+          animate={{
+            y: [0, -18, 0],
+            opacity: [0.25, 1, 0.25],
+            scale: [0.8, 1.3, 0.8],
+          }}
+          transition={{
+            duration: 2.2 + (index % 4) * 0.18,
+            repeat: Infinity,
+            delay: index * 0.08,
+            ease: 'easeInOut',
+          }}
+        />
+      ))}
     </div>
   );
 }

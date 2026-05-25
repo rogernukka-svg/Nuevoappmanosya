@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getSupabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { motion } from 'framer-motion';
 import {
   Loader2,
   FileText,
@@ -328,6 +329,11 @@ export default function AdminWorkersPage() {
 
       if (error) throw error;
 
+      await Promise.all([
+        supabase.from('profiles').update({ is_verified: approve }).eq('id', userId),
+        supabase.from('worker_profiles').update({ is_active: approve }).eq('user_id', userId),
+      ]);
+
       await logAdminHistory({
         workerId: userId,
         action: approve ? 'approve_worker' : 'reject_worker',
@@ -559,11 +565,11 @@ export default function AdminWorkersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#06111A] text-white">
+    <div className="min-h-screen bg-[#69c4c0] text-white">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -top-28 left-[-10%] h-80 w-80 rounded-full bg-emerald-500/20 blur-3xl" />
-        <div className="absolute top-[15%] right-[-5%] h-96 w-96 rounded-full bg-cyan-500/20 blur-3xl" />
-        <div className="absolute bottom-[-10%] left-[20%] h-96 w-96 rounded-full bg-teal-400/10 blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_0%,rgba(255,255,255,0.42),transparent_30%),radial-gradient(circle_at_84%_12%,rgba(255,255,255,0.22),transparent_28%)]" />
+        <div className="absolute bottom-[-14%] left-[14%] h-96 w-96 rounded-full bg-[#06182a]/14 blur-3xl" />
+        <div className="absolute right-[-8%] top-[28%] h-[460px] w-[460px] rounded-full bg-[#06182a]/18 blur-3xl" />
       </div>
 
       <main className="relative z-10 mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8">
@@ -660,28 +666,59 @@ export default function AdminWorkersPage() {
 
 function Header({ onRefresh }) {
   return (
-    <div className="mb-6 rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-300">
-            <Sparkles className="h-3.5 w-3.5" />
-            Centro de control ManosYA
+    <div className="mb-6 overflow-hidden rounded-[34px] border border-white/55 bg-white/88 p-5 text-[#06182a] shadow-[0_24px_70px_rgba(8,35,52,0.14)] backdrop-blur-xl">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-5 md:flex-row md:items-center">
+          <div className="flex h-[86px] w-[160px] shrink-0 items-center justify-center rounded-[28px] bg-[#69c4c0] shadow-[0_18px_38px_rgba(105,196,192,0.25)]">
+            <img
+              src="/logo-manosya.png"
+              alt="ManosYA"
+              className="h-12 w-auto object-contain"
+            />
+            </div>
+
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[#69c4c0]/35 bg-[#69c4c0]/12 px-3 py-1 text-xs font-black text-[#137d78]">
+              <Sparkles className="h-3.5 w-3.5" />
+              Centro oficial ManosYA
           </div>
-          <h1 className="text-2xl font-black tracking-tight text-white md:text-4xl">
-            Panel de Verificación de Trabajadores
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm text-white/65 md:text-base">
-            Vista premium para administrar validaciones, riesgo documental, notas internas, bloqueos y score automático.
-          </p>
+            <h1 className="text-3xl font-black tracking-[-0.045em] text-[#06182a] md:text-5xl">
+              Verificacion de trabajadores
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-slate-600 md:text-base">
+              Revisa perfiles, documentos privados y aprobaciones desde el centro de confianza de ManosYA.
+            </p>
         </div>
 
-        <button
+          </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center lg:flex-col lg:items-end">
+          <div className="flex items-center gap-3 rounded-[26px] border border-[#69c4c0]/25 bg-[#69c4c0]/10 p-3">
+            <motion.div
+              animate={{ y: [0, -5, 0], rotate: [0, -1.5, 1.5, 0] }}
+              transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+              className="relative flex h-16 w-16 shrink-0 items-end justify-center overflow-hidden rounded-2xl bg-[#69c4c0]"
+            >
+              <img
+                src="/ROGER SALUDANDO.png"
+                alt="Roger ManosYA"
+                className="h-[78px] w-auto object-contain"
+              />
+            </motion.div>
+            <div>
+              <div className="text-sm font-black text-[#06182a]">Roger</div>
+              <div className="text-xs font-bold text-[#137d78]">Te ayuda a verificar</div>
+            </div>
+          </div>
+
+          <button
           onClick={onRefresh}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/15 active:scale-[0.99]"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#06182a] px-5 py-3 text-sm font-black text-white shadow-[0_16px_34px_rgba(6,24,42,0.18)] transition hover:-translate-y-0.5 hover:bg-[#0a263f] active:scale-[0.99]"
         >
           <RefreshCw size={16} />
           Refrescar panel
-        </button>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -749,18 +786,18 @@ function DashboardCards({ dashboard }) {
         return (
           <div
             key={card.label}
-            className={`rounded-[26px] border border-white/10 bg-gradient-to-br ${card.tone} p-5 shadow-[0_18px_60px_rgba(0,0,0,0.25)] backdrop-blur-xl`}
+            className="rounded-[28px] border border-white/55 bg-white/82 p-5 text-[#06182a] shadow-[0_18px_46px_rgba(8,35,52,0.12)] backdrop-blur-xl"
           >
             <div className="mb-4 flex items-center justify-between">
-              <div className="rounded-2xl border border-white/10 bg-white/10 p-3">
-                <Icon className="h-5 w-5 text-white" />
+              <div className="rounded-2xl border border-[#69c4c0]/25 bg-[#69c4c0]/15 p-3">
+                <Icon className="h-5 w-5 text-[#137d78]" />
               </div>
-              <div className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.8)]" />
+              <div className="h-2.5 w-2.5 rounded-full bg-[#62bfb9] shadow-[0_0_18px_rgba(98,191,185,0.8)]" />
             </div>
-            <div className="text-3xl font-black tracking-tight text-white">
+            <div className="text-3xl font-black tracking-tight text-[#06182a]">
               {card.value}
             </div>
-            <div className="mt-1 text-sm text-white/65">{card.label}</div>
+            <div className="mt-1 text-sm font-bold text-slate-500">{card.label}</div>
           </div>
         );
       })}
@@ -800,7 +837,7 @@ function TabsBar({ activeTab, setActiveTab, dashboard }) {
   ];
 
   return (
-    <div className="mb-6 rounded-[28px] border border-white/10 bg-white/5 p-3 backdrop-blur-xl shadow-[0_20px_80px_rgba(0,0,0,0.28)]">
+    <div className="mb-6 rounded-[28px] border border-white/55 bg-white/76 p-3 text-[#06182a] shadow-[0_20px_54px_rgba(8,35,52,0.12)] backdrop-blur-xl">
       <div className="grid gap-3 md:grid-cols-4">
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -812,20 +849,20 @@ function TabsBar({ activeTab, setActiveTab, dashboard }) {
               onClick={() => setActiveTab(tab.key)}
               className={`flex items-center justify-between rounded-2xl px-4 py-4 text-left transition ${
                 active
-                  ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-400/20'
-                  : 'bg-black/20 border border-white/10 hover:bg-white/[0.06]'
+                  ? 'border border-[#69c4c0]/35 bg-[#69c4c0]/18 shadow-[0_12px_30px_rgba(98,191,185,0.16)]'
+                  : 'border border-slate-200/70 bg-white/65 hover:bg-white'
               }`}
             >
               <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-white/10 p-2">
-                  <Icon className="h-4 w-4 text-white" />
+                <div className="rounded-xl bg-[#69c4c0]/15 p-2">
+                  <Icon className="h-4 w-4 text-[#137d78]" />
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-white">{tab.label}</div>
-                  <div className="text-xs text-white/45">Vista operativa</div>
+                  <div className="text-sm font-black text-[#06182a]">{tab.label}</div>
+                  <div className="text-xs font-semibold text-slate-500">Vista operativa</div>
                 </div>
               </div>
-              <div className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white">
+              <div className="rounded-full bg-[#06182a] px-3 py-1 text-xs font-black text-white">
                 {tab.count}
               </div>
             </button>
@@ -853,15 +890,15 @@ function ControlBar({
   cities,
 }) {
   return (
-    <div className="mb-8 rounded-[28px] border border-white/10 bg-white/5 p-4 backdrop-blur-xl shadow-[0_20px_80px_rgba(0,0,0,0.28)]">
+    <div className="mb-8 rounded-[28px] border border-white/55 bg-white/76 p-4 text-[#06182a] shadow-[0_20px_54px_rgba(8,35,52,0.12)] backdrop-blur-xl">
       <div className="grid gap-3 lg:grid-cols-[1.8fr_repeat(4,1fr)]">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#137d78]" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar por nombre, cédula, teléfono, ciudad, oficio o nota..."
-            className="h-12 w-full rounded-2xl border border-white/10 bg-black/20 pl-11 pr-4 text-sm text-white outline-none placeholder:text-white/35 focus:border-emerald-400/40"
+            className="h-12 w-full rounded-2xl border border-slate-200/80 bg-white/75 pl-11 pr-4 text-sm font-semibold text-[#06182a] outline-none placeholder:text-slate-400 focus:border-[#62bfb9]"
           />
         </div>
 
@@ -921,14 +958,14 @@ function ControlBar({
 function SelectBox({ icon: Icon, value, onChange, options }) {
   return (
     <div className="relative">
-      <Icon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+      <Icon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#137d78]" />
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-12 w-full appearance-none rounded-2xl border border-white/10 bg-black/20 pl-11 pr-4 text-sm text-white outline-none focus:border-emerald-400/40"
+        className="h-12 w-full appearance-none rounded-2xl border border-slate-200/80 bg-white/75 pl-11 pr-4 text-sm font-semibold text-[#06182a] outline-none focus:border-[#62bfb9]"
       >
         {options.map(([val, label]) => (
-          <option key={val} value={val} className="bg-slate-900 text-white">
+          <option key={val} value={val} className="bg-white text-[#06182a]">
             {label}
           </option>
         ))}
@@ -1145,6 +1182,38 @@ function WorkerDetailModal({
   const [blockReason, setBlockReason] = useState('');
   const [blockDays, setBlockDays] = useState('7');
 
+  async function createSignedWorkerDocUrl(pathOrUrl) {
+    if (!pathOrUrl) return null;
+    const value = String(pathOrUrl);
+
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+
+    try {
+      const { data, error } = await supabase.storage
+        .from('worker-docs')
+        .createSignedUrl(value, 60 * 30);
+
+      if (error) throw error;
+      return data?.signedUrl || null;
+    } catch (err) {
+      console.warn('No se pudo firmar documento del trabajador:', err.message);
+      return null;
+    }
+  }
+
+  async function hydrateDocumentPreviews(docs = []) {
+    return Promise.all(
+      docs.map(async (doc) => ({
+        ...doc,
+        signed_front_url: await createSignedWorkerDocUrl(doc.front_url),
+        signed_back_url: await createSignedWorkerDocUrl(doc.back_url),
+        signed_file_url: await createSignedWorkerDocUrl(doc.file_url),
+      }))
+    );
+  }
+
   useEffect(() => {
     if (!worker) return;
 
@@ -1214,8 +1283,10 @@ function WorkerDetailModal({
           if (createdAt >= startMonth) stats.thisMonth += 1;
         }
 
+        const signedDocs = await hydrateDocumentPreviews(docs || []);
+
         setJobHistory(stats);
-        setDetails({ profile, docs, bank });
+        setDetails({ profile, docs: signedDocs, bank });
         setHistory(adminHistory || []);
       } catch (err) {
         console.error(err);
@@ -1405,21 +1476,26 @@ function WorkerDetailModal({
                 </div>
               </div>
 
-              <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
-                <h4 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.18em] text-amber-300/80">
-                  <FileText size={16} />
-                  Documentos cargados
-                </h4>
+              <div className="rounded-[28px] border border-[#62bfb9]/20 bg-gradient-to-br from-[#62bfb9]/12 via-white/[0.045] to-sky-400/10 p-4 shadow-[0_18px_44px_rgba(0,0,0,0.16)]">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <h4 className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[#7bf0e7]">
+                    <FileText size={16} />
+                    Documentos cargados
+                  </h4>
+                  <span className="rounded-full border border-[#62bfb9]/25 bg-[#62bfb9]/12 px-3 py-1 text-xs font-black text-[#9af7ef]">
+                    Verificacion ManosYA
+                  </span>
+                </div>
 
                 {details?.docs?.length ? (
                   <div className="space-y-5">
                     {details.docs.map((d, i) => (
                       <div
                         key={i}
-                        className="rounded-[22px] border border-white/10 bg-black/20 p-4"
+                        className="rounded-[26px] border border-white/10 bg-[#07131D]/80 p-4 shadow-inner"
                       >
                         <div className="mb-3 flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white">
+                          <span className="rounded-full bg-[#62bfb9]/18 px-3 py-1 text-xs font-black text-[#a7fff7]">
                             {getDocLabel(d.doc_type)}
                           </span>
                           <span className="text-sm text-white/70">
@@ -1427,30 +1503,25 @@ function WorkerDetailModal({
                           </span>
                         </div>
 
-                        <div className="flex flex-wrap gap-3">
-                          {['front_url', 'back_url', 'file_url'].map((key) => {
-                            const url = d[key];
-                            if (!url) return null;
-                            const isPDF = String(url).toLowerCase().includes('.pdf');
-
-                            return (
-                              <div
-                                key={key}
-                                className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5"
-                              >
-                                {isPDF ? (
-                                  <iframe src={url} className="h-40 w-32" title={key} />
-                                ) : (
-                                  <img
-                                    src={url}
-                                    alt={key}
-                                    className="h-40 w-32 cursor-pointer object-cover transition group-hover:scale-[1.04]"
-                                    onClick={() => setPreview(url)}
-                                  />
-                                )}
-                              </div>
-                            );
-                          })}
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                          <DocumentPreviewCard
+                            label="Frente"
+                            url={d.signed_front_url}
+                            rawPath={d.front_url}
+                            onOpen={setPreview}
+                          />
+                          <DocumentPreviewCard
+                            label="Dorso"
+                            url={d.signed_back_url}
+                            rawPath={d.back_url}
+                            onOpen={setPreview}
+                          />
+                          <DocumentPreviewCard
+                            label={d.doc_type === 'POLICE' ? 'Antecedente' : 'Archivo'}
+                            url={d.signed_file_url}
+                            rawPath={d.file_url}
+                            onOpen={setPreview}
+                          />
                         </div>
                       </div>
                     ))}
@@ -1845,6 +1916,67 @@ function InfoBlock({ label, value }) {
       <div className="text-xs text-white/45">{label}</div>
       <div className="mt-1 font-medium text-white/85">{value}</div>
     </div>
+  );
+}
+
+function DocumentPreviewCard({ label, url, rawPath, onOpen }) {
+  const isPDF =
+    String(url || rawPath || '').toLowerCase().includes('.pdf') ||
+    String(rawPath || '').toLowerCase().endsWith('.pdf');
+
+  if (!rawPath && !url) {
+    return (
+      <div className="rounded-[22px] border border-dashed border-white/10 bg-black/20 p-4">
+        <div className="text-xs font-black uppercase tracking-[0.16em] text-white/45">{label}</div>
+        <div className="mt-4 flex h-36 items-center justify-center rounded-2xl bg-white/[0.03] text-center text-xs font-bold text-white/35">
+          No cargado
+        </div>
+      </div>
+    );
+  }
+
+  if (!url) {
+    return (
+      <div className="rounded-[22px] border border-amber-400/20 bg-amber-500/10 p-4">
+        <div className="text-xs font-black uppercase tracking-[0.16em] text-amber-200">{label}</div>
+        <div className="mt-4 flex h-36 items-center justify-center rounded-2xl bg-black/20 px-3 text-center text-xs font-bold text-amber-100">
+          Documento guardado, pero no se pudo generar vista segura.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(url)}
+      className="group rounded-[22px] border border-white/10 bg-black/20 p-3 text-left transition hover:border-[#62bfb9]/40 hover:bg-[#62bfb9]/10"
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-xs font-black uppercase tracking-[0.16em] text-[#9af7ef]">{label}</div>
+        <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-black text-white/65">
+          Ver
+        </span>
+      </div>
+
+      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
+        {isPDF ? (
+          <div className="flex h-40 items-center justify-center p-4 text-center">
+            <div>
+              <FileText className="mx-auto h-8 w-8 text-[#9af7ef]" />
+              <div className="mt-3 text-xs font-black text-white">PDF privado</div>
+              <div className="mt-1 text-[11px] font-semibold text-white/45">Tocar para abrir</div>
+            </div>
+            </div>
+        ) : (
+          <img
+            src={url}
+            alt={label}
+            className="h-40 w-full object-cover transition duration-300 group-hover:scale-[1.04]"
+          />
+        )}
+      </div>
+    </button>
   );
 }
 
