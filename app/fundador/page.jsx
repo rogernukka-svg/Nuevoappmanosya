@@ -4,9 +4,11 @@ const siteUrl = 'https://www.manosya.app';
 const pageUrl = `${siteUrl}/fundador`;
 const founderImage = `${siteUrl}/founder-roger-nunez.png`;
 const directorImage = `${siteUrl}/ivan-armoa-director-general.jpeg`;
+const sergioImage = `${siteUrl}/sergio-gonzalez-ceo.jpeg`;
+const alexImage = `${siteUrl}/alex-gonzalez-vicepresidente.png`;
 const title = 'Roger Núñez | Fundador de ManosYA';
 const description =
-  'Perfil oficial de Roger Núñez, fundador de ManosYA, la startup tecnológica paraguaya que conecta trabajadores y clientes en tiempo real mediante geolocalización, inteligencia artificial y confianza digital.';
+  'Perfil oficial de Roger Núñez, fundador de ManosYA, la startup tecnológica paraguaya que conecta trabajadores, clientes y proveedores en tiempo real mediante geolocalización, inteligencia artificial y confianza digital.';
 
 export const metadata = {
   title,
@@ -20,9 +22,19 @@ export const metadata = {
     'Iván Armoa',
     'Iván Armoa ManosYA',
     'Director General de ManosYA',
+    'Sergio Gonzalez',
+    'Sergio Gonzalez ManosYA',
+    'Sergio Gonzalez CEO',
+    'Director Ejecutivo de ManosYA',
+    'Alex Gonzalez',
+    'Alex Gonzalez ManosYA',
+    'Vicepresidente de ManosYA',
+    'Equipo Ejecutivo ManosYA',
+    'liderazgo joven paraguayo',
     'ManosYA founder',
     'ManosYA Paraguay',
     'startup paraguaya',
+    'startup tecnológica paraguaya',
     'tecnología paraguaya',
     'inteligencia artificial Paraguay',
     'geolocalización Paraguay',
@@ -63,6 +75,18 @@ export const metadata = {
         height: 1200,
         alt: 'Roger Núñez, fundador de ManosYA',
       },
+      {
+        url: '/sergio-gonzalez-ceo.jpeg',
+        width: 1200,
+        height: 1500,
+        alt: 'Sergio Gonzalez, Director Ejecutivo de ManosYA',
+      },
+      {
+        url: '/alex-gonzalez-vicepresidente.png',
+        width: 1200,
+        height: 1500,
+        alt: 'Alex Gonzalez, Vicepresidente de ManosYA',
+      },
     ],
   },
   twitter: {
@@ -84,7 +108,7 @@ const personSchema = {
   url: pageUrl,
   image: founderImage,
   description:
-    'Roger Núñez es el fundador de ManosYA, una plataforma tecnológica paraguaya creada para conectar trabajadores y clientes en tiempo real.',
+    'Roger Núñez es el fundador de ManosYA, una plataforma tecnológica paraguaya creada para conectar trabajadores, clientes y proveedores en tiempo real.',
   nationality: {
     '@type': 'Country',
     name: 'Paraguay',
@@ -112,6 +136,74 @@ const personSchema = {
   ],
 };
 
+const directorSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Person',
+  '@id': `${pageUrl}#ivan-armoa`,
+  name: 'Iván Armoa',
+  jobTitle: 'Director General',
+  url: `${pageUrl}#equipo`,
+  image: directorImage,
+  description:
+    'Iván Armoa es Director General de ManosYA, con experiencia en publicidad, diseño, comunicación, campañas políticas, empresas y construcción de marcas.',
+  worksFor: {
+    '@type': 'Organization',
+    '@id': `${siteUrl}/#organization`,
+    name: 'ManosYA',
+    url: siteUrl,
+  },
+};
+
+const sergioSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Person',
+  '@id': `${pageUrl}#sergio-gonzalez`,
+  name: 'Sergio Gonzalez',
+  jobTitle: 'Director Ejecutivo (CEO)',
+  url: `${pageUrl}#equipo`,
+  image: sergioImage,
+  description:
+    'Sergio Gonzalez es Director Ejecutivo de ManosYA. Lidera crecimiento, expansión nacional, operaciones, toma de decisiones estratégicas, coordinación interna y alianzas.',
+  worksFor: {
+    '@type': 'Organization',
+    '@id': `${siteUrl}/#organization`,
+    name: 'ManosYA',
+    url: siteUrl,
+  },
+  knowsAbout: [
+    'Dirección ejecutiva',
+    'Estrategia de crecimiento',
+    'Expansión nacional',
+    'Operaciones',
+    'Alianzas empresariales',
+  ],
+};
+
+const alexSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Person',
+  '@id': `${pageUrl}#alex-gonzalez`,
+  name: 'Alex Gonzalez',
+  jobTitle: 'Vicepresidente de ManosYA',
+  url: `${pageUrl}#equipo`,
+  image: alexImage,
+  description:
+    'Alex Gonzalez es Vicepresidente de ManosYA. Aporta apoyo estratégico, supervisión de innovación, coordinación de mejoras internas y visión humana para la evolución tecnológica de la plataforma.',
+  worksFor: {
+    '@type': 'Organization',
+    '@id': `${siteUrl}/#organization`,
+    name: 'ManosYA',
+    url: siteUrl,
+  },
+  knowsAbout: [
+    'Vicepresidencia',
+    'Innovación',
+    'Experiencia humana y tecnológica',
+    'Estrategia',
+    'Expansión',
+  ],
+};
+
 const organizationSchema = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
@@ -133,28 +225,40 @@ const organizationSchema = {
       name: 'Iván Armoa',
       jobTitle: 'Director General',
     },
+    {
+      '@type': 'Person',
+      '@id': `${pageUrl}#sergio-gonzalez`,
+      name: 'Sergio Gonzalez',
+      jobTitle: 'Director Ejecutivo (CEO)',
+    },
+    {
+      '@type': 'Person',
+      '@id': `${pageUrl}#alex-gonzalez`,
+      name: 'Alex Gonzalez',
+      jobTitle: 'Vicepresidente de ManosYA',
+    },
+  ],
+  member: [
+    {
+      '@type': 'Person',
+      '@id': `${pageUrl}#roger-nunez`,
+    },
+    {
+      '@type': 'Person',
+      '@id': `${pageUrl}#ivan-armoa`,
+    },
+    {
+      '@type': 'Person',
+      '@id': `${pageUrl}#sergio-gonzalez`,
+    },
+    {
+      '@type': 'Person',
+      '@id': `${pageUrl}#alex-gonzalez`,
+    },
   ],
   foundingLocation: {
     '@type': 'Place',
     name: 'Ciudad del Este, Paraguay',
-  },
-};
-
-const directorSchema = {
-  '@context': 'https://schema.org',
-  '@type': 'Person',
-  '@id': `${pageUrl}#ivan-armoa`,
-  name: 'Iván Armoa',
-  jobTitle: 'Director General',
-  url: `${pageUrl}#direccion`,
-  image: directorImage,
-  description:
-    'Iván Armoa es Director General de ManosYA, con experiencia en publicidad, diseño, comunicación, campañas políticas, empresas y construcción de marcas.',
-  worksFor: {
-    '@type': 'Organization',
-    '@id': `${siteUrl}/#organization`,
-    name: 'ManosYA',
-    url: siteUrl,
   },
 };
 
@@ -218,10 +322,22 @@ const founderStorySchema = {
       name: 'Iván Armoa',
       jobTitle: 'Director General',
     },
+    {
+      '@type': 'Person',
+      '@id': `${pageUrl}#sergio-gonzalez`,
+      name: 'Sergio Gonzalez',
+      jobTitle: 'Director Ejecutivo (CEO)',
+    },
+    {
+      '@type': 'Person',
+      '@id': `${pageUrl}#alex-gonzalez`,
+      name: 'Alex Gonzalez',
+      jobTitle: 'Vicepresidente de ManosYA',
+    },
   ],
   articleSection: 'Founder Story',
   keywords:
-    'Roger Núñez, fundador de ManosYA, historia de ManosYA, tecnología paraguaya, Ciudad del Este, trabajo digno, geolocalización, inteligencia artificial',
+    'Roger Núñez, fundador de ManosYA, Sergio Gonzalez, Alex Gonzalez, equipo ejecutivo ManosYA, historia de ManosYA, tecnología paraguaya, Ciudad del Este, trabajo digno, geolocalización, inteligencia artificial',
 };
 
 const breadcrumbSchema = {
@@ -247,6 +363,8 @@ export default function FounderPage() {
   const structuredData = [
     personSchema,
     directorSchema,
+    sergioSchema,
+    alexSchema,
     organizationSchema,
     profilePageSchema,
     founderStorySchema,

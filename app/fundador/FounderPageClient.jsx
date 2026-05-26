@@ -9,9 +9,12 @@ import {
   ArrowRight,
   BrainCircuit,
   BriefcaseBusiness,
+  CheckCircle2,
+  Compass,
   Facebook,
   FileText,
   Globe2,
+  Handshake,
   Instagram,
   Mail,
   MapPin,
@@ -19,9 +22,11 @@ import {
   Mic2,
   Newspaper,
   RadioTower,
+  Rocket,
   Search,
   ShieldCheck,
   Sparkles,
+  UsersRound,
 } from 'lucide-react';
 
 const supabase = getSupabase();
@@ -42,9 +47,47 @@ const director = {
   photo: '/ivan-armoa-director-general.jpeg',
 };
 
+const executives = [
+  {
+    name: 'Sergio Gonzalez',
+    role: 'Director Ejecutivo (CEO)',
+    photo: '/sergio-gonzalez-ceo.jpeg',
+    eyebrow: 'Dirección ejecutiva',
+    story:
+      'Sergio fue compañero de colegio de Roger desde séptimo hasta octavo grado. Con el tiempo, aquella amistad se convirtió en una visión empresarial compartida: construir una plataforma paraguaya capaz de ordenar trabajo, confianza y crecimiento real.',
+    responsibilities: [
+      'Dirección ejecutiva general',
+      'Estrategia de crecimiento',
+      'Expansión nacional',
+      'Supervisión de operaciones',
+      'Toma de decisiones estratégicas',
+      'Coordinación interna del equipo',
+      'Desarrollo empresarial y alianzas',
+    ],
+  },
+  {
+    name: 'Alex Gonzalez',
+    role: 'Vicepresidente de ManosYA',
+    photo: '/alex-gonzalez-vicepresidente.png',
+    eyebrow: 'Vicepresidencia',
+    story:
+      'Alex es uno de los amigos más cercanos de Roger y una pieza clave en el crecimiento interno de ManosYA. Su lugar en el proyecto aporta confianza, apoyo estratégico y una mirada moderna sobre cómo la tecnología debe sentirse humana.',
+    responsibilities: [
+      'Vicepresidencia general',
+      'Supervisión de innovación',
+      'Coordinación de mejoras internas',
+      'Apoyo estratégico al fundador',
+      'Experiencia humana y tecnológica',
+      'Desarrollo de nuevas ideas',
+      'Expansión del proyecto',
+    ],
+  },
+];
+
 const navItems = [
   { label: 'Historia', href: '#historia' },
-  { label: 'Dirección', href: '#direccion' },
+  { label: 'Equipo', href: '#equipo' },
+  { label: 'Nosotros', href: '#nosotros' },
   { label: 'Visión', href: '#vision' },
   { label: 'Archivo', href: '#archivo' },
   { label: 'Prensa', href: '#prensa' },
@@ -70,10 +113,38 @@ const storyParagraphs = [
 const directorParagraphs = [
   'Hay historias que no empiezan en una oficina. Empiezan cruzando fronteras, aprendiendo de nuevo y entendiendo cómo se mueve la gente cuando necesita salir adelante.',
   'Iván Armoa llegó a Paraguay después de construir una trayectoria de más de dos décadas en el mundo de la publicidad, el diseño y la comunicación. Desde entonces, trabajó en campañas políticas, empresas, marcas nacionales e internacionales, desarrollando estrategias, construyendo identidades y transformando ideas en proyectos reales.',
-  'Fue justamente en ese camino donde conoció a Roger Núñez. Lo que comenzó como una colaboración profesional durante campañas políticas en Ciudad del Este terminó convirtiéndose, con los años, en una relación construida sobre trabajo, visión y confianza. Mientras cada uno seguía desarrollando su propio recorrido, las ideas volvieron a cruzarlos una y otra vez.',
+  'Fue justamente en ese camino donde conoció a Roger Núñez. Lo que comenzó como una colaboración profesional durante campañas políticas en Ciudad del Este terminó convirtiéndose, con los años, en una relación construida sobre trabajo, visión y confianza.',
   'Tiempo después, Roger lo invitó a formar parte de ManosYA. Y algo hizo clic.',
   'Porque detrás de la tecnología, Iván encontró algo mucho más grande: una herramienta capaz de cambiar la manera en que las personas trabajan, se conectan y generan oportunidades en Paraguay.',
   'Hoy, como Director General de ManosYA, apuesta su experiencia, creatividad y visión estratégica al crecimiento del proyecto, con un objetivo claro: llevar esta idea a lo más alto y convertirla en una plataforma que impacte de verdad en la vida de miles de personas.',
+];
+
+const timeline = [
+  {
+    title: 'Colegio',
+    text: 'Amistades reales, conversaciones simples y vínculos que más tarde sostendrían decisiones grandes.',
+    icon: UsersRound,
+  },
+  {
+    title: 'Idea',
+    text: 'Una pregunta familiar abrió el camino: cómo llevar el trabajo digno al teléfono de cada persona.',
+    icon: Sparkles,
+  },
+  {
+    title: 'Crecimiento',
+    text: 'Bocetos, pruebas, noches largas y una convicción: Paraguay también puede crear tecnología de escala.',
+    icon: Rocket,
+  },
+  {
+    title: 'Fundación',
+    text: 'ManosYA empezó a tomar forma como puente entre clientes, trabajadores y proveedores.',
+    icon: Handshake,
+  },
+  {
+    title: 'Expansión tecnológica',
+    text: 'IA, geolocalización, reputación y comunicación instantánea para profesionalizar servicios reales.',
+    icon: BrainCircuit,
+  },
 ];
 
 const updates = [
@@ -290,14 +361,23 @@ function Hero() {
   );
 }
 
-function SectionTitle({ eyebrow, title, text }) {
+function SectionTitle({ eyebrow, title, text, dark = false }) {
   return (
     <motion.div {...fadeUp} className="mx-auto max-w-4xl text-center">
-      <p className="text-sm font-black uppercase tracking-[0.16em] text-[#0f8f88]">{eyebrow}</p>
-      <h2 className="mt-4 text-[34px] font-black leading-[1.08] tracking-[-0.04em] text-[#06182a] sm:text-[52px]">
+      <p className="text-sm font-black uppercase tracking-[0.16em] text-[#62bfb9]">{eyebrow}</p>
+      <h2
+        className={[
+          'mt-4 text-[34px] font-black leading-[1.08] tracking-[-0.04em] sm:text-[52px]',
+          dark ? 'text-white' : 'text-[#06182a]',
+        ].join(' ')}
+      >
         {title}
       </h2>
-      {text ? <p className="mx-auto mt-5 max-w-3xl text-lg leading-8 text-[#06182a]/66">{text}</p> : null}
+      {text ? (
+        <p className={['mx-auto mt-5 max-w-3xl text-lg leading-8', dark ? 'text-white/68' : 'text-[#06182a]/66'].join(' ')}>
+          {text}
+        </p>
+      ) : null}
     </motion.div>
   );
 }
@@ -329,63 +409,168 @@ function StorySection() {
   );
 }
 
-function DirectorSection() {
+function DirectorCard() {
   return (
-    <section id="direccion" className="relative overflow-hidden bg-[#06182a] px-5 py-10 text-white sm:px-8 lg:py-14">
-      <div className="absolute -right-24 top-4 h-56 w-56 rounded-full bg-[#62bfb9]/16 blur-3xl" />
-      <div className="absolute -left-24 bottom-4 h-56 w-56 rounded-full bg-[#62bfb9]/10 blur-3xl" />
+    <motion.div
+      {...fadeUp}
+      whileHover={{ y: -6 }}
+      className="relative overflow-hidden rounded-[30px] border border-white/14 bg-white/[0.06] shadow-[0_24px_80px_rgba(0,0,0,0.34)] backdrop-blur-xl"
+    >
+      <Image
+        src={director.photo}
+        alt="Iván Armoa, Director General de ManosYA"
+        width={1200}
+        height={760}
+        className="aspect-[4/3] w-full object-cover grayscale"
+      />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(6,24,42,0)_0%,rgba(6,24,42,0.22)_42%,rgba(6,24,42,0.94)_100%)]" />
+      <div className="absolute inset-x-0 bottom-0 p-5">
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#62bfb9]">
+          Dirección General
+        </p>
+        <h3 className="mt-2 text-3xl font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_10px_rgba(0,0,0,0.72)]">
+          {director.name}
+        </h3>
+        <p className="mt-1 text-sm font-semibold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">{director.role}</p>
+      </div>
+    </motion.div>
+  );
+}
 
-      <div className="relative mx-auto grid max-w-[1120px] gap-7 lg:grid-cols-[0.62fr_1.38fr] lg:items-center">
-        <motion.div
-          {...fadeUp}
-          className="relative mx-auto w-full max-w-[360px] overflow-hidden rounded-[26px] border border-white/12 bg-white/6 shadow-[0_18px_54px_rgba(0,0,0,0.26)]"
-        >
-          <Image
-            src={director.photo}
-            alt="Iván Armoa, Director General de ManosYA"
-            width={1200}
-            height={760}
-            className="aspect-[4/3] w-full object-cover grayscale"
-          />
-          <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,rgba(6,24,42,0)_0%,rgba(6,24,42,0.72)_36%,rgba(6,24,42,0.98)_100%)] p-4 pt-14">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#62bfb9]">
-              Dirección General
-            </p>
-            <h3 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_10px_rgba(0,0,0,0.72)]">
-              {director.name}
-            </h3>
-            <p className="mt-1 text-sm font-semibold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">{director.role}</p>
+function ExecutiveCard({ member, featured = false }) {
+  return (
+    <motion.article
+      {...fadeUp}
+      whileHover={{ y: -8, scale: 1.01 }}
+      className={[
+        'group relative overflow-hidden rounded-[34px] border border-white/14 bg-white/[0.07] shadow-[0_26px_90px_rgba(0,0,0,0.32)] backdrop-blur-2xl',
+        featured ? 'lg:grid lg:grid-cols-[0.88fr_1.12fr]' : '',
+      ].join(' ')}
+    >
+      <div className="relative min-h-[360px] overflow-hidden">
+        <Image
+          src={member.photo}
+          alt={`${member.name}, ${member.role}`}
+          width={1200}
+          height={1500}
+          className="h-full min-h-[360px] w-full object-cover grayscale transition duration-700 group-hover:scale-[1.035]"
+        />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(6,24,42,0)_0%,rgba(6,24,42,0.36)_48%,rgba(6,24,42,0.98)_100%)]" />
+        <div className="absolute bottom-0 left-0 right-0 p-5">
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#62bfb9]">{member.eyebrow}</p>
+          <h3 className="mt-2 text-[32px] font-black leading-none tracking-[-0.05em] text-white sm:text-[42px]">
+            {member.name}
+          </h3>
+          <p className="mt-2 text-base font-bold text-white/86">{member.role}</p>
+        </div>
+      </div>
+
+      <div className="relative p-6 sm:p-7">
+        <div className="absolute inset-x-6 top-0 h-px bg-[linear-gradient(90deg,transparent,#62bfb9,transparent)]" />
+        <p className="text-[17px] leading-8 text-white/82">{member.story}</p>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          {member.responsibilities.map((item) => (
+            <div key={item} className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#62bfb9]" />
+              <span className="text-sm font-bold leading-5 text-white/84">{item}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </motion.article>
+  );
+}
+
+function ExecutiveTeamSection() {
+  return (
+    <section id="equipo" className="relative overflow-hidden bg-[#06182a] px-5 py-16 text-white sm:px-8 lg:py-24">
+      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(98,191,185,0.18)_0%,rgba(6,24,42,0)_34%,rgba(98,191,185,0.08)_100%)]" />
+      <div className="absolute inset-x-0 top-0 h-px bg-[#62bfb9]/40" />
+
+      <div className="relative mx-auto max-w-[1280px]">
+        <SectionTitle
+          eyebrow="Equipo Ejecutivo"
+          title="Nacido entre amistad, visión y tecnología."
+          text="ManosYA no se levantó desde una oficina perfecta. Se levantó desde vínculos reales, confianza, trabajo y la decisión de convertir una necesidad paraguaya en infraestructura tecnológica."
+          dark
+        />
+
+        <div className="mt-12 grid gap-6 lg:grid-cols-[0.82fr_1.18fr] lg:items-start">
+          <div className="space-y-6">
+            <DirectorCard />
+            <motion.article {...fadeUp} className="rounded-[30px] border border-white/12 bg-white/[0.055] p-6 backdrop-blur-xl">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#62bfb9]">
+                Dirección institucional
+              </p>
+              <h3 className="mt-3 text-[30px] font-black leading-tight tracking-[-0.04em] text-white">
+                Iván Armoa convierte visión en estructura.
+              </h3>
+              <div className="mt-5 space-y-4 text-[15px] leading-7 text-white/72">
+                {directorParagraphs.slice(0, 3).map((paragraph) => (
+                  <p key={paragraph}>{paragraph}</p>
+                ))}
+              </div>
+            </motion.article>
           </div>
-        </motion.div>
 
-        <div>
-          <motion.div {...fadeUp}>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#62bfb9]">
-              Equipo directivo
-            </p>
-            <h2 className="mt-3 max-w-3xl text-[30px] font-black leading-[1.05] tracking-[-0.04em] text-white sm:text-[44px]">
-              Iván Armoa, Director General de ManosYA.
+          <div className="grid gap-6">
+            {executives.map((member, index) => (
+              <ExecutiveCard key={member.name} member={member} featured={index === 0} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AboutSection() {
+  return (
+    <section id="nosotros" className="bg-[#071d2f] px-5 py-16 text-white sm:px-8 lg:py-24">
+      <div className="mx-auto max-w-[1280px]">
+        <div className="grid gap-10 lg:grid-cols-[0.92fr_1.08fr] lg:items-start">
+          <motion.div {...fadeUp} className="sticky top-6">
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#62bfb9]">Sobre Nosotros</p>
+            <h2 className="mt-4 text-[38px] font-black leading-[1.02] tracking-[-0.05em] text-white sm:text-[58px]">
+              Una startup paraguaya con historia humana.
             </h2>
-            <p className="mt-4 max-w-3xl text-base leading-7 text-white/72 sm:text-lg">
-              Estrategia, comunicación y crecimiento institucional al servicio de una plataforma nacida para crear oportunidades reales.
+            <p className="mt-6 text-xl leading-9 text-white/72">
+              ManosYA no intenta parecer grande. Está creciendo desde abajo, con personas reales, problemas reales y una misión concreta:
+              que pedir ayuda, encontrar trabajo o vender insumos sea más simple, más confiable y más justo.
             </p>
+            <div className="mt-7 rounded-[28px] border border-[#62bfb9]/26 bg-[#62bfb9]/10 p-6">
+              <Compass className="h-8 w-8 text-[#62bfb9]" />
+              <p className="mt-4 text-[22px] font-black leading-8 tracking-[-0.03em] text-white">
+                Amistad, sacrificio y tecnología puestos al servicio de una economía que necesita moverse mejor.
+              </p>
+            </div>
           </motion.div>
 
-          <motion.article
-            {...fadeUp}
-            className="mt-6 border-l-4 border-[#62bfb9] pl-4 sm:pl-6"
-          >
-            <div className="space-y-3 text-[15px] leading-7 text-white/82 sm:text-[17px] sm:leading-8">
-              {directorParagraphs.map((paragraph, index) => (
-                <p
-                  key={paragraph}
-                  className={index === directorParagraphs.length - 1 ? 'font-bold text-white' : ''}
+          <div className="space-y-4">
+            {timeline.map((item, index) => {
+              const Icon = item.icon;
+              return (
+                <motion.article
+                  key={item.title}
+                  {...fadeUp}
+                  className="relative overflow-hidden rounded-[28px] border border-white/12 bg-white/[0.06] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]"
                 >
-                  {paragraph}
-                </p>
-              ))}
-            </div>
-          </motion.article>
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#62bfb9] text-[#06182a]">
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-[#62bfb9]">
+                        Paso {String(index + 1).padStart(2, '0')}
+                      </p>
+                      <h3 className="mt-1 text-2xl font-black tracking-[-0.04em] text-white">{item.title}</h3>
+                      <p className="mt-2 text-base leading-7 text-white/68">{item.text}</p>
+                    </div>
+                  </div>
+                </motion.article>
+              );
+            })}
+          </div>
         </div>
       </div>
     </section>
@@ -426,8 +611,8 @@ function VisionSection() {
 function ArchiveSection() {
   return (
     <section id="archivo" className="relative overflow-hidden bg-white px-5 py-16 sm:px-8 lg:py-24">
-      <div className="absolute left-1/2 top-0 h-[360px] w-[720px] -translate-x-1/2 -translate-y-1/2 rounded-[50%] bg-[#62bfb9]" />
-      <div className="relative mx-auto max-w-[1280px]">
+      <div className="absolute left-0 right-0 top-0 h-28 bg-[#62bfb9]" />
+      <div className="relative mx-auto max-w-[1280px] pt-10">
         <h2 className="text-center text-[38px] font-black tracking-[-0.04em] text-[#06182a] sm:text-[56px]">
           Latest Updates:
         </h2>
@@ -536,6 +721,9 @@ function Footer() {
           <Link href="#historia" className="underline decoration-black/35 underline-offset-4">
             Historia
           </Link>
+          <Link href="#equipo" className="underline decoration-black/35 underline-offset-4">
+            Equipo Ejecutivo
+          </Link>
           <Link href="#vision" className="underline decoration-black/35 underline-offset-4">
             Visión
           </Link>
@@ -572,7 +760,8 @@ export default function FounderPageClient() {
       <Header />
       <Hero />
       <StorySection />
-      <DirectorSection />
+      <ExecutiveTeamSection />
+      <AboutSection />
       <VisionSection />
       <ArchiveSection />
       <MilestonesSection />
