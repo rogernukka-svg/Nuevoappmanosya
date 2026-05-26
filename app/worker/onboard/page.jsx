@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { getSupabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import { requireRole } from '@/lib/roleRedirect';
 const supabase = getSupabase();
 
 /* ====================== CONFIG ====================== */
@@ -102,17 +103,21 @@ export default function WorkerOnboardPage() {
  useEffect(() => {
   let alive = true;
 
-  supabase.auth.getUser().then(({ data }) => {
-    const currentUser = data?.user ?? null;
+  requireRole({
+    supabase,
+    router,
+    allowedRoles: ['worker'],
+    fallbackPath: '/role-selector',
+  }).then(({ user: currentUser }) => {
 
     if (!alive) return;
 
-    if (!currentUser) {
-      router.replace('/auth/login');
-      return;
-    }
+    if (!currentUser) return;
 
     setUser(currentUser);
+  }).catch((error) => {
+    console.warn('No se pudo validar el perfil profesional:', error);
+    router.replace('/auth/login');
   });
 
   return () => {

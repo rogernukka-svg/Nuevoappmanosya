@@ -22,6 +22,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
+import { requireRole } from '@/lib/roleRedirect';
 
 const supabase = getSupabase();
 const LAST_GPS_KEY = 'manosya_supplier_feed_gps';
@@ -225,32 +226,18 @@ export default function SupplierPage() {
     let alive = true;
     (async () => {
       try {
-        const { data, error } = await supabase.auth.getUser();
-        const user = data?.user;
-        if (error || !user) {
-          router.replace('/auth/login');
-          return;
-        }
+        const { user, profile: profileData } = await requireRole({
+          supabase,
+          router,
+          allowedRoles: ['supplier'],
+          fallbackPath: '/role-selector',
+        });
 
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, full_name, email, role, avatar_url')
-          .eq('id', user.id)
-          .maybeSingle();
-
-        if (profileError) throw profileError;
-
-        if (profileData?.role !== 'supplier') {
-          await supabase.from('profiles').update({ role: 'supplier' }).eq('id', user.id);
-        }
-
-        try {
-          localStorage.setItem('app_role', 'supplier');
-        } catch {}
+        if (!user) return;
 
         if (alive) {
           setMe(user);
-          setProfile({ ...profileData, role: 'supplier' });
+          setProfile(profileData || null);
         }
       } catch (error) {
         console.error(error);

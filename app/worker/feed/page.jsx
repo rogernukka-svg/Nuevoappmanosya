@@ -31,6 +31,7 @@ import {
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
+import { requireRole } from '@/lib/roleRedirect';
 
 const supabase = getSupabase();
 const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
@@ -1404,7 +1405,7 @@ const fileInputRef = useRef(null);
   const hasMeCoords = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
 
   useEffect(() => { setMounted(true); if (typeof window === 'undefined') return; const setRealVH = () => { const h = window.visualViewport?.height ?? window.innerHeight; document.documentElement.style.setProperty('--real-vh', `${Math.round(h)}px`); }; setRealVH(); window.addEventListener('resize', setRealVH); window.visualViewport?.addEventListener('resize', setRealVH); return () => { window.removeEventListener('resize', setRealVH); window.visualViewport?.removeEventListener('resize', setRealVH); }; }, []);
-  useEffect(() => { let alive = true; (async () => { try { const { data, error } = await supabase.auth.getUser(); const uid = data?.user?.id; if (error || !uid) { router.replace('/auth/login'); return; } try { localStorage.setItem(LS_APP_ROLE, 'worker'); } catch {} if (alive) setMe((prev) => ({ ...prev, id: uid })); const { data: profileData } = await supabase.from('profiles').select('id, full_name, email, role, avatar_url').eq('id', uid).maybeSingle(); if (alive) setViewerProfile(profileData || null); } catch (error) { console.warn('No se pudo validar la sesiÃ³n del trabajador', error); router.replace('/auth/login'); } })(); return () => { alive = false; }; }, [router]);
+  useEffect(() => { let alive = true; (async () => { try { const { user, profile: profileData } = await requireRole({ supabase, router, allowedRoles: ['worker'], fallbackPath: '/role-selector' }); if (!user) return; if (alive) { setMe((prev) => ({ ...prev, id: user.id })); setViewerProfile(profileData || null); } } catch (error) { console.warn('No se pudo validar la sesiÃ³n del trabajador', error); router.replace('/auth/login'); } })(); return () => { alive = false; }; }, [router]);
   async function loadSupplierProducts() {
     const { data, error } = await supabase
       .from('supplier_products')

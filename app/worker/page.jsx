@@ -30,6 +30,7 @@ import {
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
+import { requireRole } from '@/lib/roleRedirect';
 
 /* === Leaflet Map === */
 import dynamic from 'next/dynamic';
@@ -819,15 +820,17 @@ const sheetSnapMeta = useMemo(() => {
           soundRef.current.load();
         }
 
-        const { data, error } = await supabase.auth.getUser();
-        if (error) throw error;
+        const { user: currentUser } = await requireRole({
+          supabase,
+          router,
+          allowedRoles: ['worker'],
+          fallbackPath: '/role-selector',
+        });
 
-        if (data?.user) {
-          setUser(data.user);
-          await ensureWorkerProfile(data.user.id);
-        } else {
-          router.replace('/auth/login');
-        }
+        if (!currentUser) return;
+
+        setUser(currentUser);
+        await ensureWorkerProfile(currentUser.id);
       } catch (err) {
         console.error('Error inicializando sesión:', err);
         toast.error('Error al obtener usuario o sesión expirada');

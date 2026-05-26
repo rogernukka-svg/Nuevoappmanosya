@@ -51,8 +51,15 @@ export default function RoleSelectorPage() {
 
     const { error } = await supabase
       .from('profiles')
-      .update({ role })
-      .eq('id', userId);
+      .upsert(
+        {
+          id: userId,
+          email: data?.session?.user?.email || null,
+          role,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
 
     if (error) {
       toast.error('No se pudo guardar el modo.');

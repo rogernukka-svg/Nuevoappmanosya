@@ -39,8 +39,28 @@ export default function ChatPage() {
 
   /* === Cargar mensajes iniciales === */
   useEffect(() => {
-    if (!chatId) return;
+    if (!chatId || !user?.id) return;
     const load = async () => {
+      const { data: chat, error: chatError } = await supabase
+        .from('chats')
+        .select('id, client_id, worker_id')
+        .eq('id', chatId)
+        .maybeSingle();
+
+      if (chatError || !chat) {
+        router.replace('/worker');
+        return;
+      }
+
+      const isParticipant =
+        String(chat.client_id) === String(user.id) ||
+        String(chat.worker_id) === String(user.id);
+
+      if (!isParticipant) {
+        router.replace('/role-selector');
+        return;
+      }
+
       const { data } = await supabase
         .from('messages')
         .select('*')
@@ -50,7 +70,7 @@ export default function ChatPage() {
       markWorkerChatRead(chatId);
     };
     load();
-  }, [chatId]);
+  }, [chatId, router, user?.id]);
 
   /* === Escuchar mensajes en tiempo real === */
   useEffect(() => {

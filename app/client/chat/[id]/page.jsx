@@ -140,6 +140,11 @@ export default function ChatPage() {
         if (chatError) throw chatError;
         if (!alive) return;
 
+        if (String(chat?.client_id || '') !== String(user.id)) {
+          router.replace('/client');
+          return;
+        }
+
         setChatMeta(chat || null);
 
         if (chat?.worker_id) {

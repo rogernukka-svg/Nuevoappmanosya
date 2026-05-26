@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabase } from '@/lib/supabase';
 import { motion } from 'framer-motion';
+import { redirectToRole } from '@/lib/roleRedirect';
 
 const supabase = getSupabase();
 
@@ -22,11 +23,6 @@ export default function RootPage() {
 
         const user = sessionResult?.data?.session?.user || null;
 
-        const savedRole =
-          typeof window !== 'undefined'
-            ? localStorage.getItem('app_role')
-            : null;
-
         await new Promise((r) => setTimeout(r, 700));
         if (!alive) return;
 
@@ -35,22 +31,12 @@ export default function RootPage() {
           return;
         }
 
-        if (savedRole === 'worker') {
-          router.replace('/worker');
-          return;
-        }
-
-        if (savedRole === 'client') {
-          router.replace('/client');
-          return;
-        }
-
-        if (savedRole === 'supplier') {
-          router.replace('/supplier');
-          return;
-        }
-
-        router.replace('/role-selector');
+        await redirectToRole({
+          supabase,
+          router,
+          userId: user.id,
+          fallbackRole: typeof window !== 'undefined' ? localStorage.getItem('app_role') : '',
+        });
       } catch (error) {
         console.error('Root init error:', error);
 

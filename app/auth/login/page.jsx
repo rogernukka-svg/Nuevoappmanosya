@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getSupabase } from '@/lib/supabase';
+import { redirectToRole } from '@/lib/roleRedirect';
 import { toast } from 'sonner';
 
 const supabase = getSupabase();
@@ -1705,7 +1706,7 @@ function startSupplierFlow() {
       }
 
       toast.success('Entrando...');
-router.replace('/role-selector');
+      await redirectToRole({ supabase, router, userId: data.user.id });
     } catch (err) {
       console.error(err);
       toast.error(err?.message || 'No se pudo iniciar sesión');
@@ -2015,7 +2016,7 @@ const roleToSave = finalFlow === 'worker' ? 'worker' : finalFlow === 'supplier' 
 
        if (user?.email) {
   if (mounted) setSavedSessionEmail(normalizeEmail(user.email));
-  router.replace('/role-selector');
+  await redirectToRole({ supabase, router, userId: user.id });
   return;
 }
 

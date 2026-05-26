@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabase } from "@/lib/supabase"; // ✔ corregido el import
+import { getSupabase } from "@/lib/supabase";
+import { redirectToRole } from "@/lib/roleRedirect";
 
 export default function AuthCallback() {
   const router = useRouter();
@@ -11,23 +12,22 @@ export default function AuthCallback() {
   useEffect(() => {
     async function handleCallback() {
       try {
-        // Obtener sesión desde Supabase
         const { data, error } = await supabase.auth.getSession();
 
         if (error) {
-          console.error("Error obteniendo sesión:", error);
+          console.error("Error obteniendo sesion:", error);
           router.push("/auth/login");
           return;
         }
 
-        const session = data?.session;
+        const user = data?.session?.user;
 
-        // Si hay usuario, redirige
-        if (session?.user) {
-          router.push("/role-selector");
-        } else {
-          router.push("/auth/login");
+        if (user) {
+          await redirectToRole({ supabase, router, userId: user.id });
+          return;
         }
+
+        router.push("/auth/login");
       } catch (err) {
         console.error("Error en AuthCallback:", err);
         router.push("/auth/login");
@@ -35,10 +35,10 @@ export default function AuthCallback() {
     }
 
     handleCallback();
-  }, [router]);
+  }, [router, supabase]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center text-emerald-600">
+    <div className="flex min-h-screen items-center justify-center text-emerald-600">
       Procesando acceso...
     </div>
   );

@@ -34,6 +34,7 @@ Bell,
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
+import { requireRole } from '@/lib/roleRedirect';
 
 const supabase = getSupabase();
 
@@ -1663,29 +1664,19 @@ const [bookingTime] = useState(initialTimingFromUrl || '');
 
     (async () => {
       try {
-        const { data, error } = await supabase.auth.getUser();
-        const uid = data?.user?.id;
+        const { user, profile: profileData } = await requireRole({
+          supabase,
+          router,
+          allowedRoles: ['client'],
+          fallbackPath: '/role-selector',
+        });
 
-        if (error || !uid) {
-          router.replace('/auth/login');
-          return;
+        if (!user) return;
+
+        if (alive) {
+          setMe((prev) => ({ ...prev, id: user.id }));
+          setClientProfile(profileData || null);
         }
-
-        try {
-  localStorage.setItem(LS_APP_ROLE, 'client');
-} catch {}
-
-if (alive) setMe((prev) => ({ ...prev, id: uid }));
-
-const { data: profileData, error: profileError } = await supabase
-  .from('profiles')
-  .select('id, full_name, email, role, avatar_url')
-  .eq('id', uid)
-  .maybeSingle();
-
-if (!profileError && alive) {
-  setClientProfile(profileData || null);
-}
       } catch (error) {
         console.warn('No se pudo validar la sesión del cliente', error);
         router.replace('/auth/login');

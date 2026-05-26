@@ -1071,9 +1071,9 @@ export default function AdminAnalyticsPage() {
                             resultado: series.profit,
                           })}
                         >
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-                          <XAxis dataKey="day" stroke="#94A3B8" />
-                          <YAxis stroke="#94A3B8" />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                          <XAxis dataKey="day" stroke="#334155" />
+                          <YAxis stroke="#334155" />
                           <Tooltip />
                           <Legend />
                           <Line type="monotone" dataKey="ingresos" stroke="#10B981" dot={false} />
@@ -1101,9 +1101,9 @@ export default function AdminAnalyticsPage() {
                       <ChartCard title="Facturas por estado" icon={<Receipt />}>
                         <ResponsiveContainer width="100%" height={280}>
                           <BarChart data={invoiceStatusData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-                            <XAxis dataKey="name" stroke="#94A3B8" />
-                            <YAxis stroke="#94A3B8" />
+                            <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                            <XAxis dataKey="name" stroke="#334155" />
+                            <YAxis stroke="#334155" />
                             <Tooltip />
                             <Bar dataKey="value" fill="#14B8A6" />
                           </BarChart>
@@ -1190,9 +1190,9 @@ export default function AdminAnalyticsPage() {
                           { name: 'Cancelados', value: ops.jobsCancelled },
                         ]}
                       >
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-                        <XAxis dataKey="name" stroke="#94A3B8" />
-                        <YAxis stroke="#94A3B8" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                        <XAxis dataKey="name" stroke="#334155" />
+                        <YAxis stroke="#334155" />
                         <Tooltip />
                         <Bar dataKey="value" fill="#10B981" />
                       </BarChart>
