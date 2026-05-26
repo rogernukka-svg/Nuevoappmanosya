@@ -118,6 +118,7 @@ const withBundleAnalyzer = require("@next/bundle-analyzer")({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  distDir: process.env.NEXT_DIST_DIR || ".next",
 
   // ✅ si estás en etapa de pruebas (luego lo apagamos)
   typescript: { ignoreBuildErrors: true },

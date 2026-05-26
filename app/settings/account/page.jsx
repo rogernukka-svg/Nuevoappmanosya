@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getSupabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -21,6 +21,20 @@ export default function AccountSettingsPage() {
   const [confirming, setConfirming] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    let alive = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (alive && !data?.session?.user) {
+        router.replace('/auth/login');
+      }
+    });
+
+    return () => {
+      alive = false;
+    };
+  }, [router]);
 
   const handleDelete = async () => {
     try {

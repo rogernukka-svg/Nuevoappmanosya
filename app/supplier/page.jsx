@@ -172,6 +172,7 @@ export default function SupplierPage() {
   const [supplierProfile, setSupplierProfile] = useState(null);
   const [workers, setWorkers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [feedIndex, setFeedIndex] = useState(0);
@@ -196,6 +197,10 @@ export default function SupplierPage() {
   });
 
   const activeProducts = useMemo(() => products.filter((item) => item.is_active !== false), [products]);
+  const unreadContacts = useMemo(
+    () => contacts.filter((item) => item.status !== 'handled' && !item.read_at).length,
+    [contacts]
+  );
   const storeScore = useMemo(() => {
     let score = 25;
     if (profileForm.store_name.trim()) score += 15;
@@ -255,7 +260,33 @@ export default function SupplierPage() {
     if (!me?.id) return;
     loadSupplierProfile();
     loadProducts();
+    loadContacts();
     loadWorkers();
+  }, [me?.id]);
+
+  useEffect(() => {
+    if (!me?.id) return;
+
+    const channel = supabase
+      .channel(`supplier-contacts-${me.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'supplier_contacts',
+          filter: `supplier_id=eq.${me.id}`,
+        },
+        () => {
+          loadContacts();
+          toast.message('Nueva consulta para tu tienda');
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [me?.id]);
 
   useEffect(() => {
@@ -314,6 +345,69 @@ export default function SupplierPage() {
     }
 
     setProducts(data || []);
+  }
+
+  async function loadContacts() {
+    if (!me?.id) return;
+
+    const { data, error } = await supabase
+      .from('supplier_contacts')
+      .select(`
+        id,
+        supplier_id,
+        requester_id,
+        product_id,
+        source_role,
+        source_context,
+        message,
+        contact_url,
+        status,
+        read_at,
+        created_at,
+        product:supplier_products(title, price_text, service_slug, image_url),
+        requester:profiles!supplier_contacts_requester_id_fkey(full_name, email, avatar_url, role)
+      `)
+      .eq('supplier_id', me.id)
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (error) {
+      if (error.code !== 'PGRST205' && error.code !== '42P01') {
+        console.warn('supplier contacts error', error);
+      }
+      setContacts([]);
+      return;
+    }
+
+    setContacts(data || []);
+  }
+
+  async function markContactHandled(contact) {
+    if (!contact?.id) return;
+
+    const { error } = await supabase
+      .from('supplier_contacts')
+      .update({
+        status: 'handled',
+        read_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', contact.id)
+      .eq('supplier_id', me.id);
+
+    if (error) {
+      toast.error('No pudimos actualizar la consulta');
+      return;
+    }
+
+    setContacts((prev) =>
+      prev.map((item) =>
+        item.id === contact.id
+          ? { ...item, status: 'handled', read_at: new Date().toISOString() }
+          : item
+      )
+    );
+    toast.success('Consulta marcada como atendida');
   }
 
   async function loadWorkers() {
@@ -488,6 +582,9 @@ export default function SupplierPage() {
               <div className="text-[11px] font-bold text-[#9ee5df]">Feed exclusivo de proveedores</div>
             </div>
           </button>
+          <button type="button" onClick={() => setSheet('contacts')} className="rounded-full border border-white/18 bg-[#62bfb9] px-4 py-3 text-[12px] font-black text-white shadow-[0_12px_24px_rgba(98,191,185,0.24)] active:scale-95">
+            Consultas {unreadContacts || contacts.length}
+          </button>
           <button type="button" onClick={() => setSheet('catalog')} className="rounded-full bg-white px-4 py-3 text-[12px] font-black text-slate-950 active:scale-95">
             Catalogo {activeProducts.length}
           </button>
@@ -554,12 +651,15 @@ export default function SupplierPage() {
       )}
 
       <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+16px)] z-50 flex justify-center">
-        <div className="grid w-[360px] max-w-[calc(100vw-24px)] grid-cols-4 gap-2 rounded-full border border-white/12 bg-black/38 p-2 shadow-[0_18px_42px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
+        <div className="grid w-[430px] max-w-[calc(100vw-24px)] grid-cols-5 gap-2 rounded-full border border-white/12 bg-black/38 p-2 shadow-[0_18px_42px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
           <button type="button" onClick={() => setSheet('profile')} className="rounded-full px-3 py-3 text-[12px] font-black text-white active:scale-95">
             Perfil
           </button>
           <button type="button" onClick={() => setSheet('product')} className="rounded-full bg-[#62bfb9] px-3 py-3 text-[12px] font-black text-white active:scale-95">
             Producto
+          </button>
+          <button type="button" onClick={() => setSheet('contacts')} className="rounded-full px-3 py-3 text-[12px] font-black text-white active:scale-95">
+            Consultas
           </button>
           <button type="button" onClick={() => setSheet('catalog')} className="rounded-full px-3 py-3 text-[12px] font-black text-white active:scale-95">
             Catalogo
@@ -693,6 +793,88 @@ export default function SupplierPage() {
             </button>
           </div>
         </div>
+      </SupplierSheet>
+
+      <SupplierSheet title="Consultas recibidas" open={sheet === 'contacts'} onClose={() => setSheet(null)}>
+        {!contacts.length ? (
+          <div className="flex min-h-[240px] items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
+            <div>
+              <MessageSquareText className="mx-auto mb-3 text-slate-300" size={36} />
+              <div className="text-lg font-black text-slate-950">Todavia no llegaron consultas</div>
+              <p className="mt-2 text-sm font-semibold text-slate-500">
+                Cuando un cliente o trabajador toque tus productos, lo vas a ver aca.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {contacts.map((contact) => {
+              const requester = contact.requester || {};
+              const product = contact.product || {};
+              const handled = contact.status === 'handled' || contact.read_at;
+
+              return (
+                <article key={contact.id} className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <img
+                      src={requester.avatar_url || product.image_url || '/avatar-fallback.png'}
+                      onError={(event) => {
+                        event.currentTarget.src = '/avatar-fallback.png';
+                      }}
+                      alt={requester.full_name || product.title || 'Consulta'}
+                      className="h-14 w-14 rounded-2xl object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-[#effffb] px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-[#0c6b70]">
+                          {handled ? 'Atendida' : 'Nueva consulta'}
+                        </span>
+                        <span className="text-xs font-bold text-slate-400">
+                          {new Date(contact.created_at).toLocaleString('es-PY', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                      <h3 className="mt-2 text-[17px] font-black text-slate-950">
+                        {requester.full_name || requester.email || 'Usuario ManosYA'}
+                      </h3>
+                      <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                        {contact.message || `Quiere consultar por ${product.title || 'un producto'}.`}
+                      </p>
+                      <div className="mt-2 rounded-2xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
+                        {product.title || 'Producto ManosYA'} {product.price_text ? `- ${product.price_text}` : ''}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {contact.contact_url ? (
+                      <button
+                        type="button"
+                        onClick={() => window.open(contact.contact_url, '_blank', 'noopener,noreferrer')}
+                        className="rounded-full bg-[#62bfb9] px-4 py-2 text-xs font-black text-white shadow-[0_10px_20px_rgba(98,191,185,0.24)] active:scale-95"
+                      >
+                        Abrir contacto
+                      </button>
+                    ) : null}
+                    {!handled ? (
+                      <button
+                        type="button"
+                        onClick={() => markContactHandled(contact)}
+                        className="rounded-full bg-[#08233a] px-4 py-2 text-xs font-black text-white active:scale-95"
+                      >
+                        Marcar atendida
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </SupplierSheet>
 
       <SupplierSheet title="Mi catalogo" open={sheet === 'catalog'} onClose={() => setSheet(null)}>

@@ -477,7 +477,7 @@ async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
   }
 }
 
-function SupplierProductStrip({ products, serviceName }) {
+function SupplierProductStrip({ products, serviceName, onContact }) {
   if (!Array.isArray(products) || !products.length) return null;
 
   return (
@@ -488,18 +488,13 @@ function SupplierProductStrip({ products, serviceName }) {
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {products.slice(0, 4).map((product) => (
-          <a
+          <button
             key={product.id}
-            href={product.contact_url || '#'}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(event) => {
-              if (!product.contact_url) {
-                event.preventDefault();
-                toast.info('Pedido interno ManosYA: el proveedor vera esta consulta cuando activemos el inbox.');
-              }
+            type="button"
+            onClick={() => {
+              onContact?.(product);
             }}
-            className="flex min-w-[170px] items-center gap-2 rounded-[18px] bg-white/94 p-2 text-slate-950 shadow-[0_10px_20px_rgba(0,0,0,0.18)] active:scale-[0.98]"
+            className="flex min-w-[170px] items-center gap-2 rounded-[18px] bg-white/94 p-2 text-left text-slate-950 shadow-[0_10px_20px_rgba(0,0,0,0.18)] active:scale-[0.98]"
           >
             <img src={product.image_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={product.title} className="h-12 w-12 rounded-xl object-cover" />
             <div className="min-w-0 flex-1">
@@ -509,14 +504,14 @@ function SupplierProductStrip({ products, serviceName }) {
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white">
               <ShoppingCart size={14} />
             </span>
-          </a>
+          </button>
         ))}
       </div>
     </div>
   );
 }
 
-function FeedCard({ worker, isActive, isFollowed, isLiked, products = [], onOpen, onAddFriend, onMessage, onRequest, onNearbyMap, onComments, onLike }) {
+function FeedCard({ worker, isActive, isFollowed, isLiked, products = [], onOpen, onAddFriend, onMessage, onRequest, onNearbyMap, onComments, onLike, onSupplierContact }) {
   const [bioOpen, setBioOpen] = useState(false);
   const [paused, setPaused] = useState(!isActive);
   const [muted, setMuted] = useState(() => !isFeedSoundEnabled());
@@ -772,7 +767,7 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, products = [], onOpen
           )}
         </div>
 
-        <SupplierProductStrip products={products} serviceName={primaryService} />
+        <SupplierProductStrip products={products} serviceName={primaryService} onContact={onSupplierContact} />
 
         <div className="mt-2 flex items-center gap-2 rounded-[24px] border border-white/45 bg-black/28 px-3 py-2 shadow-[0_10px_22px_rgba(0,0,0,0.20)] backdrop-blur-md">
           <input
@@ -2163,6 +2158,45 @@ const productsForWorker = (worker) => {
     return tokens.some((token) => token === slug || token.includes(slug) || slug.includes(token));
   });
 };
+
+async function contactSupplierProduct(product, worker = null) {
+  if (!product?.id || !me?.id) return;
+
+  try {
+    const { error } = await supabase.from('supplier_contacts').insert([
+      {
+        supplier_id: product.supplier_id,
+        requester_id: me.id,
+        product_id: product.id,
+        source_role: 'client',
+        source_context: worker?.user_id ? 'client_feed_worker_strip' : 'client_feed',
+        message: `Interes por ${product.title || 'producto'}${worker?.full_name ? ` visto desde ${worker.full_name}` : ''}`,
+        contact_url: product.contact_url || null,
+      },
+    ]);
+
+    if (error && error.code !== 'PGRST205' && error.code !== '42P01') {
+      throw error;
+    }
+
+    if (product.contact_url) {
+      window.open(product.contact_url, '_blank', 'noopener,noreferrer');
+      toast.success('Contacto registrado. Te abrimos el canal del proveedor.');
+      return;
+    }
+
+    toast.success('Consulta enviada al proveedor dentro de ManosYA');
+  } catch (error) {
+    console.warn('supplier contact error:', error);
+    if (product.contact_url) {
+      window.open(product.contact_url, '_blank', 'noopener,noreferrer');
+      toast.info('Abrimos el contacto del proveedor. Revisamos el registro interno luego.');
+      return;
+    }
+
+    toast.error('No pudimos contactar al proveedor todavia');
+  }
+}
 const nearbyWorkers = useMemo(() => {
   return (workers || [])
     .filter((worker) => Number.isFinite(Number(worker?._distKm)))
@@ -2946,6 +2980,7 @@ async function cancelActiveJob() {
   onMessage={() => openMessage(worker)}
   onRequest={() => requestWorker(worker)}
   onLike={() => toggleWorkerLike(worker)}
+  onSupplierContact={(product) => contactSupplierProduct(product, worker)}
   onNearbyMap={() => {
     setNearbyMapWorker(worker);
     setNearbyMapOpen(true);

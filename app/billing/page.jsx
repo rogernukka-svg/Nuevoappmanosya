@@ -1,26 +1,43 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { getSupabase } from '@/lib/supabase';
+import { requireRole } from '@/lib/roleRedirect';
+
+const supabase = getSupabase();
 
 function cents(n){ return (n/100).toFixed(2); }
 
 export default function Billing() {
+  const router = useRouter();
   const [wallet, setWallet] = useState(null);
   const [subs, setSubs] = useState(null);
   const [tx, setTx] = useState([]);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  async function load() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { window.location.href='/auth/login'; return; }
+  const load = useCallback(async () => {
+    const { user } = await requireRole({
+      supabase,
+      router,
+      allowedRoles: ['worker', 'supplier', 'client'],
+      fallbackPath: '/role-selector',
+    });
+
+    if (!user) return;
+
     const { data: w } = await supabase.from('wallets').select('*').eq('user_id', user.id).maybeSingle();
     const { data: s } = await supabase.from('subscriptions').select('*').eq('user_id', user.id).maybeSingle();
     const { data: t } = await supabase.from('transactions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20);
     setWallet(w); setSubs(s); setTx(t??[]);
-  }
+  }, [router]);
 
-  useEffect(()=>{ load(); },[]);
+  useEffect(() => {
+    load().catch((error) => {
+      console.error('billing load error:', error);
+      router.replace('/auth/login');
+    });
+  }, [load, router]);
 
   async function pay() {
     setBusy(true); setErr(null);

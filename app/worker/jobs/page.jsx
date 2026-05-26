@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import { getSupabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Rocket } from 'lucide-react';
+import { requireRole } from '@/lib/roleRedirect';
 
 const supabase = getSupabase();
 
@@ -24,16 +25,16 @@ function ChatBox({ chatId, userId }) {
     if (!chatId) return;
 
     supabase
-      .from('chat_messages')
-      .select('*')
+      .from('messages')
+      .select('id, chat_id, sender_id, text, content, body, created_at')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
       .then(({ data }) => setMessages(data || []));
 
     const channel = supabase
       .channel(`chat-${chatId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `chat_id=eq.${chatId}` }, (payload) =>
-        setMessages((prev) => [...prev, payload.new])
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` }, (payload) =>
+        setMessages((prev) => (prev.some((item) => item.id === payload.new.id) ? prev : [...prev, payload.new]))
       )
       .subscribe();
 
@@ -42,8 +43,9 @@ function ChatBox({ chatId, userId }) {
 
   async function sendMessage(e) {
     e.preventDefault();
-    if (!text.trim()) return;
-    await supabase.from('chat_messages').insert([{ chat_id: chatId, sender_id: userId, message: text.trim() }]);
+    const cleanText = text.trim();
+    if (!cleanText) return;
+    await supabase.from('messages').insert([{ chat_id: chatId, sender_id: userId, text: cleanText, content: cleanText }]);
     setText('');
   }
 
@@ -57,7 +59,7 @@ function ChatBox({ chatId, userId }) {
                 m.sender_id === userId ? 'bg-emerald-500 text-black rounded-br-none' : 'bg-zinc-800 text-white rounded-bl-none'
               }`}
             >
-              {m.message}
+              {m.text || m.content || m.body || m.message || ''}
               <div className="text-[10px] text-white/60 mt-1 text-right">
                 {new Date(m.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
               </div>
@@ -127,11 +129,26 @@ export default function WorkerJobsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      const uid = data?.user?.id;
-      if (uid) setUserId(uid);
-    });
-  }, []);
+    let alive = true;
+
+    requireRole({
+      supabase,
+      router,
+      allowedRoles: ['worker'],
+      fallbackPath: '/role-selector',
+    })
+      .then(({ user }) => {
+        if (alive && user?.id) setUserId(user.id);
+      })
+      .catch((error) => {
+        console.warn('No se pudo validar trabajador:', error);
+        router.replace('/auth/login');
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [router]);
 
   function playAlert(soundFile) {
     try {
