@@ -110,8 +110,39 @@ const EXPENSE_STATUSES = ['pending', 'paid', 'cancelled'];
 
 const ADMIN_EXPENSES_TABLE = 'admin_expenses';
 const ADMIN_INVOICES_TABLE = 'admin_invoices';
+const OPERATIONS_LIMIT = 1000;
 
-async function safeRead(table, select = '*') {
+const EXPENSE_SELECT =
+  'id, concept, category, vendor, amount, invoice_number, issued_at, status, notes, created_by, created_at';
+const INVOICE_SELECT =
+  'id, customer_name, description, amount, invoice_number, issued_at, due_at, status, notes, created_by, created_at';
+const JOB_OPERATIONAL_SELECTS = [
+  'id, client_id, worker_id, assigned_worker, service_type, title, description, skill_id, status, created_at, accepted_at, completed_at, updated_at',
+  'id, client_id, worker_id, assigned_worker, service_type, title, description, skill_id, status, created_at, updated_at',
+  'id, client_id, assigned_worker, title, description, skill_id, status, created_at, updated_at',
+  'id, client_id, worker_id, status, created_at, updated_at',
+  'id, client_id, assigned_worker, status, created_at, updated_at',
+];
+const PROFILE_SELECT = 'id, full_name, email, avatar_url, role, phone, created_at, updated_at';
+const CHAT_SELECTS = [
+  'id, job_id, client_id, worker_id, created_at, updated_at',
+  'id, job_id, client_id, worker_id, created_at',
+  'id, client_id, worker_id, created_at',
+];
+const MESSAGE_SELECTS = [
+  'id, chat_id, sender_id, text, content, created_at',
+  'id, chat_id, sender_id, text, created_at',
+  'id, chat_id, sender_id, content, created_at',
+  'id, chat_id, sender_id, body, created_at',
+];
+const REVIEW_SELECTS = [
+  'id, job_id, worker_id, client_id, rating, comment, created_at',
+  'id, worker_id, client_id, rating, comment, created_at',
+  'id, worker_id, rating, comment, created_at',
+  'id, worker_id, rating, created_at',
+];
+
+async function safeRead(table, select = 'id') {
   try {
     const { data, error } = await supabase.from(table).select(select);
     if (error) throw error;
@@ -120,6 +151,74 @@ async function safeRead(table, select = '*') {
     console.warn(`Analytics opcional no disponible (${table}):`, err?.message || err);
     return [];
   }
+}
+
+async function safeQuery(table, select, buildQuery) {
+  const { data } = await safeQueryResult(table, select, buildQuery);
+  return data;
+}
+
+async function safeQueryResult(table, select, buildQuery) {
+  try {
+    const base = supabase.from(table).select(select);
+    const query = typeof buildQuery === 'function' ? buildQuery(base) : base;
+    const { data, error } = await query;
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (err) {
+    console.warn(`Analytics opcional no disponible (${table}):`, err?.message || err);
+    return { data: [], error: err };
+  }
+}
+
+async function readOperationalJobs() {
+  for (const select of JOB_OPERATIONAL_SELECTS) {
+    const { data, error } = await safeQueryResult('jobs', select, (query) =>
+      query.order('created_at', { ascending: false }).limit(OPERATIONS_LIMIT)
+    );
+
+    if (!error) return data;
+  }
+
+  return [];
+}
+
+async function readOperationalReviews() {
+  for (const select of REVIEW_SELECTS) {
+    const { data, error } = await safeQueryResult('reviews', select, (query) =>
+      query.order('created_at', { ascending: false }).limit(1000)
+    );
+
+    if (!error) return data;
+  }
+
+  return [];
+}
+
+async function readOperationalChats() {
+  for (const select of CHAT_SELECTS) {
+    const { data, error } = await safeQueryResult('chats', select, (query) =>
+      query.order('created_at', { ascending: false }).limit(1000)
+    );
+
+    if (!error) return data;
+  }
+
+  return [];
+}
+
+async function readOperationalMessages(chatIds) {
+  if (!chatIds?.length) return [];
+
+  for (const select of MESSAGE_SELECTS) {
+    const { data, error } = await safeQueryResult('messages', select, (query) =>
+      query.in('chat_id', chatIds).order('created_at', { ascending: false }).limit(2500)
+    );
+
+    if (!error) return data;
+  }
+
+  return [];
 }
 
 /* =========================
@@ -260,6 +359,497 @@ function getHealthLabel(score) {
   return { label: 'Crítico', badge: 'bg-red-500/15 text-red-200' };
 }
 
+function formatShortId(id) {
+  return String(id || '').slice(0, 8) || 'sin-id';
+}
+
+function formatDateTime(value) {
+  if (!value) return 'Sin dato';
+  try {
+    return new Date(value).toLocaleString('es-PY', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return 'Sin dato';
+  }
+}
+
+function minutesBetween(start, end) {
+  if (!start || !end) return null;
+  const a = new Date(start).getTime();
+  const b = new Date(end).getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return null;
+  return Math.round((b - a) / 60000);
+}
+
+function ageMinutes(value) {
+  if (!value) return 0;
+  return Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000));
+}
+
+function formatDuration(minutes) {
+  if (minutes == null) return 'Sin dato';
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
+function isToday(value) {
+  if (!value) return false;
+  return fmtD(value) === fmtD(new Date());
+}
+
+function statusMeta(status) {
+  const value = String(status || 'open').toLowerCase();
+  if (['completed', 'done'].includes(value)) return { label: 'Completado', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  if (['accepted', 'assigned', 'in_progress', 'scheduled', 'arrived'].includes(value)) return { label: value === 'scheduled' ? 'Agendado' : 'En curso', className: 'bg-cyan-50 text-cyan-700 border-cyan-200' };
+  if (['cancelled', 'canceled', 'rejected'].includes(value)) return { label: 'Cancelado', className: 'bg-red-50 text-red-700 border-red-200' };
+  return { label: 'Abierto', className: 'bg-amber-50 text-amber-700 border-amber-200' };
+}
+
+function profileName(profile, fallback = 'Sin nombre') {
+  return profile?.full_name || profile?.email || fallback;
+}
+
+function profileMap(rows = []) {
+  return (rows || []).reduce((acc, profile) => {
+    if (profile?.id) acc[String(profile.id)] = profile;
+    return acc;
+  }, {});
+}
+
+function uniqueValues(values = []) {
+  return [...new Set((values || []).filter(Boolean).map((item) => String(item)))];
+}
+
+function average(values = []) {
+  const clean = (values || []).map(Number).filter((n) => Number.isFinite(n));
+  if (!clean.length) return null;
+  return clean.reduce((sum, n) => sum + n, 0) / clean.length;
+}
+
+function firstByCreated(rows = []) {
+  return [...rows].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))[0] || null;
+}
+
+function lastByCreated(rows = []) {
+  return [...rows].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0] || null;
+}
+
+function buildOperationalSnapshot({
+  jobs = [],
+  profiles = [],
+  chats = [],
+  messages = [],
+  reviews = [],
+  workerPosts = [],
+  workerComments = [],
+  workerLikes = [],
+  friendships = [],
+  supplierProfiles = [],
+  supplierProducts = [],
+  supplierContacts = [],
+  pageViews = [],
+  docs = [],
+}) {
+  const profilesById = profileMap(profiles);
+  const chatsByJob = {};
+  const chatsById = {};
+  const messagesByChat = {};
+  const reviewsByJob = {};
+  const reviewsByWorkerClient = {};
+
+  for (const chat of chats || []) {
+    if (chat?.id) chatsById[String(chat.id)] = chat;
+    if (chat?.job_id) {
+      if (!chatsByJob[String(chat.job_id)]) chatsByJob[String(chat.job_id)] = [];
+      chatsByJob[String(chat.job_id)].push(chat);
+    }
+  }
+
+  for (const message of messages || []) {
+    if (!message?.chat_id) continue;
+    const key = String(message.chat_id);
+    if (!messagesByChat[key]) messagesByChat[key] = [];
+    messagesByChat[key].push(message);
+  }
+
+  for (const review of reviews || []) {
+    if (review?.job_id) reviewsByJob[String(review.job_id)] = review;
+    if (review?.worker_id || review?.client_id) {
+      reviewsByWorkerClient[`${review.worker_id || ''}:${review.client_id || ''}`] = review;
+    }
+  }
+
+  const rows = (jobs || []).map((job) => {
+    const clientId = job.client_id || job.clientId || null;
+    const workerId = job.worker_id || job.assigned_worker || job.assignedWorker || null;
+    const jobChats = chatsByJob[String(job.id)] || chats.filter((chat) => {
+      return String(chat.client_id || '') === String(clientId || '') &&
+        String(chat.worker_id || '') === String(workerId || '');
+    });
+    const chat = lastByCreated(jobChats);
+    const chatMessages = chat?.id ? messagesByChat[String(chat.id)] || [] : [];
+    const workerMessages = chatMessages.filter((message) => String(message.sender_id || '') === String(workerId || ''));
+    const clientMessages = chatMessages.filter((message) => String(message.sender_id || '') === String(clientId || ''));
+    const firstWorkerMessage = firstByCreated(workerMessages);
+    const lastMessage = lastByCreated(chatMessages);
+    const review =
+      reviewsByJob[String(job.id)] ||
+      reviewsByWorkerClient[`${workerId || ''}:${clientId || ''}`] ||
+      null;
+    const acceptedAt =
+      job.accepted_at ||
+      (['accepted', 'assigned', 'scheduled', 'in_progress', 'completed'].includes(String(job.status || '').toLowerCase())
+        ? job.updated_at
+        : null);
+    const completedAt =
+      job.completed_at ||
+      (['completed', 'done'].includes(String(job.status || '').toLowerCase()) ? job.updated_at : null);
+    const responseMinutes =
+      minutesBetween(job.created_at, acceptedAt) ??
+      minutesBetween(job.created_at, firstWorkerMessage?.created_at);
+
+    return {
+      ...job,
+      client_id: clientId,
+      worker_id: workerId,
+      shortId: formatShortId(job.id),
+      service: job.service_type || job.title || job.skill_id || job.description || 'Servicio general',
+      client: profilesById[String(clientId || '')] || null,
+      worker: profilesById[String(workerId || '')] || null,
+      clientName: profileName(profilesById[String(clientId || '')], 'Cliente sin nombre'),
+      workerName: workerId ? profileName(profilesById[String(workerId || '')], 'Trabajador sin nombre') : 'Sin trabajador',
+      accepted_at: acceptedAt,
+      completed_at: completedAt,
+      chatId: chat?.id || null,
+      hasChat: !!chat,
+      messagesCount: chatMessages.length,
+      clientMessagesCount: clientMessages.length,
+      workerMessagesCount: workerMessages.length,
+      lastMessageAt: lastMessage?.created_at || null,
+      lastMessageSenderId: lastMessage?.sender_id || null,
+      rating: review?.rating ?? null,
+      reviewComment: review?.comment || '',
+      reviewAt: review?.created_at || null,
+      responseMinutes,
+      completionMinutes: minutesBetween(job.created_at, completedAt),
+      ageMinutes: ageMinutes(job.created_at),
+    };
+  });
+
+  const totalJobs = Math.max(rows.length, 1);
+  const acceptedRows = rows.filter((job) =>
+    ['accepted', 'assigned', 'scheduled', 'in_progress', 'completed', 'done'].includes(String(job.status || '').toLowerCase())
+  );
+  const cancelledRows = rows.filter((job) =>
+    ['cancelled', 'canceled', 'rejected'].includes(String(job.status || '').toLowerCase())
+  );
+  const completedRows = rows.filter((job) =>
+    ['completed', 'done'].includes(String(job.status || '').toLowerCase())
+  );
+  const openRows = rows.filter((job) => String(job.status || '').toLowerCase() === 'open');
+  const chatsWithoutResponse = rows.filter((job) => {
+    if (!job.hasChat || !job.worker_id || !job.messagesCount) return false;
+    return job.clientMessagesCount > 0 && job.workerMessagesCount === 0;
+  });
+
+  const workers = {};
+  const clients = {};
+  const providers = {};
+
+  for (const row of rows) {
+    if (row.worker_id) {
+      const key = String(row.worker_id);
+      workers[key] ||= {
+        id: key,
+        name: row.workerName,
+        jobs: 0,
+        completed: 0,
+        cancelled: 0,
+        messages: 0,
+        ratings: [],
+        responseTimes: [],
+        posts: 0,
+        videos: 0,
+        photos: 0,
+        lastActivity: row.created_at,
+      };
+      workers[key].jobs += 1;
+      if (['completed', 'done'].includes(String(row.status || '').toLowerCase())) workers[key].completed += 1;
+      if (['cancelled', 'canceled', 'rejected'].includes(String(row.status || '').toLowerCase())) workers[key].cancelled += 1;
+      workers[key].messages += row.workerMessagesCount;
+      if (row.rating != null) workers[key].ratings.push(Number(row.rating));
+      if (row.responseMinutes != null) workers[key].responseTimes.push(row.responseMinutes);
+      if (new Date(row.updated_at || row.created_at || 0) > new Date(workers[key].lastActivity || 0)) {
+        workers[key].lastActivity = row.updated_at || row.created_at;
+      }
+    }
+
+    if (row.client_id) {
+      const key = String(row.client_id);
+      clients[key] ||= {
+        id: key,
+        name: row.clientName,
+        requests: 0,
+        completed: 0,
+        cancelled: 0,
+        chats: 0,
+        messages: 0,
+        reviews: 0,
+        lastActivity: row.created_at,
+      };
+      clients[key].requests += 1;
+      if (['completed', 'done'].includes(String(row.status || '').toLowerCase())) clients[key].completed += 1;
+      if (['cancelled', 'canceled', 'rejected'].includes(String(row.status || '').toLowerCase())) clients[key].cancelled += 1;
+      if (row.hasChat) clients[key].chats += 1;
+      clients[key].messages += row.clientMessagesCount;
+      if (row.rating != null) clients[key].reviews += 1;
+      if (new Date(row.updated_at || row.created_at || 0) > new Date(clients[key].lastActivity || 0)) {
+        clients[key].lastActivity = row.updated_at || row.created_at;
+      }
+    }
+  }
+
+  for (const post of workerPosts || []) {
+    const key = String(post.worker_id || '');
+    if (!key) continue;
+    workers[key] ||= {
+      id: key,
+      name: profileName(profilesById[key], 'Trabajador'),
+      jobs: 0,
+      completed: 0,
+      cancelled: 0,
+      messages: 0,
+      ratings: [],
+      responseTimes: [],
+      posts: 0,
+      videos: 0,
+      photos: 0,
+      lastActivity: post.created_at,
+    };
+    workers[key].posts += 1;
+    if (post.media_type === 'video') workers[key].videos += 1;
+    else workers[key].photos += 1;
+  }
+
+  for (const message of messages || []) {
+    const profile = profilesById[String(message.sender_id || '')];
+    if (profile?.role === 'client') {
+      clients[profile.id] ||= {
+        id: profile.id,
+        name: profileName(profile, 'Cliente'),
+        requests: 0,
+        completed: 0,
+        cancelled: 0,
+        chats: 0,
+        messages: 0,
+        reviews: 0,
+        lastActivity: message.created_at,
+      };
+      clients[profile.id].messages += 1;
+    }
+  }
+
+  for (const contact of supplierContacts || []) {
+    const key = String(contact.supplier_id || '');
+    if (!key) continue;
+    providers[key] ||= {
+      id: key,
+      name: profileName(profilesById[key], 'Proveedor'),
+      contacts: 0,
+      products: 0,
+      visits: 0,
+      ctaClicks: 0,
+      lastActivity: contact.created_at,
+    };
+    providers[key].contacts += 1;
+    providers[key].ctaClicks += 1;
+    if (new Date(contact.created_at || 0) > new Date(providers[key].lastActivity || 0)) {
+      providers[key].lastActivity = contact.created_at;
+    }
+  }
+
+  for (const product of supplierProducts || []) {
+    const key = String(product.supplier_id || '');
+    if (!key) continue;
+    providers[key] ||= {
+      id: key,
+      name: profileName(profilesById[key], product.supplier_name || 'Proveedor'),
+      contacts: 0,
+      products: 0,
+      visits: 0,
+      ctaClicks: 0,
+      lastActivity: product.created_at,
+    };
+    providers[key].products += 1;
+  }
+
+  for (const supplier of supplierProfiles || []) {
+    const key = String(supplier.user_id || '');
+    if (!key) continue;
+    providers[key] ||= {
+      id: key,
+      name: supplier.store_name || profileName(profilesById[key], 'Proveedor'),
+      contacts: 0,
+      products: 0,
+      visits: 0,
+      ctaClicks: 0,
+      lastActivity: supplier.updated_at,
+    };
+    providers[key].name = supplier.store_name || providers[key].name;
+  }
+
+  for (const view of pageViews || []) {
+    const path = String(view.path || view.pathname || view.route || view.page || '').toLowerCase();
+    const match = path.match(/supplier\/([^/?#]+)/) || path.match(/provider\/([^/?#]+)/);
+    if (!match?.[1]) continue;
+    const key = match[1];
+    providers[key] ||= {
+      id: key,
+      name: profileName(profilesById[key], 'Proveedor'),
+      contacts: 0,
+      products: 0,
+      visits: 0,
+      ctaClicks: 0,
+      lastActivity: view.created_at,
+    };
+    providers[key].visits += 1;
+  }
+
+  const docsByUser = new Set((docs || []).map((item) => String(item.user_id || '')).filter(Boolean));
+  const incompleteProfiles = (profiles || []).filter((profile) => {
+    if (!['client', 'worker', 'supplier'].includes(profile?.role)) return false;
+    return !profile.full_name || !profile.avatar_url || (profile.role === 'worker' && !docsByUser.has(String(profile.id)));
+  });
+
+  const topWorkers = Object.values(workers)
+    .map((worker) => {
+      const avgRating = average(worker.ratings);
+      const avgResponse = average(worker.responseTimes);
+      const cancelRate = worker.jobs ? worker.cancelled / worker.jobs : 0;
+      return {
+        ...worker,
+        avgRating,
+        avgResponse,
+        cancelRate,
+        score:
+          worker.completed * 5 +
+          worker.messages * 0.4 +
+          worker.posts * 1.5 +
+          (avgRating || 0) * 8 -
+          worker.cancelled * 4,
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
+
+  const topClients = Object.values(clients)
+    .map((client) => ({
+      ...client,
+      score: client.requests * 4 + client.chats * 2 + client.reviews * 3 + client.messages * 0.2 - client.cancelled * 3,
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
+
+  const topProviders = Object.values(providers)
+    .map((provider) => ({
+      ...provider,
+      score: provider.contacts * 5 + provider.products * 2 + provider.visits + provider.ctaClicks * 3,
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
+
+  const activeWorkersToday = uniqueValues([
+    ...rows.filter((row) => row.worker_id && (isToday(row.updated_at) || isToday(row.accepted_at) || isToday(row.completed_at))).map((row) => row.worker_id),
+    ...messages.filter((message) => profilesById[String(message.sender_id || '')]?.role === 'worker' && isToday(message.created_at)).map((message) => message.sender_id),
+    ...workerPosts.filter((post) => isToday(post.created_at)).map((post) => post.worker_id),
+  ]).length;
+
+  const activeClientsToday = uniqueValues([
+    ...rows.filter((row) => row.client_id && isToday(row.created_at)).map((row) => row.client_id),
+    ...messages.filter((message) => profilesById[String(message.sender_id || '')]?.role === 'client' && isToday(message.created_at)).map((message) => message.sender_id),
+    ...workerComments.filter((comment) => isToday(comment.created_at)).map((comment) => comment.client_id),
+    ...supplierContacts.filter((contact) => isToday(contact.created_at)).map((contact) => contact.requester_id),
+  ]).length;
+
+  const alerts = [];
+  const oldOpenJobs = openRows.filter((job) => job.ageMinutes > 120);
+  if (oldOpenJobs.length) {
+    alerts.push({
+      level: 'high',
+      title: 'Trabajos abiertos sin respuesta',
+      detail: `${oldOpenJobs.length} solicitudes llevan más de 2 horas abiertas.`,
+    });
+  }
+  const riskyWorkers = topWorkers.filter((worker) => worker.cancelled >= 2 && worker.cancelRate >= 0.3);
+  if (riskyWorkers.length) {
+    alerts.push({
+      level: 'medium',
+      title: 'Trabajadores con cancelaciones altas',
+      detail: `${riskyWorkers.length} perfiles necesitan revisión operativa.`,
+    });
+  }
+  if (chatsWithoutResponse.length) {
+    alerts.push({
+      level: 'medium',
+      title: 'Chats sin respuesta del trabajador',
+      detail: `${chatsWithoutResponse.length} conversaciones tienen mensajes de cliente sin respuesta.`,
+    });
+  }
+  const riskyClients = topClients.filter((client) => client.cancelled >= 2);
+  if (riskyClients.length) {
+    alerts.push({
+      level: 'medium',
+      title: 'Clientes con cancelaciones repetidas',
+      detail: `${riskyClients.length} clientes cancelaron varias solicitudes recientes.`,
+    });
+  }
+  const inactiveProviders = topProviders.filter((provider) => provider.products === 0 && provider.contacts === 0);
+  if (inactiveProviders.length) {
+    alerts.push({
+      level: 'low',
+      title: 'Proveedores sin actividad visible',
+      detail: `${inactiveProviders.length} proveedores necesitan catálogo o contacto activo.`,
+    });
+  }
+  if (incompleteProfiles.length) {
+    alerts.push({
+      level: 'low',
+      title: 'Perfiles incompletos',
+      detail: `${incompleteProfiles.length} usuarios tienen datos clave incompletos.`,
+    });
+  }
+
+  return {
+    jobs: rows,
+    metrics: {
+      acceptanceRate: (acceptedRows.length / totalJobs) * 100,
+      cancellationRate: (cancelledRows.length / totalJobs) * 100,
+      completionRate: (completedRows.length / totalJobs) * 100,
+      avgResponseMinutes: average(rows.map((job) => job.responseMinutes)) || 0,
+      avgCompletionMinutes: average(rows.map((job) => job.completionMinutes)) || 0,
+      openNoResponse: oldOpenJobs.length,
+      chatsNoResponse: chatsWithoutResponse.length,
+      activeWorkersToday,
+      activeClientsToday,
+    },
+    topWorkers,
+    topClients,
+    topProviders,
+    alerts,
+    social: {
+      comments: workerComments.length,
+      likes: workerLikes.length,
+      followers: friendships.length,
+    },
+  };
+}
+
 /* =========================
    PAGE
 ========================= */
@@ -335,6 +925,30 @@ export default function AdminAnalyticsPage() {
     trackerReady: false,
   });
 
+  const [operational, setOperational] = useState({
+    jobs: [],
+    metrics: {
+      acceptanceRate: 0,
+      cancellationRate: 0,
+      completionRate: 0,
+      avgResponseMinutes: 0,
+      avgCompletionMinutes: 0,
+      openNoResponse: 0,
+      chatsNoResponse: 0,
+      activeWorkersToday: 0,
+      activeClientsToday: 0,
+    },
+    topWorkers: [],
+    topClients: [],
+    topProviders: [],
+    alerts: [],
+    social: {
+      comments: 0,
+      likes: 0,
+      followers: 0,
+    },
+  });
+
   const [modal, setModal] = useState(null);
 
   const [expenseForm, setExpenseForm] = useState({
@@ -403,9 +1017,17 @@ export default function AdminAnalyticsPage() {
     setAccessChecked(true);
   }
 }
-    useEffect(() => {
+  useEffect(() => {
     let alive = true;
     let channel = null;
+    let refreshTimer = null;
+
+    const scheduleFetchAll = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        if (alive) fetchAll();
+      }, 650);
+    };
 
     (async () => {
       const allowed = await checkAdminAccess();
@@ -415,21 +1037,28 @@ export default function AdminAnalyticsPage() {
 
       channel = supabase
         .channel('manosya-admin-analytics-jarvis')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, fetchAll)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_profiles' }, fetchAll)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, fetchAll)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, fetchAll)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_posts' }, fetchAll)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, fetchAll)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchAll)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'page_views' }, fetchAll)
-        .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_EXPENSES_TABLE }, fetchAll)
-        .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_INVOICES_TABLE }, fetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_profiles' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_posts' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_comments' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_likes' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'user_friendships' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'supplier_contacts' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'supplier_products' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'page_views' }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_EXPENSES_TABLE }, scheduleFetchAll)
+        .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_INVOICES_TABLE }, scheduleFetchAll)
         .subscribe();
     })();
 
     return () => {
       alive = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
       if (channel) supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -450,47 +1079,132 @@ export default function AdminAnalyticsPage() {
         workersCountRes,
         activeWorkersCountRes,
         verifiedWorkersCountRes,
-        jobsRes,
+        jobsCountRes,
+        jobsCompletedCountRes,
+        jobsCancelledCountRes,
+        jobsOpenCountRes,
+        jobsAcceptedCountRes,
         docsRes,
-        reviewsRes,
         expensesRes,
         invoicesRes,
       ] = await Promise.all([
-        supabase.from('profiles').select('*', { count: 'exact', head: true }),
-        supabase.from('worker_profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('id', { count: 'exact', head: true }),
+        supabase.from('worker_profiles').select('user_id', { count: 'exact', head: true }),
         supabase
           .from('admin_workers_view')
-          .select('*', { count: 'exact', head: true })
+          .select('user_id', { count: 'exact', head: true })
           .eq('is_active', true)
           .eq('worker_verified', true),
         supabase
           .from('admin_workers_view')
-          .select('*', { count: 'exact', head: true })
+          .select('user_id', { count: 'exact', head: true })
           .eq('worker_verified', true),
-        supabase.from('jobs').select('status, created_at'),
+        supabase.from('jobs').select('id', { count: 'exact', head: true }),
+        supabase.from('jobs').select('id', { count: 'exact', head: true }).in('status', ['completed', 'done']),
+        supabase.from('jobs').select('id', { count: 'exact', head: true }).in('status', ['cancelled', 'canceled', 'rejected']),
+        supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'open'),
+        supabase.from('jobs').select('id', { count: 'exact', head: true }).in('status', ['accepted', 'assigned', 'scheduled', 'in_progress']),
         supabase.from('documents').select('user_id, doc_type, created_at'),
-        supabase.from('reviews').select('rating, created_at'),
-        supabase.from(ADMIN_EXPENSES_TABLE).select('*').order('issued_at', { ascending: false }),
-        supabase.from(ADMIN_INVOICES_TABLE).select('*').order('issued_at', { ascending: false }),
+        supabase.from(ADMIN_EXPENSES_TABLE).select(EXPENSE_SELECT).order('issued_at', { ascending: false }),
+        supabase.from(ADMIN_INVOICES_TABLE).select(INVOICE_SELECT).order('issued_at', { ascending: false }),
       ]);
 
-      const jobs = jobsRes.data || [];
       const docs = docsRes.data || [];
-      const reviews = reviewsRes.data || [];
       const expenses = expensesRes.data || [];
       const invoices = invoicesRes.data || [];
 
-      const jobsCompleted = jobs.filter((j) => j.status === 'completed').length;
-      const jobsCancelled = jobs.filter((j) => j.status === 'cancelled').length;
-      const jobsOpen = jobs.filter((j) => j.status === 'open').length;
-      const jobsAccepted = jobs.filter((j) => j.status === 'accepted' || j.status === 'assigned').length;
+      const jobsCompleted = jobsCompletedCountRes.count || 0;
+      const jobsCancelled = jobsCancelledCountRes.count || 0;
+      const jobsOpen = jobsOpenCountRes.count || 0;
+      const jobsAccepted = jobsAcceptedCountRes.count || 0;
 
-      const [pageViews, workerPosts, chats, messages] = await Promise.all([
-        safeRead('page_views', 'path, pathname, route, page, created_at'),
-        safeRead('worker_posts', 'media_type, created_at'),
-        safeRead('chats', 'id, created_at'),
-        safeRead('messages', 'id, created_at'),
+      const operationalJobs = await readOperationalJobs();
+      const participantIds = uniqueValues([
+        ...operationalJobs.map((job) => job.client_id),
+        ...operationalJobs.map((job) => job.worker_id),
+        ...operationalJobs.map((job) => job.assigned_worker),
       ]);
+
+      const [
+        pageViews,
+        workerPosts,
+        chats,
+        supplierProducts,
+        supplierContacts,
+        supplierProfiles,
+        workerComments,
+        workerLikes,
+        friendships,
+        operationalReviews,
+      ] = await Promise.all([
+        safeQuery('page_views', 'path, pathname, route, page, created_at', (query) =>
+          query.order('created_at', { ascending: false }).limit(900)
+        ),
+        safeQuery('worker_posts', 'id, worker_id, media_type, created_at', (query) =>
+          query.order('created_at', { ascending: false }).limit(900)
+        ),
+        readOperationalChats(),
+        safeQuery('supplier_products', 'id, supplier_id, supplier_name, title, service_slug, is_active, created_at', (query) =>
+          query.order('created_at', { ascending: false }).limit(600)
+        ),
+        safeQuery('supplier_contacts', 'id, supplier_id, requester_id, product_id, source_role, status, created_at', (query) =>
+          query.order('created_at', { ascending: false }).limit(600)
+        ),
+        safeQuery('supplier_profiles', 'user_id, store_name, updated_at', (query) =>
+          query.order('updated_at', { ascending: false }).limit(400)
+        ),
+        safeQuery('worker_comments', 'id, worker_id, client_id, created_at', (query) =>
+          query.order('created_at', { ascending: false }).limit(700)
+        ),
+        safeQuery('worker_likes', 'id, worker_id, client_id, created_at', (query) =>
+          query.order('created_at', { ascending: false }).limit(700)
+        ),
+        safeQuery('user_friendships', 'id, requester_id, addressee_id, status, created_at', (query) =>
+          query.order('created_at', { ascending: false }).limit(700)
+        ),
+        readOperationalReviews(),
+      ]);
+
+      const supplierIds = uniqueValues([
+        ...supplierProducts.map((item) => item.supplier_id),
+        ...supplierContacts.map((item) => item.supplier_id),
+        ...supplierProfiles.map((item) => item.user_id),
+      ]);
+      const socialProfileIds = uniqueValues([
+        ...workerPosts.map((item) => item.worker_id),
+        ...workerComments.map((item) => item.client_id),
+        ...workerComments.map((item) => item.worker_id),
+        ...workerLikes.map((item) => item.client_id),
+        ...workerLikes.map((item) => item.worker_id),
+        ...supplierContacts.map((item) => item.requester_id),
+      ]);
+      const allProfileIds = uniqueValues([...participantIds, ...supplierIds, ...socialProfileIds]);
+
+      const profilesForOps = allProfileIds.length
+        ? await safeQuery('profiles', PROFILE_SELECT, (query) => query.in('id', allProfileIds))
+        : [];
+
+      const chatIds = uniqueValues(chats.map((chat) => chat.id));
+      const messages = await readOperationalMessages(chatIds);
+
+      const operationalSnapshot = buildOperationalSnapshot({
+        jobs: operationalJobs,
+        profiles: profilesForOps,
+        chats,
+        messages,
+        reviews: operationalReviews,
+        workerPosts,
+        workerComments,
+        workerLikes,
+        friendships,
+        supplierProfiles,
+        supplierProducts,
+        supplierContacts,
+        pageViews,
+        docs,
+      });
+
+      setOperational(operationalSnapshot);
 
       const pathOf = (row) =>
         String(row?.path || row?.pathname || row?.route || row?.page || '').toLowerCase();
@@ -553,7 +1267,7 @@ export default function AdminAnalyticsPage() {
         totalUsers: usersCountRes.count || 0,
         totalWorkers: workersCountRes.count || 0,
         activeWorkers: activeWorkersCountRes.count || 0,
-        totalJobs: jobs.length || 0,
+        totalJobs: jobsCountRes.count || 0,
         verifiedWorkers: verifiedWorkersCountRes.count || 0,
       });
 
@@ -564,7 +1278,7 @@ export default function AdminAnalyticsPage() {
         jobsAccepted,
         workersWithDocs,
         workersWithoutDocs,
-        avgRating: Number(safeAvg(reviews.map((r) => r.rating)).toFixed(2)),
+        avgRating: Number(safeAvg(operationalReviews.map((r) => r.rating)).toFixed(2)),
       });
 
       setFinance({
@@ -575,7 +1289,7 @@ export default function AdminAnalyticsPage() {
         pendingInvoices,
         paidExpenses,
         pendingExpenses,
-        avgTicket: jobs.length ? Math.round(totalRevenue / jobs.length) : 0,
+        avgTicket: jobsCountRes.count ? Math.round(totalRevenue / jobsCountRes.count) : 0,
       });
 
       setFinancialLists({
@@ -1228,6 +1942,11 @@ export default function AdminAnalyticsPage() {
                     </div>
                   </ChartCard>
                 </div>
+
+                <OperationalCommandCenter
+                  operational={operational}
+                  onOpenJob={(job) => setModal({ type: 'job', job })}
+                />
               </>
             )}
 
@@ -1248,7 +1967,11 @@ export default function AdminAnalyticsPage() {
       <AnimatePresence>
         {modal && (
           <Modal onClose={() => setModal(null)}>
-            <div className="text-white">Modal reservado para drilldown futuro</div>
+            {modal.type === 'job' ? (
+              <JobDetailPanel job={modal.job} />
+            ) : (
+              <div className="text-white">Modal reservado para drilldown futuro</div>
+            )}
           </Modal>
         )}
       </AnimatePresence>
@@ -1570,6 +2293,372 @@ function ExecutiveAlerts({ alerts }) {
             No hay alertas críticas por ahora.
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function OperationalCommandCenter({ operational, onOpenJob }) {
+  const metrics = operational?.metrics || {};
+  const jobs = operational?.jobs || [];
+
+  return (
+    <div className="mt-6 space-y-6">
+      <div className="rounded-[34px] border border-white/60 bg-white/90 p-5 text-[#06182a] shadow-[0_24px_70px_rgba(8,35,52,0.14)] backdrop-blur-xl">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#69c4c0]/35 bg-[#69c4c0]/12 px-3 py-1 text-xs font-black text-[#137d78]">
+              <Activity className="h-3.5 w-3.5" />
+              Trazabilidad operativa
+            </div>
+            <h2 className="mt-3 text-3xl font-black tracking-[-0.045em] text-[#06182a]">
+              Solicitud, chat, trabajo y review en una sola vista
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-slate-600">
+              Acá ves quién pidió, quién respondió, quién trabajó, cuánto tardó y qué quedó sin atención.
+            </p>
+          </div>
+
+          <div className="rounded-[24px] bg-[#06182a] px-5 py-4 text-white">
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-[#94fff5]">Jobs auditados</div>
+            <div className="mt-1 text-3xl font-black">{jobs.length}</div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <OperationalMetric label="Tasa de aceptación" value={`${(metrics.acceptanceRate || 0).toFixed(1)}%`} sub="Aceptados, asignados o completados" />
+          <OperationalMetric label="Tasa de cancelación" value={`${(metrics.cancellationRate || 0).toFixed(1)}%`} sub="Cancelados o rechazados" tone="warning" />
+          <OperationalMetric label="Respuesta promedio" value={formatDuration(Math.round(metrics.avgResponseMinutes || 0))} sub="Desde solicitud hasta aceptación/respuesta" />
+          <OperationalMetric label="Finalización promedio" value={formatDuration(Math.round(metrics.avgCompletionMinutes || 0))} sub="Desde solicitud hasta completado" />
+          <OperationalMetric label="Abiertos sin respuesta" value={metrics.openNoResponse || 0} sub="Más de 2 horas abiertos" tone="danger" />
+          <OperationalMetric label="Chats sin respuesta" value={metrics.chatsNoResponse || 0} sub="Cliente escribió, trabajador no respondió" tone="warning" />
+          <OperationalMetric label="Trabajadores activos hoy" value={metrics.activeWorkersToday || 0} sub="Jobs, posts o mensajes hoy" />
+          <OperationalMetric label="Clientes activos hoy" value={metrics.activeClientsToday || 0} sub="Solicitudes, chats o contactos hoy" />
+        </div>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.85fr]">
+        <JobsOperationalTable jobs={jobs} onOpenJob={onOpenJob} />
+
+        <div className="space-y-6">
+          <AdminOperationalAlerts alerts={operational?.alerts || []} />
+          <RankPanel title="Top trabajadores" icon={<Wrench className="h-4 w-4" />} rows={operational?.topWorkers || []} type="worker" />
+          <RankPanel title="Top clientes" icon={<Users className="h-4 w-4" />} rows={operational?.topClients || []} type="client" />
+          <RankPanel title="Top proveedores" icon={<Building2 className="h-4 w-4" />} rows={operational?.topProviders || []} type="provider" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OperationalMetric({ label, value, sub, tone = 'normal' }) {
+  const toneClass =
+    tone === 'danger'
+      ? 'bg-red-50 text-red-700 border-red-200'
+      : tone === 'warning'
+      ? 'bg-amber-50 text-amber-700 border-amber-200'
+      : 'bg-[#69c4c0]/12 text-[#137d78] border-[#69c4c0]/30';
+
+  return (
+    <div className="rounded-[24px] border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+      <div className={`mb-3 inline-flex rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] ${toneClass}`}>
+        {label}
+      </div>
+      <div className="text-3xl font-black text-[#06182a]">{value}</div>
+      <div className="mt-1 text-xs font-semibold text-slate-500">{sub}</div>
+    </div>
+  );
+}
+
+function JobsOperationalTable({ jobs, onOpenJob }) {
+  return (
+    <div className="overflow-hidden rounded-[32px] border border-white/60 bg-white/92 text-[#06182a] shadow-[0_22px_60px_rgba(8,35,52,0.13)] backdrop-blur-xl">
+      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.16em] text-[#137d78]">Tabla operativa de trabajos</div>
+          <h3 className="mt-1 text-2xl font-black tracking-[-0.04em]">Últimas solicitudes conectadas</h3>
+        </div>
+        <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+          {jobs.length} registros
+        </div>
+      </div>
+
+      <div className="max-h-[620px] overflow-auto">
+        <table className="min-w-[1080px] w-full text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-[#f8fffd] text-xs uppercase tracking-[0.08em] text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Job</th>
+              <th className="px-4 py-3">Cliente</th>
+              <th className="px-4 py-3">Trabajador</th>
+              <th className="px-4 py-3">Servicio</th>
+              <th className="px-4 py-3">Estado</th>
+              <th className="px-4 py-3">Solicitud</th>
+              <th className="px-4 py-3">Aceptación</th>
+              <th className="px-4 py-3">Finalización</th>
+              <th className="px-4 py-3">Chat</th>
+              <th className="px-4 py-3">Review</th>
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {jobs.length ? (
+              jobs.map((job) => (
+                <tr key={job.id} className="bg-white/70 transition hover:bg-[#69c4c0]/8">
+                  <td className="px-4 py-4 font-black text-[#06182a]">#{job.shortId}</td>
+                  <td className="px-4 py-4">
+                    <div className="font-bold text-slate-900">{job.clientName}</div>
+                    <div className="text-xs text-slate-500">{job.client?.phone || job.client?.email || 'Sin contacto'}</div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="font-bold text-slate-900">{job.workerName}</div>
+                    <div className="text-xs text-slate-500">{job.worker?.phone || job.worker?.email || 'Sin contacto'}</div>
+                  </td>
+                  <td className="px-4 py-4 max-w-[180px]">
+                    <div className="truncate font-semibold text-slate-700">{job.service}</div>
+                  </td>
+                  <td className="px-4 py-4"><StatusPill status={job.status} /></td>
+                  <td className="px-4 py-4 text-slate-600">{formatDateTime(job.created_at)}</td>
+                  <td className="px-4 py-4">
+                    <div className="text-slate-600">{formatDateTime(job.accepted_at)}</div>
+                    <div className="text-xs font-bold text-slate-400">{formatDuration(job.responseMinutes)}</div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="text-slate-600">{formatDateTime(job.completed_at)}</div>
+                    <div className="text-xs font-bold text-slate-400">{formatDuration(job.completionMinutes)}</div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className={job.hasChat ? 'font-black text-emerald-700' : 'font-black text-slate-400'}>
+                      {job.hasChat ? 'Sí' : 'No'}
+                    </div>
+                    <div className="text-xs text-slate-500">{job.messagesCount} mensajes</div>
+                  </td>
+                  <td className="px-4 py-4">
+                    {job.rating ? (
+                      <div className="font-black text-amber-600">{Number(job.rating).toFixed(1)}/5</div>
+                    ) : (
+                      <div className="font-semibold text-slate-400">Sin review</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-4">
+                    <button
+                      type="button"
+                      onClick={() => onOpenJob(job)}
+                      className="rounded-full bg-[#06182a] px-4 py-2 text-xs font-black text-white shadow-[0_10px_24px_rgba(6,24,42,0.22)]"
+                    >
+                      Ver detalle
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={11} className="px-5 py-12 text-center font-semibold text-slate-500">
+                  Todavía no hay trabajos recientes para auditar.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ status }) {
+  const meta = statusMeta(status);
+  return (
+    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black ${meta.className}`}>
+      {meta.label}
+    </span>
+  );
+}
+
+function AdminOperationalAlerts({ alerts }) {
+  return (
+    <div className="rounded-[28px] border border-white/60 bg-white/90 p-5 text-[#06182a] shadow-[0_18px_46px_rgba(8,35,52,0.13)]">
+      <div className="mb-4 flex items-center gap-2 text-sm font-black">
+        <Siren className="h-4 w-4 text-[#137d78]" />
+        Alertas admin
+      </div>
+      <div className="space-y-3">
+        {alerts.length ? (
+          alerts.map((alert, index) => (
+            <div
+              key={`${alert.title}-${index}`}
+              className={`rounded-2xl border p-4 ${
+                alert.level === 'high'
+                  ? 'border-red-200 bg-red-50'
+                  : alert.level === 'medium'
+                  ? 'border-amber-200 bg-amber-50'
+                  : 'border-slate-200 bg-slate-50'
+              }`}
+            >
+              <div className="font-black text-[#06182a]">{alert.title}</div>
+              <p className="mt-1 text-sm font-semibold text-slate-600">{alert.detail}</p>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
+            Sin alertas operativas críticas ahora mismo.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RankPanel({ title, icon, rows, type }) {
+  return (
+    <div className="rounded-[28px] border border-white/60 bg-white/90 p-5 text-[#06182a] shadow-[0_18px_46px_rgba(8,35,52,0.13)]">
+      <div className="mb-4 flex items-center gap-2 text-sm font-black">
+        <span className="text-[#137d78]">{icon}</span>
+        {title}
+      </div>
+
+      <div className="space-y-3">
+        {rows.length ? (
+          rows.slice(0, 5).map((row, index) => (
+            <div key={`${type}-${row.id}`} className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-black text-[#137d78]">#{index + 1}</div>
+                  <div className="mt-1 font-black text-[#06182a]">{row.name}</div>
+                </div>
+                <div className="rounded-full bg-[#69c4c0]/14 px-3 py-1 text-xs font-black text-[#137d78]">
+                  {Math.max(0, Math.round(row.score || 0))} pts
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                {type === 'worker' && (
+                  <>
+                    <span>{row.completed} completados</span>
+                    <span>{row.cancelled} cancelados</span>
+                    <span>{row.messages} respuestas</span>
+                    <span>{row.posts} posts</span>
+                    <span>Rating {row.avgRating ? row.avgRating.toFixed(1) : '-'}</span>
+                    <span>Resp. {formatDuration(Math.round(row.avgResponse || 0))}</span>
+                  </>
+                )}
+                {type === 'client' && (
+                  <>
+                    <span>{row.requests} solicitudes</span>
+                    <span>{row.chats} chats</span>
+                    <span>{row.reviews} reviews</span>
+                    <span>{row.cancelled} cancelados</span>
+                  </>
+                )}
+                {type === 'provider' && (
+                  <>
+                    <span>{row.contacts} contactos</span>
+                    <span>{row.products} productos</span>
+                    <span>{row.visits} visitas</span>
+                    <span>{row.ctaClicks} CTA</span>
+                  </>
+                )}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
+            Sin datos suficientes todavía.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function JobDetailPanel({ job }) {
+  if (!job) return null;
+
+  const timeline = [
+    { label: 'Solicitud creada', value: job.created_at },
+    { label: 'Aceptación / primera respuesta', value: job.accepted_at },
+    { label: 'Último mensaje', value: job.lastMessageAt },
+    { label: 'Trabajo completado', value: job.completed_at },
+    { label: 'Review recibida', value: job.reviewAt },
+  ];
+
+  return (
+    <div className="max-h-[78vh] overflow-y-auto pr-1 text-white">
+      <div className="mb-5">
+        <div className="text-xs font-black uppercase tracking-[0.18em] text-[#94fff5]">Detalle operativo</div>
+        <h2 className="mt-2 text-3xl font-black tracking-[-0.04em]">Trabajo #{job.shortId}</h2>
+        <p className="mt-2 text-sm font-semibold leading-relaxed text-white/60">
+          {job.description || job.service || 'Solicitud sin descripción cargada.'}
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <DetailMini label="Estado" value={<StatusPill status={job.status} />} />
+        <DetailMini label="Mensajes" value={`${job.messagesCount} total`} />
+        <DetailMini label="Review" value={job.rating ? `${Number(job.rating).toFixed(1)}/5` : 'Sin review'} />
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <PersonDetail title="Cliente" profile={job.client} fallback={job.clientName} />
+        <PersonDetail title="Trabajador" profile={job.worker} fallback={job.workerName} />
+      </div>
+
+      <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.05] p-5">
+        <div className="mb-4 text-sm font-black text-white">Historial de estado</div>
+        <div className="space-y-3">
+          {timeline.map((item) => (
+            <div key={item.label} className="flex items-center justify-between gap-4 rounded-2xl bg-black/20 px-4 py-3">
+              <span className="text-sm font-semibold text-white/70">{item.label}</span>
+              <span className="text-sm font-black text-white">{formatDateTime(item.value)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <DetailMini label="Tiempo de respuesta" value={formatDuration(job.responseMinutes)} />
+        <DetailMini label="Tiempo de finalización" value={formatDuration(job.completionMinutes)} />
+      </div>
+
+      <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.05] p-5">
+        <div className="mb-3 text-sm font-black text-white">Observaciones</div>
+        <p className="text-sm font-semibold leading-relaxed text-white/62">
+          {job.hasChat
+            ? `Este trabajo tiene chat conectado (${job.chatId}). Hubo ${job.clientMessagesCount} mensajes del cliente y ${job.workerMessagesCount} respuestas del trabajador.`
+            : 'Este trabajo todavía no tiene chat relacionado. Conviene revisar si el CTA está llevando correctamente a conversación.'}
+        </p>
+        {job.reviewComment ? (
+          <p className="mt-3 rounded-2xl bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">
+            Review: “{job.reviewComment}”
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function DetailMini({ label, value }) {
+  return (
+    <div className="rounded-[22px] border border-white/10 bg-white/[0.05] p-4">
+      <div className="text-xs font-black uppercase tracking-[0.12em] text-white/45">{label}</div>
+      <div className="mt-2 text-lg font-black text-white">{value}</div>
+    </div>
+  );
+}
+
+function PersonDetail({ title, profile, fallback }) {
+  return (
+    <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5">
+      <div className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-[#94fff5]">{title}</div>
+      <div className="flex items-center gap-3">
+        <img
+          src={profile?.avatar_url || '/avatar-fallback.png'}
+          alt={profileName(profile, fallback)}
+          className="h-14 w-14 rounded-full object-cover"
+        />
+        <div className="min-w-0">
+          <div className="truncate text-lg font-black text-white">{profileName(profile, fallback)}</div>
+          <div className="truncate text-sm font-semibold text-white/55">{profile?.email || profile?.phone || 'Sin contacto visible'}</div>
+          <div className="mt-1 text-xs font-black uppercase tracking-[0.1em] text-white/35">{profile?.role || 'sin rol'}</div>
+        </div>
       </div>
     </div>
   );

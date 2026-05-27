@@ -614,7 +614,8 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, products = [], onOpen
   return (
     <motion.div
       layout
-      className="relative h-[calc(var(--real-vh,100dvh)-74px)] w-full snap-start overflow-hidden bg-black"
+      style={{ scrollSnapStop: 'always' }}
+      className="relative h-[calc(var(--real-vh,100dvh)-74px)] w-full snap-start snap-always overflow-hidden bg-black"
     >
     {isVideo && mediaUrl ? (
   <div onClick={toggleVideoPlay} className="absolute inset-0 h-full w-full cursor-pointer">
@@ -1588,6 +1589,7 @@ export default function ClientPage() {
   const searchParams = useSearchParams();
 const mapRef = useRef(null);
 const feedRef = useRef(null);
+const feedSnapTimerRef = useRef(null);
 const sharedWorkerOpenedRef = useRef('');
 const [mounted, setMounted] = useState(false);
 
@@ -1634,6 +1636,12 @@ const [isCancelling, setIsCancelling] = useState(false);
 const [bookingTime] = useState(initialTimingFromUrl || '');
 
   const hasMeCoords = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
+
+  useEffect(() => {
+    return () => {
+      if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -2957,17 +2965,32 @@ async function cancelActiveJob() {
   onScroll={(e) => {
     const el = e.currentTarget;
     const cardHeight = Math.max(1, el.clientHeight - 74);
-    const nextIndex = Math.round(el.scrollTop / cardHeight);
+    const nextIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight)));
 
     if (nextIndex !== feedIndex && feedWorkers[nextIndex]) {
       setFeedIndex(nextIndex);
       setSelected(feedWorkers[nextIndex]);
     }
+
+    if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current);
+    feedSnapTimerRef.current = setTimeout(() => {
+      const snapIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight)));
+      el.scrollTo({ top: snapIndex * cardHeight, behavior: 'smooth' });
+    }, 120);
   }}
-  className="h-[calc(var(--real-vh,100dvh)-0px)] overflow-y-auto snap-y snap-mandatory pb-[74px]"
+  style={{
+    scrollSnapType: 'y mandatory',
+    overscrollBehaviorY: 'contain',
+    WebkitOverflowScrolling: 'touch',
+  }}
+  className="h-[calc(var(--real-vh,100dvh)-0px)] overflow-y-auto overscroll-y-contain snap-y snap-mandatory scroll-smooth pb-[74px]"
 >
   {feedWorkers.map((worker, idx) => (
-  <div key={String(worker.user_id)} className="h-[calc(var(--real-vh,100dvh)-74px)] snap-start">
+  <div
+    key={String(worker.user_id)}
+    style={{ scrollSnapStop: 'always' }}
+    className="h-[calc(var(--real-vh,100dvh)-74px)] snap-start snap-always"
+  >
       <FeedCard
   worker={worker}
   products={productsForWorker(worker)}

@@ -80,7 +80,10 @@ function SupplierFeedCard({ worker, isActive, onPublishForService, onOpenWorker 
   }, [isActive, isVideo, mediaUrl]);
 
   return (
-    <article className="relative h-[calc(var(--real-vh,100dvh)-82px)] w-full snap-start overflow-hidden bg-black">
+    <article
+      style={{ scrollSnapStop: 'always' }}
+      className="relative h-[calc(var(--real-vh,100dvh)-82px)] w-full snap-start snap-always overflow-hidden bg-black"
+    >
       {isVideo ? (
         <video ref={videoRef} src={mediaUrl} muted loop playsInline preload="auto" className="absolute inset-0 h-full w-full object-contain" />
       ) : (
@@ -167,6 +170,7 @@ function SupplierSheet({ title, open, onClose, children }) {
 export default function SupplierPage() {
   const router = useRouter();
   const feedRef = useRef(null);
+  const feedSnapTimerRef = useRef(null);
   const [me, setMe] = useState(null);
   const [profile, setProfile] = useState(null);
   const [supplierProfile, setSupplierProfile] = useState(null);
@@ -211,6 +215,12 @@ export default function SupplierPage() {
     if (activeProducts.length >= 3) score += 10;
     return Math.min(score, 100);
   }, [activeProducts.length, profileForm.address_text, profileForm.avatar_url, profileForm.bio, profileForm.store_name]);
+
+  useEffect(() => {
+    return () => {
+      if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -633,10 +643,22 @@ export default function SupplierPage() {
           ref={feedRef}
           onScroll={(event) => {
             const el = event.currentTarget;
-            const next = Math.round(el.scrollTop / Math.max(1, el.clientHeight - 82));
+            const cardHeight = Math.max(1, el.clientHeight - 82);
+            const next = Math.max(0, Math.min(workers.length - 1, Math.round(el.scrollTop / cardHeight)));
             if (next !== feedIndex) setFeedIndex(next);
+
+            if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current);
+            feedSnapTimerRef.current = setTimeout(() => {
+              const snapIndex = Math.max(0, Math.min(workers.length - 1, Math.round(el.scrollTop / cardHeight)));
+              el.scrollTo({ top: snapIndex * cardHeight, behavior: 'smooth' });
+            }, 120);
           }}
-          className="h-full snap-y snap-mandatory overflow-y-auto scroll-smooth"
+          style={{
+            scrollSnapType: 'y mandatory',
+            overscrollBehaviorY: 'contain',
+            WebkitOverflowScrolling: 'touch',
+          }}
+          className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain scroll-smooth"
         >
           {workers.map((worker, index) => (
             <SupplierFeedCard
