@@ -45,7 +45,42 @@ const FEED_SOUND_KEY = 'manosya_feed_sound_enabled';
 const WORKER_NOTIFICATIONS_SEEN_KEY = 'manosya_worker_notifications_seen_at';
 const WORKER_CHAT_SEEN_MAP_KEY = 'manosya_worker_chat_seen_map';
 const VIDEO_REMINDER_KEY = 'manosya_video_upload_reminder_at';
+const WORKER_MEDIA_ACCEPT =
+  'image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/webm,video/x-m4v,video/3gpp,image/*,video/*';
+const WORKER_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+const WORKER_VIDEO_EXTENSIONS = ['mp4', 'mov', 'm4v', 'webm', '3gp', '3gpp'];
 const HOME_VIEW = { center: [-25.5097, -54.6111], zoom: 12 };
+
+function getFileExtension(file) {
+  return String(file?.name || '').split('.').pop()?.toLowerCase() || '';
+}
+
+function isWorkerImageFile(file) {
+  const type = String(file?.type || '').toLowerCase();
+  return type.startsWith('image/') || WORKER_IMAGE_EXTENSIONS.includes(getFileExtension(file));
+}
+
+function isWorkerVideoFile(file) {
+  const type = String(file?.type || '').toLowerCase();
+  return type.startsWith('video/') || WORKER_VIDEO_EXTENSIONS.includes(getFileExtension(file));
+}
+
+function getWorkerMediaContentType(file) {
+  const type = String(file?.type || '').toLowerCase();
+  if (type.startsWith('image/') || type.startsWith('video/')) return type;
+
+  const ext = getFileExtension(file);
+  if (ext === 'mp4' || ext === 'm4v') return 'video/mp4';
+  if (ext === 'mov') return 'video/quicktime';
+  if (ext === 'webm') return 'video/webm';
+  if (ext === '3gp' || ext === '3gpp') return 'video/3gpp';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'heic') return 'image/heic';
+  if (ext === 'heif') return 'image/heif';
+  return 'application/octet-stream';
+}
 
 function isFeedSoundEnabled() {
   if (typeof window === 'undefined') return false;
@@ -656,7 +691,7 @@ onPublish,
 }) {
   if (!open) return null;
 
-  const isVideo = file?.type?.startsWith('video/');
+  const isVideo = isWorkerVideoFile(file);
 
   return (
     <div className="fixed inset-0 z-[69000] bg-black/70 p-3 backdrop-blur-sm">
@@ -2326,13 +2361,8 @@ async function fetchWorkers(serviceFilter = '') {
 async function uploadWorkerMedia(file) {
   if (!file || !me?.id) return;
 
-  const isImage = file.type.startsWith('image/');
-  const isVideo = file.type.startsWith('video/');
-
-   if (isImage && file.size > 10000000) {
-    toast.error('La imagen es muy pesada. ElegÃ­ una menor a 10MB.');
-    return;
-  }
+  const isImage = isWorkerImageFile(file);
+  const isVideo = isWorkerVideoFile(file);
 
   if (isImage && file.size > 10000000) {
     toast.error('La imagen es muy pesada. ElegÃ­ una menor a 10MB.');
@@ -2341,6 +2371,11 @@ async function uploadWorkerMedia(file) {
 
   if (!isImage && !isVideo) {
     toast.error('Solo podÃ©s subir imÃ¡genes o videos');
+    return;
+  }
+
+  if (isVideo && file.size > 250000000) {
+    toast.error('El video es muy pesado. Proba con uno menor a 250MB.');
     return;
   }
 
@@ -2353,17 +2388,36 @@ async function uploadWorkerMedia(file) {
   setCreatePostOpen(true);
 }
 async function compressVideoIfNeeded(file) {
-  if (!file.type.startsWith('video/')) return file;
+  if (!isWorkerVideoFile(file)) return file;
 
   if (file.size <= 12000000) return file;
+
+  if (
+    typeof window === 'undefined' ||
+    typeof MediaRecorder === 'undefined' ||
+    typeof HTMLCanvasElement === 'undefined' ||
+    !HTMLCanvasElement.prototype.captureStream
+  ) {
+    toast.warning('Tu navegador no permite optimizar este video. Voy a subir el original.');
+    return file;
+  }
 
   toast.loading('Optimizando video sin perder calidad visible...', {
     id: 'compress',
   });
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const video = document.createElement('video');
     const objectUrl = URL.createObjectURL(file);
+    let settled = false;
+
+    const resolveWithOriginal = (message) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(objectUrl);
+      toast.warning(message, { id: 'compress' });
+      resolve(file);
+    };
 
     video.src = objectUrl;
     video.preload = 'auto';
@@ -2401,12 +2455,12 @@ async function compressVideoIfNeeded(file) {
         };
 
         recorder.onerror = () => {
-          URL.revokeObjectURL(objectUrl);
-          toast.error('No se pudo optimizar el video', { id: 'compress' });
-          reject(new Error('No se pudo optimizar el video'));
+          resolveWithOriginal('No se pudo optimizar el video. Voy a subir el original.');
         };
 
         recorder.onstop = () => {
+          if (settled) return;
+          settled = true;
           URL.revokeObjectURL(objectUrl);
 
           const compressedBlob = new Blob(chunks, { type: 'video/webm' });
@@ -2439,17 +2493,13 @@ async function compressVideoIfNeeded(file) {
         video.onended = () => {
           recorder.stop();
         };
-      } catch (error) {
-        URL.revokeObjectURL(objectUrl);
-        toast.error('No se pudo optimizar el video', { id: 'compress' });
-        reject(error);
+      } catch {
+        resolveWithOriginal('No se pudo optimizar el video. Voy a subir el original.');
       }
     };
 
     video.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      toast.error('No se pudo leer el video', { id: 'compress' });
-      reject(new Error('No se pudo leer el video'));
+      resolveWithOriginal('No se pudo leer el video para optimizarlo. Voy a subir el original.');
     };
   });
 }
@@ -2475,7 +2525,7 @@ async function uploadToWorkerMediaWithProgress(file, path, onProgress) {
     xhr.open('POST', url);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.setRequestHeader('apikey', supabaseAnonKey);
-    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('Content-Type', getWorkerMediaContentType(file));
     xhr.setRequestHeader('x-upsert', 'true');
     xhr.setRequestHeader('cache-control', '3600');
 
@@ -2502,8 +2552,8 @@ async function uploadToWorkerMediaWithProgress(file, path, onProgress) {
 async function publishWorkerPost() {
   if (!draftFile || !me?.id) return;
 
-  const isImage = draftFile.type.startsWith('image/');
-  const isVideo = draftFile.type.startsWith('video/');
+  const isImage = isWorkerImageFile(draftFile);
+  const isVideo = isWorkerVideoFile(draftFile);
 
   try {
     setUploadingMedia(true);
@@ -2512,8 +2562,8 @@ async function publishWorkerPost() {
 
     const optimizedFile = await compressVideoIfNeeded(draftFile);
 
-const ext = optimizedFile.name.split('.').pop() || (isVideo ? 'webm' : 'jpg');
-const path = `${me.id}/posts/${Date.now()}.${ext}`;
+    const ext = getFileExtension(optimizedFile) || (isVideo ? 'webm' : 'jpg');
+    const path = `${me.id}/posts/${Date.now()}.${ext}`;
 
     setUploadLabel('Subiendo a ManosYA...');
 
@@ -2754,7 +2804,7 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
 
       <input
         type="file"
-        accept="image/*,video/*"
+        accept={WORKER_MEDIA_ACCEPT}
         className="hidden"
         disabled={uploadingMedia}
         onChange={(e) => {
