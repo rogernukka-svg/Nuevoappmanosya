@@ -82,26 +82,26 @@ function SupplierFeedCard({ worker, isActive, onPublishForService, onOpenWorker 
   return (
     <article
       style={{ scrollSnapStop: 'always' }}
-      className="relative h-[calc(var(--real-vh,100dvh)-82px)] w-full snap-start snap-always overflow-hidden bg-black"
+      className="relative h-[var(--real-vh,100dvh)] w-full snap-start snap-always overflow-hidden bg-black"
     >
       {isVideo ? (
-        <video ref={videoRef} src={mediaUrl} muted loop playsInline preload="auto" className="absolute inset-0 h-full w-full object-contain" />
+        <video ref={videoRef} src={mediaUrl} muted loop playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover" />
       ) : (
         <img src={mediaUrl} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={name} className="absolute inset-0 h-full w-full object-cover" />
       )}
 
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.86)_0%,rgba(0,0,0,0.44)_30%,rgba(0,0,0,0.04)_62%,rgba(0,0,0,0.30)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.78)_0%,rgba(0,0,0,0.26)_24%,rgba(0,0,0,0.03)_62%,rgba(0,0,0,0.22)_100%)]" />
 
-      <div className="absolute left-4 right-4 bottom-[90px] z-20 text-white">
-        <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#62bfb9]/18 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-[#9ee5df] backdrop-blur-md">
+      <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+68px)] left-3 right-3 z-20 text-white">
+        <div className="mb-2 inline-flex max-w-full items-center gap-2 rounded-full bg-black/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[#9ee5df] backdrop-blur-md">
           Demanda real para {serviceLabel}
         </div>
 
-        <div className="flex items-center gap-3">
-          <img src={worker?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={name} className="h-12 w-12 rounded-full border-2 border-white object-cover" />
+        <div className="flex items-center gap-2">
+          <img src={worker?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={name} className="h-10 w-10 rounded-full border-2 border-white object-cover" />
           <button type="button" onClick={() => onOpenWorker(worker)} className="min-w-0 text-left">
-            <div className="truncate text-[22px] font-black leading-tight">@{name}</div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] font-bold text-white/82">
+            <div className="truncate text-[20px] font-black leading-tight">@{name}</div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-white/82">
               <span>{serviceLabel}</span>
               {worker?.is_verified && (
                 <span className="inline-flex items-center gap-1 text-sky-200">
@@ -113,22 +113,22 @@ function SupplierFeedCard({ worker, isActive, onPublishForService, onOpenWorker 
           </button>
         </div>
 
-        <p className="mt-3 line-clamp-2 text-[14px] font-semibold leading-5 text-white/94">
+        <p className="mt-2 line-clamp-2 text-[13px] font-semibold leading-5 text-white/94">
           {worker?.post_description || worker?.caption || worker?.bio || 'Trabajo activo dentro de ManosYA.'}
         </p>
 
-        <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
+        <div className="mt-3 flex items-center gap-2">
           <button
             type="button"
             onClick={() => onPublishForService(serviceSlug)}
-            className="rounded-[22px] bg-[#62bfb9] px-4 py-4 text-sm font-black text-white shadow-[0_16px_34px_rgba(98,191,185,0.32)] active:scale-[0.98]"
+            className="min-w-0 flex-1 rounded-full bg-[#62bfb9] px-4 py-3 text-[13px] font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.30)] active:scale-[0.98]"
           >
-            Publicar insumo para {serviceLabel}
+            Publicar insumo
           </button>
           <button
             type="button"
             onClick={() => onOpenWorker(worker)}
-            className="flex h-full min-w-[76px] items-center justify-center rounded-[22px] border border-white/20 bg-white/12 px-4 text-sm font-black text-white backdrop-blur-md active:scale-[0.98]"
+            className="flex h-11 min-w-[64px] items-center justify-center rounded-full border border-white/20 bg-white/12 px-4 text-[13px] font-black text-white backdrop-blur-md active:scale-[0.98]"
           >
             Ver
           </button>
@@ -580,47 +580,27 @@ export default function SupplierPage() {
 
   return (
     <main className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-white">
-      <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-4 pt-[calc(env(safe-area-inset-top)+10px)]">
+      <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)]">
         <div className="mx-auto flex max-w-4xl items-center gap-2">
-          <button type="button" onClick={() => router.push('/role-selector')} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-xl active:scale-95">
+          <button type="button" onClick={() => router.push('/role-selector')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/34 text-white backdrop-blur-xl active:scale-95">
             <ArrowLeft size={18} />
           </button>
-          <button type="button" onClick={() => setSheet('profile')} className="flex min-w-0 flex-1 items-center gap-3 rounded-full border border-white/12 bg-black/28 px-3 py-2 text-left backdrop-blur-xl active:scale-[0.99]">
-            <img src={profileForm.avatar_url || profile?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt="Proveedor" className="h-9 w-9 rounded-full object-cover" />
+          <button type="button" onClick={() => setSheet('profile')} className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-white/12 bg-black/28 px-2.5 py-1.5 text-left backdrop-blur-xl active:scale-[0.99]">
+            <img src={profileForm.avatar_url || profile?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt="Proveedor" className="h-8 w-8 rounded-full object-cover" />
             <div className="min-w-0">
-              <div className="truncate text-[14px] font-black">{profileForm.store_name || profile?.full_name || 'Proveedor ManosYA'}</div>
-              <div className="text-[11px] font-bold text-[#9ee5df]">Feed exclusivo de proveedores</div>
+              <div className="truncate text-[13px] font-black">{profileForm.store_name || profile?.full_name || 'Proveedor ManosYA'}</div>
+              <div className="truncate text-[10px] font-bold text-[#9ee5df]">{storeScore}% listo</div>
             </div>
           </button>
-          <button type="button" onClick={() => setSheet('contacts')} className="rounded-full border border-white/18 bg-[#62bfb9] px-4 py-3 text-[12px] font-black text-white shadow-[0_12px_24px_rgba(98,191,185,0.24)] active:scale-95">
-            Consultas {unreadContacts || contacts.length}
+          <button type="button" onClick={() => setSheet('contacts')} className="flex h-9 min-w-9 items-center justify-center rounded-full border border-white/18 bg-[#62bfb9] px-3 text-[11px] font-black text-white shadow-[0_12px_24px_rgba(98,191,185,0.24)] active:scale-95" aria-label="Consultas">
+            <MessageSquareText size={15} />
+            <span className="ml-1">{unreadContacts || contacts.length}</span>
           </button>
-          <button type="button" onClick={() => setSheet('catalog')} className="rounded-full bg-white px-4 py-3 text-[12px] font-black text-slate-950 active:scale-95">
-            Catalogo {activeProducts.length}
+          <button type="button" onClick={() => setSheet('catalog')} className="flex h-9 min-w-9 items-center justify-center rounded-full bg-white px-3 text-[11px] font-black text-slate-950 active:scale-95" aria-label="Catalogo">
+            <Store size={15} />
+            <span className="ml-1">{activeProducts.length}</span>
           </button>
         </div>
-      </div>
-
-      <div className="pointer-events-none absolute left-0 right-0 top-[92px] z-30 px-4">
-        <button
-          type="button"
-          onClick={() => setSheet('creator')}
-          className="pointer-events-auto mx-auto flex w-full max-w-4xl items-center gap-3 rounded-[26px] border border-white/14 bg-black/34 p-3 text-left text-white shadow-[0_18px_42px_rgba(0,0,0,0.28)] backdrop-blur-[22px] active:scale-[0.99]"
-        >
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#62bfb9] text-white">
-            <Clapperboard size={22} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#9ee5df]">
-              <Sparkles size={13} />
-              Tu tienda vive dentro de ManosYA
-            </div>
-            <div className="truncate text-[14px] font-black">Graba un video corto y atende pedidos aca, no afuera.</div>
-          </div>
-          <div className="hidden rounded-full bg-white/12 px-3 py-2 text-[11px] font-black sm:block">
-            {storeScore}% listo
-          </div>
-        </button>
       </div>
 
       {busy ? (
@@ -643,7 +623,7 @@ export default function SupplierPage() {
           ref={feedRef}
           onScroll={(event) => {
             const el = event.currentTarget;
-            const cardHeight = Math.max(1, el.clientHeight - 82);
+            const cardHeight = Math.max(1, el.clientHeight);
             const next = Math.max(0, Math.min(workers.length - 1, Math.round(el.scrollTop / cardHeight)));
             if (next !== feedIndex) setFeedIndex(next);
 
@@ -672,22 +652,19 @@ export default function SupplierPage() {
         </div>
       )}
 
-      <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+16px)] z-50 flex justify-center">
-        <div className="grid w-[430px] max-w-[calc(100vw-24px)] grid-cols-5 gap-2 rounded-full border border-white/12 bg-black/38 p-2 shadow-[0_18px_42px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
-          <button type="button" onClick={() => setSheet('profile')} className="rounded-full px-3 py-3 text-[12px] font-black text-white active:scale-95">
+      <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-50 flex justify-center px-3">
+        <div className="grid w-[360px] max-w-full grid-cols-4 gap-1 rounded-full border border-white/12 bg-black/42 p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
+          <button type="button" onClick={() => setSheet('profile')} className="rounded-full px-2 py-2.5 text-[11px] font-black text-white active:scale-95">
             Perfil
           </button>
-          <button type="button" onClick={() => setSheet('product')} className="rounded-full bg-[#62bfb9] px-3 py-3 text-[12px] font-black text-white active:scale-95">
+          <button type="button" onClick={() => setSheet('product')} className="rounded-full bg-[#62bfb9] px-2 py-2.5 text-[11px] font-black text-white active:scale-95">
             Producto
           </button>
-          <button type="button" onClick={() => setSheet('contacts')} className="rounded-full px-3 py-3 text-[12px] font-black text-white active:scale-95">
+          <button type="button" onClick={() => setSheet('contacts')} className="rounded-full px-2 py-2.5 text-[11px] font-black text-white active:scale-95">
             Consultas
           </button>
-          <button type="button" onClick={() => setSheet('catalog')} className="rounded-full px-3 py-3 text-[12px] font-black text-white active:scale-95">
+          <button type="button" onClick={() => setSheet('catalog')} className="rounded-full px-2 py-2.5 text-[11px] font-black text-white active:scale-95">
             Catalogo
-          </button>
-          <button type="button" onClick={() => setSheet('creator')} className="rounded-full px-3 py-3 text-[12px] font-black text-white active:scale-95">
-            Videos
           </button>
         </div>
       </div>

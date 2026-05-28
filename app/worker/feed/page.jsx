@@ -365,27 +365,27 @@ function SupplierProductStrip({ products, serviceName, onContact }) {
   if (!Array.isArray(products) || !products.length) return null;
 
   return (
-    <div className="mt-2 rounded-[22px] border border-white/18 bg-black/34 p-2 backdrop-blur-xl">
-      <div className="mb-2 flex items-center gap-2 px-1 text-[11px] font-black uppercase tracking-[0.12em] text-[#9ee5df]">
+    <div className="mt-2 hidden rounded-[18px] border border-white/14 bg-black/30 p-1.5 backdrop-blur-xl sm:block">
+      <div className="mb-1 flex items-center gap-1.5 px-1 text-[10px] font-black uppercase tracking-[0.1em] text-[#9ee5df]">
         <Store size={13} />
-        Insumos para {serviceName || 'este servicio'}
+        Insumos
       </div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {products.slice(0, 4).map((product) => (
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {products.slice(0, 2).map((product) => (
           <button
             key={product.id}
             type="button"
             onClick={() => {
               onContact?.(product);
             }}
-            className="flex min-w-[170px] items-center gap-2 rounded-[18px] bg-white/94 p-2 text-left text-slate-950 shadow-[0_10px_20px_rgba(0,0,0,0.18)] active:scale-[0.98]"
+            className="flex min-w-[145px] items-center gap-2 rounded-[15px] bg-white/94 p-1.5 text-left text-slate-950 shadow-[0_10px_20px_rgba(0,0,0,0.18)] active:scale-[0.98]"
           >
-            <img src={product.image_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={product.title} className="h-12 w-12 rounded-xl object-cover" />
+            <img src={product.image_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={product.title} className="h-10 w-10 rounded-xl object-cover" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] font-black">{product.title}</div>
               <div className="truncate text-[11px] font-bold text-slate-500">{product.price_text || 'Pedir en ManosYA'}</div>
             </div>
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white">
               <ShoppingCart size={14} />
             </span>
           </button>
@@ -521,7 +521,7 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], 
     <motion.div
       layout
       style={{ scrollSnapStop: 'always' }}
-      className="relative h-[calc(var(--real-vh,100dvh)-74px)] w-full snap-start snap-always overflow-hidden bg-black"
+      className="relative h-[var(--real-vh,100dvh)] w-full snap-start snap-always overflow-hidden bg-black"
     >
       {isVideo ? (
         <div onClick={toggleVideoPlay} className="absolute inset-0 h-full w-full cursor-pointer">
@@ -532,7 +532,7 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], 
             muted={muted}
             playsInline
             preload="metadata"
-            className="absolute inset-0 h-full w-full bg-black object-contain"
+            className="absolute inset-0 h-full w-full bg-black object-cover"
             onPlay={() => setPaused(false)}
             onPause={() => setPaused(true)}
           />
@@ -560,15 +560,15 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], 
 
            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.72)_0%,rgba(0,0,0,0.36)_22%,rgba(0,0,0,0.02)_56%,rgba(0,0,0,0.18)_100%)]" />
 
-      <div className="absolute right-2 bottom-[118px] z-30 flex w-12 flex-col items-center text-white">
-        <button type="button" onClick={onOpen} className="relative mb-4 flex h-14 w-14 items-center justify-center active:scale-95">
+      <div className="absolute right-2 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-30 flex w-10 flex-col items-center text-white">
+        <button type="button" onClick={onOpen} className="relative mb-2.5 flex h-11 w-11 items-center justify-center active:scale-95">
           <img
             src={worker?.avatar_url || '/avatar-fallback.png'}
             onError={(e) => {
               e.currentTarget.src = '/avatar-fallback.png';
             }}
             alt={workerName}
-            className="h-12 w-12 rounded-full border-2 border-white object-cover shadow-[0_12px_26px_rgba(0,0,0,0.55)]"
+            className="h-10 w-10 rounded-full border-2 border-white object-cover shadow-[0_12px_26px_rgba(0,0,0,0.55)]"
           />
           <span
             role="button"
@@ -584,55 +584,45 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], 
                 onAddFriend?.();
               }
             }}
-            className={`absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)] ${isFollowed ? 'bg-sky-500' : 'bg-[#62bfb9]'}`}
+            className={`absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)] ${isFollowed ? 'bg-sky-500' : 'bg-[#62bfb9]'}`}
             aria-label={isFollowed ? 'Siguiendo' : 'Agregar amigo'}
           >
-            {isFollowed ? <Check size={15} strokeWidth={3.4} /> : <UserPlus size={14} strokeWidth={3.2} />}
+            {isFollowed ? <Check size={12} strokeWidth={3.4} /> : <UserPlus size={12} strokeWidth={3.2} />}
           </span>
         </button>
 
-        <button type="button" onClick={onLike} className="mb-3 flex w-12 flex-col items-center active:scale-95" aria-label={isLiked ? 'Quitar me encanta' : 'Dar me encanta'}>
+        <button type="button" onClick={onLike} className="mb-2 flex w-10 flex-col items-center active:scale-95" aria-label={isLiked ? 'Quitar me encanta' : 'Dar me encanta'}>
           <Heart
-            size={32}
+            size={26}
             fill={isLiked ? '#ef4444' : 'white'}
             stroke={isLiked ? '#ef4444' : 'white'}
             strokeWidth={1.8}
             className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]"
           />
-          <span className="mt-0.5 text-[12px] font-black">{likes}</span>
+          <span className="mt-0.5 text-[11px] font-black">{likes}</span>
         </button>
 
-        <button type="button" onClick={onComments} className="mb-3 flex w-12 flex-col items-center active:scale-95">
-          <MessageCircle size={32} fill="white" strokeWidth={1.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
-          <span className="mt-0.5 text-[12px] font-black">{reviews}</span>
+        <button type="button" onClick={onComments} className="mb-2 flex w-10 flex-col items-center active:scale-95">
+          <MessageCircle size={26} fill="white" strokeWidth={1.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+          <span className="mt-0.5 text-[11px] font-black">{reviews}</span>
         </button>
 
-        <button type="button" onClick={shareWorker} className="mb-3 flex w-12 flex-col items-center active:scale-95">
-          <Share2 size={30} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
-          <span className="mt-0.5 text-[10px] font-black">Compartir</span>
+        <button type="button" onClick={shareWorker} className="mb-2 flex w-10 flex-col items-center active:scale-95" aria-label="Compartir">
+          <Share2 size={25} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
         </button>
 
-        <button type="button" onClick={onNearbyMap} className="flex w-14 flex-col items-center active:scale-95">
-          <MapPin size={32} fill="none" stroke="white" strokeWidth={2.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+        <button type="button" onClick={onNearbyMap} className="flex w-10 flex-col items-center active:scale-95" aria-label="Mapa cercano">
+          <MapPin size={26} fill="none" stroke="white" strokeWidth={2.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
         </button>
       </div>
 
-      <div className="absolute left-4 right-[66px] bottom-[76px] z-20 text-white">
-        <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-black/30 px-3 py-1.5 text-[12px] font-black backdrop-blur-md">
+      <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+58px)] left-3 right-[54px] z-20 text-white">
+        <div className="mb-1.5 inline-flex items-center gap-2 rounded-full bg-black/30 px-2.5 py-1 text-[11px] font-black backdrop-blur-md">
           <span className={isOnline ? 'h-2 w-2 rounded-full bg-emerald-400' : 'h-2 w-2 rounded-full bg-white/55'} />
           {isOnline ? 'Activo ahora' : 'Disponible'}
         </div>
 
         <div className="flex items-center gap-3">
-          <img
-            src={worker?.avatar_url || '/avatar-fallback.png'}
-            onError={(e) => {
-              e.currentTarget.src = '/avatar-fallback.png';
-            }}
-            alt={workerName}
-            className="h-10 w-10 rounded-full border-2 border-white object-cover"
-          />
-
           <button type="button" onClick={onOpen} className="min-w-0 text-left">
             <div className="flex min-w-0 items-center gap-1.5">
               <div className="truncate text-[18px] font-black leading-tight">
@@ -644,7 +634,7 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], 
                 </span>
               )}
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] font-bold text-white/86">
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-white/86">
               <span>{primaryService}</span>
               {worker?._distKm != null && <span>â€¢ {formatKm(worker._distKm)}</span>}
               <span>• {formatWorkerRatingClean(worker)}</span>
@@ -652,7 +642,7 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], 
           </button>
         </div>
 
-        <div className="mt-1.5 text-[13px] font-semibold leading-5 text-white/95">
+        <div className="mt-1 text-[13px] font-semibold leading-5 text-white/95">
           <p className={bioOpen ? '' : 'truncate'}>
             {bioOpen ? postText : shortBio}
           </p>
@@ -2117,7 +2107,7 @@ async function fetchWorkers(serviceFilter = '') {
     setTimeout(() => {
       const el = feedRef.current;
       if (!el) return;
-      el.scrollTo({ top: idx * Math.max(1, el.clientHeight - 74), behavior: 'smooth' });
+      el.scrollTo({ top: idx * Math.max(1, el.clientHeight), behavior: 'smooth' });
     }, 120);
   }, [feedWorkers, searchParams]);
   function markNotificationsRead() {
@@ -2733,7 +2723,7 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
   
   return (
     
-    <div className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-slate-900"><div className="pointer-events-none absolute inset-0 bg-black" /><div className="relative z-10 mx-auto h-[var(--real-vh,100dvh)] w-full max-w-6xl overflow-hidden px-0"><div className="relative h-full"><div className="relative z-10 h-full"><div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-4 pt-[calc(env(safe-area-inset-top)+10px)] text-white"><div className="flex items-center gap-2"><button type="button" onClick={() => router.push('/worker')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/20 text-white backdrop-blur-xl active:scale-95" aria-label="Volver"><ArrowLeft size={18} /></button><button type="button" onClick={() => { setSelectedService(''); setServiceQuery(''); setFeedMode('all'); setFeedSeed(Date.now() + Math.random()); fetchWorkers(''); }} className="flex shrink-0 items-center text-[20px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">ManosYA</button><div className="relative min-w-0 flex-1 rounded-full border border-white/25 bg-black/18 shadow-[0_10px_24px_rgba(0,0,0,0.20)] backdrop-blur-xl"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={15} /><input value={serviceQuery} onChange={(e) => { const value = e.target.value; setServiceQuery(value); const normalizedValue = normalizeSlug(value); const matchedService = SERVICE_CATALOG.find((service) => { const slug = normalizeSlug(service.slug); const name = normalizeSlug(service.name); return slug.includes(normalizedValue) || name.includes(normalizedValue) || normalizedValue.includes(slug); }); setSelectedService(matchedService ? matchedService.slug : ''); }} placeholder="Buscar nombre, oficio o problema..." className="h-9 w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/60 outline-none" />{serviceQuery && <button type="button" onClick={() => { setServiceQuery(''); setSelectedService(''); }} className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/14 text-white/80 active:scale-95"><X size={14} /></button>}</div></div><div className="mt-3 flex justify-center"><div className="relative inline-flex items-center rounded-full bg-white/20 p-1 shadow-lg backdrop-blur-md"><motion.div layout transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="absolute bottom-1 top-1 w-1/2 rounded-full bg-white" style={{ left: feedMode === 'all' ? '4px' : 'calc(50% + 2px)' }} /><button type="button" onClick={() => { setFeedMode('all'); setSelectedService(''); setServiceQuery(''); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); fetchWorkers(''); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-8 py-2 text-[12px] font-black transition ${feedMode === 'all' ? 'text-black' : 'text-white'}`}>Todos</button><button type="button" onClick={() => { setFeedMode('near'); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-8 py-2 text-[12px] font-black transition ${feedMode === 'near' ? 'text-black' : 'text-white'}`}>Cerca tuyo</button></div></div></div>{busy ? <div className="flex h-full items-center justify-center bg-[#081924] text-white"><div className="text-center"><div className="text-xl font-black">Cargando trabajadores</div><div className="mt-2 text-sm text-white/70">Estamos ordenando lo mejor para vos.</div></div></div> : !feedWorkers.length ? <div className="flex h-full items-center justify-center bg-[#081924] px-8 text-center text-white"><div><Compass className="mx-auto mb-3 text-white/70" size={34} /><div className="text-xl font-black">No encontramos trabajadores</div><div className="mt-2 text-sm text-white/70">ProbÃ¡ cambiar el filtro o revisar tu zona.</div><button type="button" onClick={() => fetchWorkers('')} className="mt-6 rounded-full bg-[#62bfb9] px-6 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(98,191,185,0.35)]">Actualizar</button></div></div> : <div key={`${feedMode}-${feedSeed}-${selectedService || 'todos'}`} ref={feedRef} onScroll={(e) => { const el = e.currentTarget; const cardHeight = Math.max(1, el.clientHeight - 74); const nextIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); if (nextIndex !== feedIndex && feedWorkers[nextIndex]) { setFeedIndex(nextIndex); setSelected(feedWorkers[nextIndex]); } if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current); feedSnapTimerRef.current = setTimeout(() => { const snapIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); el.scrollTo({ top: snapIndex * cardHeight, behavior: 'smooth' }); }, 120); }} style={{ scrollSnapType: 'y mandatory', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch' }} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain scroll-smooth bg-black">
+    <div className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-slate-900"><div className="pointer-events-none absolute inset-0 bg-black" /><div className="relative z-10 mx-auto h-[var(--real-vh,100dvh)] w-full max-w-6xl overflow-hidden px-0"><div className="relative h-full"><div className="relative z-10 h-full"><div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white"><div className="flex items-center gap-2"><button type="button" onClick={() => router.push('/worker')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/20 text-white backdrop-blur-xl active:scale-95" aria-label="Volver"><ArrowLeft size={18} /></button><button type="button" onClick={() => { setSelectedService(''); setServiceQuery(''); setFeedMode('all'); setFeedSeed(Date.now() + Math.random()); fetchWorkers(''); }} className="flex shrink-0 items-center text-[18px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">ManosYA</button><div className="relative min-w-0 flex-1 rounded-full border border-white/25 bg-black/18 shadow-[0_10px_24px_rgba(0,0,0,0.20)] backdrop-blur-xl"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={15} /><input value={serviceQuery} onChange={(e) => { const value = e.target.value; setServiceQuery(value); const normalizedValue = normalizeSlug(value); const matchedService = SERVICE_CATALOG.find((service) => { const slug = normalizeSlug(service.slug); const name = normalizeSlug(service.name); return slug.includes(normalizedValue) || name.includes(normalizedValue) || normalizedValue.includes(slug); }); setSelectedService(matchedService ? matchedService.slug : ''); }} placeholder="Buscar nombre, oficio o problema..." className="h-9 w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/60 outline-none" />{serviceQuery && <button type="button" onClick={() => { setServiceQuery(''); setSelectedService(''); }} className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/14 text-white/80 active:scale-95"><X size={14} /></button>}</div></div><div className="mt-2 flex justify-center"><div className="relative inline-flex items-center rounded-full bg-white/20 p-1 shadow-lg backdrop-blur-md"><motion.div layout transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="absolute bottom-1 top-1 w-1/2 rounded-full bg-white" style={{ left: feedMode === 'all' ? '4px' : 'calc(50% + 2px)' }} /><button type="button" onClick={() => { setFeedMode('all'); setSelectedService(''); setServiceQuery(''); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); fetchWorkers(''); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${feedMode === 'all' ? 'text-black' : 'text-white'}`}>Todos</button><button type="button" onClick={() => { setFeedMode('near'); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${feedMode === 'near' ? 'text-black' : 'text-white'}`}>Cerca tuyo</button></div></div></div>{busy ? <div className="flex h-full items-center justify-center bg-[#081924] text-white"><div className="text-center"><div className="text-xl font-black">Cargando trabajadores</div><div className="mt-2 text-sm text-white/70">Estamos ordenando lo mejor para vos.</div></div></div> : !feedWorkers.length ? <div className="flex h-full items-center justify-center bg-[#081924] px-8 text-center text-white"><div><Compass className="mx-auto mb-3 text-white/70" size={34} /><div className="text-xl font-black">No encontramos trabajadores</div><div className="mt-2 text-sm text-white/70">ProbÃ¡ cambiar el filtro o revisar tu zona.</div><button type="button" onClick={() => fetchWorkers('')} className="mt-6 rounded-full bg-[#62bfb9] px-6 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(98,191,185,0.35)]">Actualizar</button></div></div> : <div key={`${feedMode}-${feedSeed}-${selectedService || 'todos'}`} ref={feedRef} onScroll={(e) => { const el = e.currentTarget; const cardHeight = Math.max(1, el.clientHeight); const nextIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); if (nextIndex !== feedIndex && feedWorkers[nextIndex]) { setFeedIndex(nextIndex); setSelected(feedWorkers[nextIndex]); } if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current); feedSnapTimerRef.current = setTimeout(() => { const snapIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); el.scrollTo({ top: snapIndex * cardHeight, behavior: 'smooth' }); }, 120); }} style={{ scrollSnapType: 'y mandatory', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch' }} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain scroll-smooth bg-black">
       {feedWorkers.map((worker, index) => (
   <WorkerFeedCard
     key={String(worker.post_id || worker.user_id)}
@@ -2787,20 +2777,20 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
   )}
 </AnimatePresence>
     <AnimatePresence>{showAllWorkers && <AllWorkersSheet open={showAllWorkers} workers={feedWorkers} onClose={() => setShowAllWorkers(false)} onSelect={(worker) => { setSelected(worker); setShowAllWorkers(false); setShowProfile(true); }} />}</AnimatePresence><AnimatePresence>{nearbyMapOpen && <WorkerNearbyMapSheet open={nearbyMapOpen} workers={nearbyWorkers} center={mapCenter} hasMeCoords={hasMeCoords} me={me} selectedWorker={nearbyMapWorker} onSelectWorker={(worker) => { setNearbyMapWorker(worker); setSelected(worker); }} onClose={() => setNearbyMapOpen(false)} onOpenProfile={(worker) => { setSelected(worker); setNearbyMapOpen(false); setShowProfile(true); }} onHire={(worker) => { setNearbyMapOpen(false); hireWorker(worker); }} />}</AnimatePresence><AnimatePresence>{commentsOpen && <CommentsSheet open={commentsOpen} worker={commentsWorker} comments={workerComments} commentText={commentText} setCommentText={setCommentText} onClose={() => { setCommentsOpen(false); setCommentsWorker(null); setWorkerComments([]); setCommentText(''); }} onSend={sendPublicComment} />}</AnimatePresence>
-  <div className="pointer-events-none absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+18px)] z-50 flex items-center justify-center">
-  <div className="pointer-events-auto flex w-[260px] items-center justify-between rounded-full border border-white/15 bg-black/30 px-3 py-2 shadow-[0_18px_42px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
+  <div className="pointer-events-none absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+8px)] z-50 flex items-center justify-center">
+  <div className="pointer-events-auto flex w-[228px] items-center justify-between rounded-full border border-white/15 bg-black/42 px-2.5 py-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
 
     <button
       type="button"
       onClick={() => setShowMyPosts(true)}
-      className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white transition active:scale-95"
+      className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition active:scale-95"
       aria-label="Ver publicados"
     >
       <ImagePlus size={18} />
     </button>
 
-    <label className="flex h-[58px] w-[58px] cursor-pointer items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_14px_30px_rgba(98,191,185,0.44)] transition active:scale-95">
-      <Upload size={22} />
+    <label className="flex h-[50px] w-[50px] cursor-pointer items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_14px_30px_rgba(98,191,185,0.44)] transition active:scale-95">
+      <Upload size={20} />
 
       <input
         type="file"
@@ -2824,7 +2814,7 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
         markNotificationsRead();
         setShowFriendRequests(true);
       }}
-      className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-800 transition active:scale-95"
+      className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-800 transition active:scale-95"
       aria-label="Ver notificaciones"
     >
       <Bell size={18} />
