@@ -14,8 +14,6 @@ const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr:
 const Tooltip = dynamic(() => import('react-leaflet').then(m => m.Tooltip), { ssr: false });
 const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
 
-const ORS_KEY = process.env.NEXT_PUBLIC_ORS_KEY;
-
 /* ====== Función de voz ====== */
 function speak(text) {
   if (typeof window === 'undefined') return;
@@ -115,15 +113,23 @@ export default function JobPage() {
   // ====== Ruta con OpenRouteService ======
   async function fetchRoute(from, to) {
     try {
-      const res = await fetch(
-        `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${ORS_KEY}&start=${from.lon},${from.lat}&end=${to.lon},${to.lat}`
-      );
+      if (typeof document !== 'undefined' && document.hidden) return;
+
+      const params = new URLSearchParams({
+        start: `${from.lon},${from.lat}`,
+        end: `${to.lon},${to.lat}`,
+      });
+      const res = await fetch(`/api/ors/route?${params.toString()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`ORS ${res.status}`);
       const data = await res.json();
-      const coords = data.features[0].geometry.coordinates.map((c) => [c[1], c[0]]);
+      const feature = data?.features?.[0];
+      if (!feature?.geometry?.coordinates?.length) return;
+
+      const coords = feature.geometry.coordinates.map((c) => [c[1], c[0]]);
       setRouteCoords(coords);
 
-      const meters = data.features[0].properties.segments[0].distance;
-      const seconds = data.features[0].properties.segments[0].duration;
+      const meters = feature.properties.segments[0].distance;
+      const seconds = feature.properties.segments[0].duration;
       setDistance((meters / 1000).toFixed(1));
       setEta(Math.round(seconds / 60));
     } catch (e) {

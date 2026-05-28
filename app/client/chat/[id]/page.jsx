@@ -114,8 +114,11 @@ export default function ChatPage() {
   const [activeJob, setActiveJob] = useState(null);
   const [requesting, setRequesting] = useState(false);
   const [sharingLocation, setSharingLocation] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState('100dvh');
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
 
   const messagesWrapRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -254,11 +257,41 @@ if (alive) {
   }, [chatId, user?.id]);
 
   useEffect(() => {
-    messagesWrapRef.current?.scrollTo({
-      top: messagesWrapRef.current.scrollHeight,
-      behavior: 'smooth',
+    if (typeof window === 'undefined') return;
+
+    const syncViewport = () => {
+      const visualViewport = window.visualViewport;
+      const height = Math.round(visualViewport?.height || window.innerHeight);
+      const offset = Math.max(
+        0,
+        Math.round(window.innerHeight - height - (visualViewport?.offsetTop || 0))
+      );
+
+      setViewportHeight(`${height}px`);
+      setKeyboardOffset(offset);
+    };
+
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('scroll', syncViewport);
+
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('scroll', syncViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    const wrap = messagesWrapRef.current;
+    if (!wrap) return;
+
+    wrap.scrollTo({
+      top: wrap.scrollHeight,
+      behavior: keyboardOffset > 40 ? 'auto' : 'smooth',
     });
-  }, [messages]);
+  }, [messages, keyboardOffset]);
 
   const workerName =
   workerUserProfile?.full_name ||
@@ -330,9 +363,9 @@ async function shareClientLocation() {
 
     const position = await new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
+        enableHighAccuracy: false,
         timeout: 12000,
-        maximumAge: 0,
+        maximumAge: 15000,
       });
     });
 
@@ -482,6 +515,7 @@ async function requestWorkerFromChat(customText = '') {
     initial={{ opacity: 0 }}
     animate={{ opacity: 1 }}
     className="h-[100dvh] overflow-hidden bg-[#63c0ba] text-[#123437]"
+    style={{ height: viewportHeight }}
   >
     <div className="mx-auto flex h-full max-w-3xl flex-col bg-[#63c0ba]">
       <header className="z-20 border-b border-white/35 bg-[#63c0ba]/95 px-3 py-2 shadow-[0_10px_28px_rgba(18,52,55,0.10)] backdrop-blur-xl">
@@ -721,8 +755,16 @@ async function requestWorkerFromChat(customText = '') {
 
   <div className="flex min-h-[48px] flex-1 items-center rounded-[24px] bg-white/38 px-4 shadow-[0_10px_28px_rgba(18,52,55,0.10)] backdrop-blur-md">
     <input
+      ref={inputRef}
       value={input}
       onChange={(e) => setInput(e.target.value)}
+      onFocus={() => {
+        setTimeout(() => {
+          const wrap = messagesWrapRef.current;
+          if (!wrap) return;
+          wrap.scrollTo({ top: wrap.scrollHeight, behavior: 'auto' });
+        }, 80);
+      }}
       placeholder="Escribí un mensaje"
       className="h-12 flex-1 bg-transparent text-[15px] font-bold text-[#123437] outline-none placeholder:text-[#1e4e53]/55"
     />

@@ -93,17 +93,17 @@ const withPWA = require("next-pwa")({
       },
     },
 
-    // 6) Videos del feed: guardar varios para que cliente/trabajador entren sin espera
+    // 6) Videos del feed: cache pequeno para no saturar celulares con poco storage
     {
       urlPattern: ({ request, url }) =>
         request.destination === "video" ||
         /\.(?:mp4|webm|mov|m4v)(?:\?.*)?$/i.test(url.href),
       handler: "CacheFirst",
       options: {
-        cacheName: "feed-videos-v1",
+        cacheName: "feed-videos-v2",
         expiration: {
-          maxEntries: 24,
-          maxAgeSeconds: 60 * 60 * 24 * 14,
+          maxEntries: 8,
+          maxAgeSeconds: 60 * 60 * 24 * 3,
         },
         cacheableResponse: { statuses: [0, 200, 206] },
       },

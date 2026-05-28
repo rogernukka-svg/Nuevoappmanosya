@@ -26,10 +26,24 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const supabase = getSupabase();
+const PROFILE_OP_TIMEOUT_MS = 25000;
+
+function withTimeout(promise, ms = PROFILE_OP_TIMEOUT_MS, label = 'Operación') {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} tardó demasiado. Revisá tu conexión e intentá otra vez.`)),
+      ms
+    );
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 export default function ClientProfilePage() {
   const router = useRouter();
   const fileInputRef = useRef(null);
+  const avatarObjectUrlRef = useRef(null);
 
   const [profile, setProfile] = useState(null);
   const [authEmail, setAuthEmail] = useState('');
@@ -91,10 +105,16 @@ export default function ClientProfilePage() {
 
     return () => {
       alive = false;
+      if (avatarObjectUrlRef.current) URL.revokeObjectURL(avatarObjectUrlRef.current);
     };
   }, [router]);
 
   function resetEditState() {
+    if (avatarObjectUrlRef.current) {
+      URL.revokeObjectURL(avatarObjectUrlRef.current);
+      avatarObjectUrlRef.current = null;
+    }
+
     setEditing(false);
     setFullName(profile?.full_name || '');
     setEmail(profile?.email || authEmail || '');
@@ -130,8 +150,13 @@ export default function ClientProfilePage() {
       return;
     }
 
+    if (avatarObjectUrlRef.current) URL.revokeObjectURL(avatarObjectUrlRef.current);
+
+    const previewUrl = URL.createObjectURL(file);
+    avatarObjectUrlRef.current = previewUrl;
+
     setAvatarFile(file);
-    setAvatarPreview(URL.createObjectURL(file));
+    setAvatarPreview(previewUrl);
   }
 
   async function uploadAvatar() {
@@ -141,12 +166,16 @@ export default function ClientProfilePage() {
     const ext = ['jpg', 'jpeg', 'png', 'webp'].includes(cleanExt) ? cleanExt : 'jpg';
     const path = `avatars/${userId}/${Date.now()}.${ext}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(path, avatarFile, {
-        upsert: true,
-        contentType: avatarFile.type || 'image/jpeg',
-      });
+    const { error: uploadError } = await withTimeout(
+      supabase.storage
+        .from('avatars')
+        .upload(path, avatarFile, {
+          upsert: true,
+          contentType: avatarFile.type || 'image/jpeg',
+        }),
+      30000,
+      'La subida de la foto'
+    );
 
     if (uploadError) throw uploadError;
 
@@ -155,6 +184,7 @@ export default function ClientProfilePage() {
   }
 
   async function handleSaveProfile() {
+    if (saving) return;
     if (!userId) return;
 
     const cleanName = fullName.trim();
@@ -196,21 +226,29 @@ export default function ClientProfilePage() {
       }
 
       if (Object.keys(authUpdates).length > 0) {
-        const { error: authError } = await supabase.auth.updateUser(authUpdates);
+        const { error: authError } = await withTimeout(
+          supabase.auth.updateUser(authUpdates),
+          PROFILE_OP_TIMEOUT_MS,
+          'La actualización de acceso'
+        );
         if (authError) throw authError;
       }
 
       const emailToMirrorInProfile = wantsEmailChange ? cleanEmail : currentEmail;
 
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          full_name: cleanName,
-          email: emailToMirrorInProfile,
-          avatar_url: avatarUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId);
+      const { error: profileError } = await withTimeout(
+        supabase
+          .from('profiles')
+          .update({
+            full_name: cleanName,
+            email: emailToMirrorInProfile,
+            avatar_url: avatarUrl,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', userId),
+        PROFILE_OP_TIMEOUT_MS,
+        'El guardado del perfil'
+      );
 
       if (profileError) throw profileError;
 
@@ -225,12 +263,16 @@ export default function ClientProfilePage() {
       setAuthEmail(emailToMirrorInProfile);
       setAvatarFile(null);
       setAvatarPreview(avatarUrl || '');
+      if (avatarObjectUrlRef.current) {
+        URL.revokeObjectURL(avatarObjectUrlRef.current);
+        avatarObjectUrlRef.current = null;
+      }
       setNewPassword('');
       setEditing(false);
 
       if (wantsPasswordChange) {
         toast.success('Contraseña actualizada. Ingresá nuevamente.');
-        await supabase.auth.signOut();
+        await withTimeout(supabase.auth.signOut(), 12000, 'El cierre de sesión');
 
         try {
           localStorage.removeItem('app_role');
@@ -256,7 +298,7 @@ export default function ClientProfilePage() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    await withTimeout(supabase.auth.signOut(), 12000, 'El cierre de sesión');
 
     try {
       localStorage.removeItem('app_role');

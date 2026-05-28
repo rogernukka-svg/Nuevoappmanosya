@@ -3,6 +3,11 @@
 .next-build/
 out/
 
+# next-pwa generated build artifacts
+public/service-worker.js
+public/workbox-*.js
+public/worker-*.js
+
 # Node modules
 node_modules/
 

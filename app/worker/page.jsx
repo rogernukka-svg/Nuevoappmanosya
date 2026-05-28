@@ -913,7 +913,7 @@ useEffect(() => {
     },
     (err) => console.warn('🚫 Error GPS:', err),
     {
-      enableHighAccuracy: true,
+      enableHighAccuracy: false,
       maximumAge: 0,
       timeout: 10000,
     }

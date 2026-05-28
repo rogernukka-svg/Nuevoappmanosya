@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import 'leaflet/dist/leaflet.css';
@@ -12,7 +12,13 @@ const Marker       = dynamic(() => import('react-leaflet').then(m => m.Marker), 
 const Polyline     = dynamic(() => import('react-leaflet').then(m => m.Polyline),     { ssr: false });
 const Tooltip      = dynamic(() => import('react-leaflet').then(m => m.Tooltip),      { ssr: false });
 
-const ORS_KEY = process.env.NEXT_PUBLIC_ORS_API_KEY;
+const ROUTE_REFRESH_MS = 15000;
+const JOB_POSITION_SYNC_MS = 10000;
+const GPS_OPTIONS = {
+  enableHighAccuracy: false,
+  maximumAge: 15000,
+  timeout: 12000,
+};
 
 // 🔹 Icono circular
 function avatarIcon(url) {
@@ -35,6 +41,8 @@ export default function WorkerRoutePage() {
   const [eta, setEta] = useState(null);
   const [distance, setDistance] = useState(null);
   const [arrived, setArrived] = useState(false);
+  const lastRouteFetchRef = useRef(0);
+  const lastJobPositionSyncRef = useRef(0);
 
   // 🔹 Cargar datos del job
   useEffect(() => {
@@ -60,16 +68,27 @@ export default function WorkerRoutePage() {
   // 🔹 Pedir ruta al ORS
   async function fetchRoute(from, to) {
     try {
-      const res = await fetch(
-        `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${ORS_KEY}&start=${from.lng},${from.lat}&end=${to.lng},${to.lat}`
-      );
-      const data = await res.json();
+      if (typeof document !== 'undefined' && document.hidden) return;
 
-      const coords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
+      const now = Date.now();
+      if (now - lastRouteFetchRef.current < 8000) return;
+      lastRouteFetchRef.current = now;
+
+      const params = new URLSearchParams({
+        start: `${from.lng},${from.lat}`,
+        end: `${to.lng},${to.lat}`,
+      });
+      const res = await fetch(`/api/ors/route?${params.toString()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`ORS ${res.status}`);
+      const data = await res.json();
+      const feature = data?.features?.[0];
+      if (!feature?.geometry?.coordinates?.length) return;
+
+      const coords = feature.geometry.coordinates.map(c => [c[1], c[0]]);
       setRoute(coords);
 
-      const meters  = data.features[0].properties.segments[0].distance;
-      const seconds = data.features[0].properties.segments[0].duration;
+      const meters  = feature.properties.segments[0].distance;
+      const seconds = feature.properties.segments[0].duration;
 
       setDistance((meters / 1000).toFixed(1));
       setEta(Math.round(seconds / 60));
@@ -86,7 +105,13 @@ export default function WorkerRoutePage() {
         const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setWorkerPos(newPos);
 
-        if (jobId) {
+        const now = Date.now();
+        if (
+          jobId &&
+          now - lastJobPositionSyncRef.current > JOB_POSITION_SYNC_MS &&
+          !(typeof document !== 'undefined' && document.hidden)
+        ) {
+          lastJobPositionSyncRef.current = now;
           await supabase
             .from('jobs')
             .update({
@@ -97,18 +122,18 @@ export default function WorkerRoutePage() {
             .eq('id', jobId);
         }
 
-        if (clientPos) fetchRoute(newPos, clientPos);
       },
       (err) => console.error('GPS error:', err),
-      { enableHighAccuracy: true }
+      GPS_OPTIONS
     );
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [clientPos, jobId]);
+  }, [jobId]);
 
   // 🔹 Actualizar ruta cada 5s
   useEffect(() => {
     if (!workerPos || !clientPos) return;
-    const interval = setInterval(() => fetchRoute(workerPos, clientPos), 5000);
+    fetchRoute(workerPos, clientPos);
+    const interval = setInterval(() => fetchRoute(workerPos, clientPos), ROUTE_REFRESH_MS);
     return () => clearInterval(interval);
   }, [workerPos, clientPos]);
 

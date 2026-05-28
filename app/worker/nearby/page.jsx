@@ -32,7 +32,7 @@ export default function WorkerNearbyPage() {
       const loc = { lon: p.coords.longitude, lat: p.coords.latitude };
       setCoords(loc);
       await supabase.rpc('set_my_worker_location', loc);
-    }, e => setErr(e.message), { enableHighAccuracy: true });
+    }, e => setErr(e.message), { enableHighAccuracy: false, timeout: 12000, maximumAge: 15000 });
   }
 
   async function searchNearby() {

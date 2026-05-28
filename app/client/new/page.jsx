@@ -160,7 +160,7 @@ function Form() {
     navigator.geolocation.getCurrentPosition(
       (p) => setCoords({ lat: p.coords.latitude, lon: p.coords.longitude }),
       () => {},
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 15000 }
     );
   }, []);
 

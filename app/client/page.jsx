@@ -1781,7 +1781,7 @@ useEffect(() => {
         console.warn('GPS client error', err);
       },
       {
-        enableHighAccuracy: true,
+        enableHighAccuracy: false,
         maximumAge: 12000,
         timeout: 10000,
       }

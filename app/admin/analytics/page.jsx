@@ -1023,10 +1023,15 @@ export default function AdminAnalyticsPage() {
     let refreshTimer = null;
 
     const scheduleFetchAll = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
         if (alive) fetchAll();
       }, 650);
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) scheduleFetchAll();
     };
 
     (async () => {
@@ -1054,12 +1059,15 @@ export default function AdminAnalyticsPage() {
         .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_EXPENSES_TABLE }, scheduleFetchAll)
         .on('postgres_changes', { event: '*', schema: 'public', table: ADMIN_INVOICES_TABLE }, scheduleFetchAll)
         .subscribe();
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
     })();
 
     return () => {
       alive = false;
       if (refreshTimer) clearTimeout(refreshTimer);
       if (channel) supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
