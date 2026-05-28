@@ -69,7 +69,7 @@ begin
           select 1
           from public.profiles p
           where p.id = auth.uid()
-            and (p.role in ('admin', 'cashier') or coalesce(p.admin_role, false) = true)
+            and (p.role in ('admin', 'cashier') or coalesce(p.admin_role, '') in ('admin', 'superadmin', 'cashier'))
         )
       );
   end if;
@@ -88,7 +88,7 @@ begin
           select 1
           from public.profiles p
           where p.id = auth.uid()
-            and (p.role in ('admin', 'cashier') or coalesce(p.admin_role, false) = true)
+            and (p.role in ('admin', 'cashier') or coalesce(p.admin_role, '') in ('admin', 'superadmin', 'cashier'))
         )
       )
       with check (
@@ -97,7 +97,7 @@ begin
           select 1
           from public.profiles p
           where p.id = auth.uid()
-            and (p.role in ('admin', 'cashier') or coalesce(p.admin_role, false) = true)
+            and (p.role in ('admin', 'cashier') or coalesce(p.admin_role, '') in ('admin', 'superadmin', 'cashier'))
         )
       );
   end if;

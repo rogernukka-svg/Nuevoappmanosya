@@ -5,6 +5,7 @@ import { getSupabase } from '@/lib/supabase';
 import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { SendHorizontal, ChevronLeft } from 'lucide-react';
+import { canAttemptAction, inspectTextSafety } from '@/lib/security';
 
 const supabase = getSupabase();
 const WORKER_CHAT_SEEN_MAP_KEY = 'manosya_worker_chat_seen_map';
@@ -26,7 +27,10 @@ export default function ChatPage() {
   const [user, setUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState('100dvh');
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const inputRef = useRef(null);
+  const messagesWrapRef = useRef(null);
   const realtimeRef = useRef(null);
 
   /* === Obtener usuario actual === */
@@ -82,7 +86,10 @@ export default function ChatPage() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new]);
+          setMessages((prev) => {
+            if (prev.some((message) => message.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
+          });
           markWorkerChatRead(chatId);
         }
       )
@@ -92,24 +99,80 @@ export default function ChatPage() {
     return () => supabase.removeChannel(channel);
   }, [chatId]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const syncViewport = () => {
+      const visualViewport = window.visualViewport;
+      const height = Math.round(visualViewport?.height || window.innerHeight);
+      const offset = Math.max(
+        0,
+        Math.round(window.innerHeight - height - (visualViewport?.offsetTop || 0))
+      );
+
+      setViewportHeight(`${height}px`);
+      setKeyboardOffset(offset);
+    };
+
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('scroll', syncViewport);
+
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('scroll', syncViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    const wrap = messagesWrapRef.current;
+    if (!wrap) return;
+
+    wrap.scrollTo({
+      top: wrap.scrollHeight,
+      behavior: keyboardOffset > 40 ? 'auto' : 'smooth',
+    });
+  }, [messages, keyboardOffset]);
+
   /* === Enviar mensaje === */
   async function sendMessage(e) {
     e.preventDefault();
     if (!user?.id || !chatId) return;
-    const text = inputRef.current?.value.trim();
-    if (!text) return;
+    const safety = inspectTextSafety(inputRef.current?.value || '');
+    if (!safety.ok) {
+      console.warn(safety.error);
+      return;
+    }
 
-    setSending(true);
-    await supabase.from('messages').insert([{ chat_id: chatId, sender_id: user.id, content: text, text }]);
-    setSending(false);
-    inputRef.current.value = '';
+    const attempt = canAttemptAction(`worker-chat:${chatId}:${user.id}`, { limit: 8, windowMs: 60_000 });
+    if (!attempt.allowed) {
+      console.warn('Mensaje bloqueado por rate limit local');
+      return;
+    }
+
+    try {
+      setSending(true);
+      const { error } = await supabase
+        .from('messages')
+        .insert([{ chat_id: chatId, sender_id: user.id, content: safety.text, text: safety.text }]);
+
+      if (error) throw error;
+      inputRef.current.value = '';
+    } catch (error) {
+      console.error('No se pudo enviar el mensaje:', error);
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex flex-col min-h-screen bg-white text-gray-900"
+      className="flex h-[100dvh] flex-col overflow-hidden bg-white text-gray-900"
+      style={{ height: viewportHeight }}
     >
       {/* HEADER */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
@@ -124,7 +187,7 @@ export default function ChatPage() {
       </div>
 
       {/* MENSAJES */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+      <div ref={messagesWrapRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
         {messages.map((m) => {
           const mine = m.sender_id === user?.id;
           return (
@@ -161,6 +224,13 @@ export default function ChatPage() {
         <input
           ref={inputRef}
           type="text"
+          onFocus={() => {
+            setTimeout(() => {
+              const wrap = messagesWrapRef.current;
+              if (!wrap) return;
+              wrap.scrollTo({ top: wrap.scrollHeight, behavior: 'auto' });
+            }, 80);
+          }}
           placeholder="Escribí un mensaje…"
           className="flex-1 bg-gray-100 rounded-xl px-3 py-3 outline-none focus:ring-2 focus:ring-emerald-400 border border-gray-200"
         />

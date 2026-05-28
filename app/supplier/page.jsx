@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
 import { requireRole } from '@/lib/roleRedirect';
+import { cleanSecurityText, safeExternalUrl } from '@/lib/security';
 
 const supabase = getSupabase();
 const LAST_GPS_KEY = 'manosya_supplier_feed_gps';
@@ -482,14 +483,22 @@ export default function SupplierPage() {
     setSavingProfile(true);
 
     try {
+      const whatsappUrl = profileForm.whatsapp_url.trim()
+        ? safeExternalUrl(profileForm.whatsapp_url.trim(), { allowedHosts: ['wa.me', 'whatsapp.com'] })
+        : '';
+      if (profileForm.whatsapp_url.trim() && !whatsappUrl) {
+        toast.error('Usá un link seguro de WhatsApp: wa.me o whatsapp.com');
+        return;
+      }
+
       const payload = {
         user_id: me.id,
-        store_name: profileForm.store_name.trim() || profile?.full_name || 'Proveedor ManosYA',
-        bio: profileForm.bio.trim(),
-        avatar_url: profileForm.avatar_url.trim(),
-        cover_url: profileForm.cover_url.trim(),
-        whatsapp_url: profileForm.whatsapp_url.trim(),
-        address_text: profileForm.address_text.trim(),
+        store_name: cleanSecurityText(profileForm.store_name, 90) || profile?.full_name || 'Proveedor ManosYA',
+        bio: cleanSecurityText(profileForm.bio, 700),
+        avatar_url: safeExternalUrl(profileForm.avatar_url.trim(), { httpsOnly: true }) || '',
+        cover_url: safeExternalUrl(profileForm.cover_url.trim(), { httpsOnly: true }) || '',
+        whatsapp_url: whatsappUrl,
+        address_text: cleanSecurityText(profileForm.address_text, 180),
         updated_at: new Date().toISOString(),
       };
 
@@ -524,15 +533,24 @@ export default function SupplierPage() {
     setSaving(true);
     try {
       const supplierName = supplierProfile?.store_name || profileForm.store_name || profile?.full_name || profile?.email || 'Proveedor ManosYA';
+      const contactUrl = productForm.contact_url.trim()
+        ? safeExternalUrl(productForm.contact_url.trim(), { httpsOnly: true })
+        : '';
+      if (productForm.contact_url.trim() && !contactUrl) {
+        toast.error('El link de contacto debe ser seguro y empezar con https://');
+        setSaving(false);
+        return;
+      }
+
       const payload = {
         supplier_id: me.id,
-        supplier_name: supplierName,
-        title: productForm.title.trim(),
-        description: productForm.description.trim(),
-        price_text: productForm.price_text.trim(),
+        supplier_name: cleanSecurityText(supplierName, 90),
+        title: cleanSecurityText(productForm.title, 90),
+        description: cleanSecurityText(productForm.description, 700),
+        price_text: cleanSecurityText(productForm.price_text, 60),
         service_slug: productForm.service_slug,
-        image_url: productForm.image_url.trim(),
-        contact_url: productForm.contact_url.trim(),
+        image_url: safeExternalUrl(productForm.image_url.trim(), { httpsOnly: true }) || '',
+        contact_url: contactUrl,
         is_active: true,
         updated_at: new Date().toISOString(),
       };
@@ -630,7 +648,7 @@ export default function SupplierPage() {
             if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current);
             feedSnapTimerRef.current = setTimeout(() => {
               const snapIndex = Math.max(0, Math.min(workers.length - 1, Math.round(el.scrollTop / cardHeight)));
-              el.scrollTo({ top: snapIndex * cardHeight, behavior: 'smooth' });
+              el.scrollTo({ top: snapIndex * cardHeight, behavior: 'auto' });
             }, 120);
           }}
           style={{
@@ -638,7 +656,7 @@ export default function SupplierPage() {
             overscrollBehaviorY: 'contain',
             WebkitOverflowScrolling: 'touch',
           }}
-          className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain scroll-smooth"
+          className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain"
         >
           {workers.map((worker, index) => (
             <SupplierFeedCard
@@ -853,7 +871,14 @@ export default function SupplierPage() {
                     {contact.contact_url ? (
                       <button
                         type="button"
-                        onClick={() => window.open(contact.contact_url, '_blank', 'noopener,noreferrer')}
+                        onClick={() => {
+                          const contactUrl = safeExternalUrl(contact.contact_url || '', { httpsOnly: true });
+                          if (!contactUrl) {
+                            toast.error('Link de contacto inseguro o inválido');
+                            return;
+                          }
+                          window.open(contactUrl, '_blank', 'noopener,noreferrer');
+                        }}
                         className="rounded-full bg-[#62bfb9] px-4 py-2 text-xs font-black text-white shadow-[0_10px_20px_rgba(98,191,185,0.24)] active:scale-95"
                       >
                         Abrir contacto

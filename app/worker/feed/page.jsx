@@ -32,6 +32,7 @@ import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
 import { requireRole } from '@/lib/roleRedirect';
+import { canAttemptAction, inspectTextSafety, safeExternalUrl, validateMediaFile } from '@/lib/security';
 
 const supabase = getSupabase();
 const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
@@ -1424,11 +1425,13 @@ const [draftTextOverlay, setDraftTextOverlay] = useState('');
 const [draftServiceType, setDraftServiceType] = useState('');
 const [draftMusic, setDraftMusic] = useState(MUSIC_LIBRARY[0]);
 const fileInputRef = useRef(null);
+const draftPreviewUrlRef = useRef('');
   const hasMeCoords = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
 
   useEffect(() => {
     return () => {
       if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current);
+      if (draftPreviewUrlRef.current) URL.revokeObjectURL(draftPreviewUrlRef.current);
     };
   }, []);
 
@@ -2043,6 +2046,19 @@ async function fetchWorkers(serviceFilter = '') {
     if (!product?.id || !me?.id) return;
 
     try {
+      const attempt = canAttemptAction(`worker-supplier-contact:${product.id}:${me.id}`, { limit: 4, windowMs: 60_000 });
+      if (!attempt.allowed) {
+        toast.warning('Ya hiciste varias consultas seguidas. Esperá un momento.');
+        return;
+      }
+
+      const contactUrl = safeExternalUrl(product.contact_url || '', { httpsOnly: true });
+      const messageSafety = inspectTextSafety(
+        `Interes profesional por ${product.title || 'producto'}${worker?.full_name ? ` visto desde ${worker.full_name}` : ''}`,
+        { maxLength: 300 }
+      );
+      if (!messageSafety.ok) throw new Error(messageSafety.error);
+
       const { error } = await supabase.from('supplier_contacts').insert([
         {
           supplier_id: product.supplier_id,
@@ -2050,8 +2066,8 @@ async function fetchWorkers(serviceFilter = '') {
           product_id: product.id,
           source_role: 'worker',
           source_context: worker?.user_id ? 'worker_feed_product_strip' : 'worker_feed',
-          message: `Interes profesional por ${product.title || 'producto'}${worker?.full_name ? ` visto desde ${worker.full_name}` : ''}`,
-          contact_url: product.contact_url || null,
+          message: messageSafety.text,
+          contact_url: contactUrl,
         },
       ]);
 
@@ -2059,8 +2075,8 @@ async function fetchWorkers(serviceFilter = '') {
         throw error;
       }
 
-      if (product.contact_url) {
-        window.open(product.contact_url, '_blank', 'noopener,noreferrer');
+      if (contactUrl) {
+        window.open(contactUrl, '_blank', 'noopener,noreferrer');
         toast.success('Contacto registrado. Te abrimos el canal del proveedor.');
         return;
       }
@@ -2068,8 +2084,9 @@ async function fetchWorkers(serviceFilter = '') {
       toast.success('Consulta enviada al proveedor dentro de ManosYA');
     } catch (error) {
       console.warn('supplier contact worker error:', error);
-      if (product.contact_url) {
-        window.open(product.contact_url, '_blank', 'noopener,noreferrer');
+      const fallbackUrl = safeExternalUrl(product.contact_url || '', { httpsOnly: true });
+      if (fallbackUrl) {
+        window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
         toast.info('Abrimos el contacto del proveedor. Revisamos el registro interno luego.');
         return;
       }
@@ -2107,7 +2124,7 @@ async function fetchWorkers(serviceFilter = '') {
     setTimeout(() => {
       const el = feedRef.current;
       if (!el) return;
-      el.scrollTo({ top: idx * Math.max(1, el.clientHeight), behavior: 'smooth' });
+      el.scrollTo({ top: idx * Math.max(1, el.clientHeight), behavior: 'auto' });
     }, 120);
   }, [feedWorkers, searchParams]);
   function markNotificationsRead() {
@@ -2259,6 +2276,14 @@ async function fetchWorkers(serviceFilter = '') {
       const chosenService = normalizeSlug(splitWorkerServices(target)[0] || target?.service_type || '');
       const serviceLabel = serviceMetaBySlug(chosenService)?.name || serviceLabelForWorker(target);
       const messageText = `Hola ${target.full_name || ''}, necesito consultar por ${String(serviceLabel).toLowerCase()}.`;
+      const messageSafety = inspectTextSafety(messageText, { maxLength: 500 });
+      if (!messageSafety.ok) throw new Error(messageSafety.error);
+
+      const attempt = canAttemptAction(`worker-feed-hire:${workerId}:${me.id}`, { limit: 6, windowMs: 60_000 });
+      if (!attempt.allowed) {
+        toast.warning('Estás intentando contactar muy rápido. Esperá un momento.');
+        return;
+      }
 
       const { data: activeJob, error: activeJobError } = await supabase
         .from('jobs')
@@ -2334,7 +2359,7 @@ async function fetchWorkers(serviceFilter = '') {
         {
           chat_id: nextChatId,
           sender_id: me.id,
-          text: messageText,
+          text: messageSafety.text,
         },
       ]);
 
@@ -2350,6 +2375,15 @@ async function fetchWorkers(serviceFilter = '') {
 
 async function uploadWorkerMedia(file) {
   if (!file || !me?.id) return;
+
+  const fileSafety = validateMediaFile(file, {
+    allowedTypes: ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm'],
+    maxBytes: 250000000,
+  });
+  if (!fileSafety.ok) {
+    toast.error(fileSafety.error);
+    return;
+  }
 
   const isImage = isWorkerImageFile(file);
   const isVideo = isWorkerVideoFile(file);
@@ -2369,8 +2403,15 @@ async function uploadWorkerMedia(file) {
     return;
   }
 
+  if (draftPreviewUrlRef.current) {
+    URL.revokeObjectURL(draftPreviewUrlRef.current);
+    draftPreviewUrlRef.current = '';
+  }
+  const previewUrl = URL.createObjectURL(file);
+  draftPreviewUrlRef.current = previewUrl;
+
   setDraftFile(file);
-  setDraftPreviewUrl(URL.createObjectURL(file));
+  setDraftPreviewUrl(previewUrl);
   setDraftCaption('');
   setDraftTextOverlay('');
   setDraftServiceType('');
@@ -2513,6 +2554,7 @@ async function uploadToWorkerMediaWithProgress(file, path, onProgress) {
     const xhr = new XMLHttpRequest();
 
     xhr.open('POST', url);
+    xhr.timeout = 120000;
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.setRequestHeader('apikey', supabaseAnonKey);
     xhr.setRequestHeader('Content-Type', getWorkerMediaContentType(file));
@@ -2535,6 +2577,8 @@ async function uploadToWorkerMediaWithProgress(file, path, onProgress) {
     };
 
     xhr.onerror = () => reject(new Error('Error de conexiÃ³n al subir el archivo'));
+
+    xhr.ontimeout = () => reject(new Error('La subida tardo demasiado. Proba con mejor conexion o un video mas corto.'));
 
     xhr.send(file);
   });
@@ -2604,6 +2648,10 @@ async function publishWorkerPost() {
     );
 
     setTimeout(() => {
+  if (draftPreviewUrlRef.current) {
+    URL.revokeObjectURL(draftPreviewUrlRef.current);
+    draftPreviewUrlRef.current = '';
+  }
   setCreatePostOpen(false);
   setDraftFile(null);
   setDraftPreviewUrl('');
@@ -2723,7 +2771,7 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
   
   return (
     
-    <div className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-slate-900"><div className="pointer-events-none absolute inset-0 bg-black" /><div className="relative z-10 mx-auto h-[var(--real-vh,100dvh)] w-full max-w-6xl overflow-hidden px-0"><div className="relative h-full"><div className="relative z-10 h-full"><div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white"><div className="flex items-center gap-2"><button type="button" onClick={() => router.push('/worker')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/20 text-white backdrop-blur-xl active:scale-95" aria-label="Volver"><ArrowLeft size={18} /></button><button type="button" onClick={() => { setSelectedService(''); setServiceQuery(''); setFeedMode('all'); setFeedSeed(Date.now() + Math.random()); fetchWorkers(''); }} className="flex shrink-0 items-center text-[18px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">ManosYA</button><div className="relative min-w-0 flex-1 rounded-full border border-white/25 bg-black/18 shadow-[0_10px_24px_rgba(0,0,0,0.20)] backdrop-blur-xl"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={15} /><input value={serviceQuery} onChange={(e) => { const value = e.target.value; setServiceQuery(value); const normalizedValue = normalizeSlug(value); const matchedService = SERVICE_CATALOG.find((service) => { const slug = normalizeSlug(service.slug); const name = normalizeSlug(service.name); return slug.includes(normalizedValue) || name.includes(normalizedValue) || normalizedValue.includes(slug); }); setSelectedService(matchedService ? matchedService.slug : ''); }} placeholder="Buscar nombre, oficio o problema..." className="h-9 w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/60 outline-none" />{serviceQuery && <button type="button" onClick={() => { setServiceQuery(''); setSelectedService(''); }} className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/14 text-white/80 active:scale-95"><X size={14} /></button>}</div></div><div className="mt-2 flex justify-center"><div className="relative inline-flex items-center rounded-full bg-white/20 p-1 shadow-lg backdrop-blur-md"><motion.div layout transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="absolute bottom-1 top-1 w-1/2 rounded-full bg-white" style={{ left: feedMode === 'all' ? '4px' : 'calc(50% + 2px)' }} /><button type="button" onClick={() => { setFeedMode('all'); setSelectedService(''); setServiceQuery(''); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); fetchWorkers(''); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${feedMode === 'all' ? 'text-black' : 'text-white'}`}>Todos</button><button type="button" onClick={() => { setFeedMode('near'); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${feedMode === 'near' ? 'text-black' : 'text-white'}`}>Cerca tuyo</button></div></div></div>{busy ? <div className="flex h-full items-center justify-center bg-[#081924] text-white"><div className="text-center"><div className="text-xl font-black">Cargando trabajadores</div><div className="mt-2 text-sm text-white/70">Estamos ordenando lo mejor para vos.</div></div></div> : !feedWorkers.length ? <div className="flex h-full items-center justify-center bg-[#081924] px-8 text-center text-white"><div><Compass className="mx-auto mb-3 text-white/70" size={34} /><div className="text-xl font-black">No encontramos trabajadores</div><div className="mt-2 text-sm text-white/70">ProbÃ¡ cambiar el filtro o revisar tu zona.</div><button type="button" onClick={() => fetchWorkers('')} className="mt-6 rounded-full bg-[#62bfb9] px-6 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(98,191,185,0.35)]">Actualizar</button></div></div> : <div key={`${feedMode}-${feedSeed}-${selectedService || 'todos'}`} ref={feedRef} onScroll={(e) => { const el = e.currentTarget; const cardHeight = Math.max(1, el.clientHeight); const nextIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); if (nextIndex !== feedIndex && feedWorkers[nextIndex]) { setFeedIndex(nextIndex); setSelected(feedWorkers[nextIndex]); } if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current); feedSnapTimerRef.current = setTimeout(() => { const snapIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); el.scrollTo({ top: snapIndex * cardHeight, behavior: 'smooth' }); }, 120); }} style={{ scrollSnapType: 'y mandatory', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch' }} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain scroll-smooth bg-black">
+    <div className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-slate-900"><div className="pointer-events-none absolute inset-0 bg-black" /><div className="relative z-10 mx-auto h-[var(--real-vh,100dvh)] w-full max-w-6xl overflow-hidden px-0"><div className="relative h-full"><div className="relative z-10 h-full"><div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white"><div className="flex items-center gap-2"><button type="button" onClick={() => router.push('/worker')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/20 text-white backdrop-blur-xl active:scale-95" aria-label="Volver"><ArrowLeft size={18} /></button><button type="button" onClick={() => { setSelectedService(''); setServiceQuery(''); setFeedMode('all'); setFeedSeed(Date.now() + Math.random()); fetchWorkers(''); }} className="flex shrink-0 items-center text-[18px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">ManosYA</button><div className="relative min-w-0 flex-1 rounded-full border border-white/25 bg-black/18 shadow-[0_10px_24px_rgba(0,0,0,0.20)] backdrop-blur-xl"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={15} /><input value={serviceQuery} onChange={(e) => { const value = e.target.value; setServiceQuery(value); const normalizedValue = normalizeSlug(value); const matchedService = SERVICE_CATALOG.find((service) => { const slug = normalizeSlug(service.slug); const name = normalizeSlug(service.name); return slug.includes(normalizedValue) || name.includes(normalizedValue) || normalizedValue.includes(slug); }); setSelectedService(matchedService ? matchedService.slug : ''); }} placeholder="Buscar nombre, oficio o problema..." className="h-9 w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/60 outline-none" />{serviceQuery && <button type="button" onClick={() => { setServiceQuery(''); setSelectedService(''); }} className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/14 text-white/80 active:scale-95"><X size={14} /></button>}</div></div><div className="mt-2 flex justify-center"><div className="relative inline-flex items-center rounded-full bg-white/20 p-1 shadow-lg backdrop-blur-md"><motion.div layout transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="absolute bottom-1 top-1 w-1/2 rounded-full bg-white" style={{ left: feedMode === 'all' ? '4px' : 'calc(50% + 2px)' }} /><button type="button" onClick={() => { setFeedMode('all'); setSelectedService(''); setServiceQuery(''); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); fetchWorkers(''); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${feedMode === 'all' ? 'text-black' : 'text-white'}`}>Todos</button><button type="button" onClick={() => { setFeedMode('near'); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${feedMode === 'near' ? 'text-black' : 'text-white'}`}>Cerca tuyo</button></div></div></div>{busy ? <div className="flex h-full items-center justify-center bg-[#081924] text-white"><div className="text-center"><div className="text-xl font-black">Cargando trabajadores</div><div className="mt-2 text-sm text-white/70">Estamos ordenando lo mejor para vos.</div></div></div> : !feedWorkers.length ? <div className="flex h-full items-center justify-center bg-[#081924] px-8 text-center text-white"><div><Compass className="mx-auto mb-3 text-white/70" size={34} /><div className="text-xl font-black">No encontramos trabajadores</div><div className="mt-2 text-sm text-white/70">ProbÃ¡ cambiar el filtro o revisar tu zona.</div><button type="button" onClick={() => fetchWorkers('')} className="mt-6 rounded-full bg-[#62bfb9] px-6 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(98,191,185,0.35)]">Actualizar</button></div></div> : <div key={`${feedMode}-${feedSeed}-${selectedService || 'todos'}`} ref={feedRef} onScroll={(e) => { const el = e.currentTarget; const cardHeight = Math.max(1, el.clientHeight); const nextIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); if (nextIndex !== feedIndex && feedWorkers[nextIndex]) { setFeedIndex(nextIndex); setSelected(feedWorkers[nextIndex]); } if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current); feedSnapTimerRef.current = setTimeout(() => { const snapIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); el.scrollTo({ top: snapIndex * cardHeight, behavior: 'auto' }); }, 120); }} style={{ scrollSnapType: 'y mandatory', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch' }} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black">
       {feedWorkers.map((worker, index) => (
   <WorkerFeedCard
     key={String(worker.post_id || worker.user_id)}
@@ -2845,6 +2893,10 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
       uploadProgress={uploadProgress}
 uploadLabel={uploadLabel}
       onClose={() => {
+        if (draftPreviewUrlRef.current) {
+          URL.revokeObjectURL(draftPreviewUrlRef.current);
+          draftPreviewUrlRef.current = '';
+        }
         setCreatePostOpen(false);
         setDraftFile(null);
         setDraftPreviewUrl('');

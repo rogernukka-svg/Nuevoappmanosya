@@ -35,6 +35,7 @@ import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
 import { requireRole } from '@/lib/roleRedirect';
+import { canAttemptAction, inspectTextSafety, safeExternalUrl } from '@/lib/security';
 
 const supabase = getSupabase();
 
@@ -2161,6 +2162,19 @@ async function contactSupplierProduct(product, worker = null) {
   if (!product?.id || !me?.id) return;
 
   try {
+    const attempt = canAttemptAction(`supplier-contact:${product.id}:${me.id}`, { limit: 4, windowMs: 60_000 });
+    if (!attempt.allowed) {
+      toast.warning('Ya hiciste varias consultas seguidas. Esperá un momento.');
+      return;
+    }
+
+    const contactUrl = safeExternalUrl(product.contact_url || '', { httpsOnly: true });
+    const messageSafety = inspectTextSafety(
+      `Interes por ${product.title || 'producto'}${worker?.full_name ? ` visto desde ${worker.full_name}` : ''}`,
+      { maxLength: 300 }
+    );
+    if (!messageSafety.ok) throw new Error(messageSafety.error);
+
     const { error } = await supabase.from('supplier_contacts').insert([
       {
         supplier_id: product.supplier_id,
@@ -2168,8 +2182,8 @@ async function contactSupplierProduct(product, worker = null) {
         product_id: product.id,
         source_role: 'client',
         source_context: worker?.user_id ? 'client_feed_worker_strip' : 'client_feed',
-        message: `Interes por ${product.title || 'producto'}${worker?.full_name ? ` visto desde ${worker.full_name}` : ''}`,
-        contact_url: product.contact_url || null,
+        message: messageSafety.text,
+        contact_url: contactUrl,
       },
     ]);
 
@@ -2177,8 +2191,8 @@ async function contactSupplierProduct(product, worker = null) {
       throw error;
     }
 
-    if (product.contact_url) {
-      window.open(product.contact_url, '_blank', 'noopener,noreferrer');
+    if (contactUrl) {
+      window.open(contactUrl, '_blank', 'noopener,noreferrer');
       toast.success('Contacto registrado. Te abrimos el canal del proveedor.');
       return;
     }
@@ -2186,8 +2200,9 @@ async function contactSupplierProduct(product, worker = null) {
     toast.success('Consulta enviada al proveedor dentro de ManosYA');
   } catch (error) {
     console.warn('supplier contact error:', error);
-    if (product.contact_url) {
-      window.open(product.contact_url, '_blank', 'noopener,noreferrer');
+    const fallbackUrl = safeExternalUrl(product.contact_url || '', { httpsOnly: true });
+    if (fallbackUrl) {
+      window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
       toast.info('Abrimos el contacto del proveedor. Revisamos el registro interno luego.');
       return;
     }
@@ -2220,7 +2235,7 @@ const nearbyWorkers = useMemo(() => {
     setTimeout(() => {
       const el = feedRef.current;
       if (!el) return;
-      el.scrollTo({ top: idx * Math.max(1, el.clientHeight), behavior: 'smooth' });
+      el.scrollTo({ top: idx * Math.max(1, el.clientHeight), behavior: 'auto' });
     }, 120);
   }, [feedWorkers, searchParams]);
 
@@ -2559,6 +2574,14 @@ async function openMessage(worker, presetMessage = '') {
     const messageText =
       presetMessage?.trim() ||
       `Hola ${target.full_name || ''}, ¿estás disponible para ${String(serviceLabel).toLowerCase()}?`;
+    const messageSafety = inspectTextSafety(messageText, { maxLength: 500 });
+    if (!messageSafety.ok) throw new Error(messageSafety.error);
+
+    const attempt = canAttemptAction(`client-open-message:${workerId}:${me.id}`, { limit: 6, windowMs: 60_000 });
+    if (!attempt.allowed) {
+      toast.warning('Estás intentando contactar muy rápido. Esperá un momento.');
+      return;
+    }
 
     const { data: activeJob, error: activeJobError } = await supabase
       .from('jobs')
@@ -2632,7 +2655,7 @@ async function openMessage(worker, presetMessage = '') {
       {
         chat_id: nextChatId,
         sender_id: me.id,
-        text: messageText,
+        text: messageSafety.text,
       },
     ]);
 
@@ -2965,7 +2988,7 @@ async function cancelActiveJob() {
     if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current);
     feedSnapTimerRef.current = setTimeout(() => {
       const snapIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight)));
-      el.scrollTo({ top: snapIndex * cardHeight, behavior: 'smooth' });
+      el.scrollTo({ top: snapIndex * cardHeight, behavior: 'auto' });
     }, 120);
   }}
   style={{
@@ -2973,7 +2996,7 @@ async function cancelActiveJob() {
     overscrollBehaviorY: 'contain',
     WebkitOverflowScrolling: 'touch',
   }}
-  className="h-full overflow-y-auto overscroll-y-contain snap-y snap-mandatory scroll-smooth"
+  className="h-full overflow-y-auto overscroll-y-contain snap-y snap-mandatory"
 >
   {feedWorkers.map((worker, idx) => (
   <div

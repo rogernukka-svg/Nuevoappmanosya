@@ -16,6 +16,7 @@ import {
 import { useRouter, useParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import { canAttemptAction, inspectTextSafety, safeExternalUrl } from '@/lib/security';
 
 const supabase = getSupabase();
 
@@ -317,8 +318,17 @@ if (alive) {
 async function sendMessage(e) {
   e.preventDefault();
 
-  const text = input.trim();
-  if (!text || !user?.id || !chatId) return;
+  const safety = inspectTextSafety(input);
+  if (!safety.ok || !user?.id || !chatId) {
+    if (safety.error) toast.error(safety.error);
+    return;
+  }
+
+  const attempt = canAttemptAction(`client-chat:${chatId}:${user.id}`, { limit: 8, windowMs: 60_000 });
+  if (!attempt.allowed) {
+    toast.warning('Estás enviando muy rápido. Esperá unos segundos.');
+    return;
+  }
 
   try {
     setSending(true);
@@ -329,7 +339,7 @@ async function sendMessage(e) {
         {
           chat_id: chatId,
           sender_id: user.id,
-          text,
+          text: safety.text,
         },
       ])
       .select()
@@ -425,10 +435,13 @@ function openSharedLocationFromChat() {
     return;
   }
 
-  window.open(
+  const mapUrl = safeExternalUrl(
     `https://www.google.com/maps/search/?api=1&query=${Number(lat)},${Number(lng)}`,
-    '_blank'
+    { allowedHosts: ['google.com'] }
   );
+  if (!mapUrl) return;
+
+  window.open(mapUrl, '_blank', 'noopener,noreferrer');
 }
 async function requestWorkerFromChat(customText = '') {
   if (!user?.id || !chatMeta?.worker_id || !chatId) return;
@@ -478,12 +491,14 @@ async function requestWorkerFromChat(customText = '') {
     const finalText =
       customText ||
       `Hola, quiero solicitar tu servicio de ${String(serviceLabel).toLowerCase()}.`;
+    const requestSafety = inspectTextSafety(finalText, { maxLength: 500 });
+    if (!requestSafety.ok) throw new Error(requestSafety.error);
 
     await supabase.from('messages').insert([
       {
         chat_id: chatId,
         sender_id: user.id,
-        text: finalText,
+        text: requestSafety.text,
       },
     ]);
 

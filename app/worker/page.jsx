@@ -31,6 +31,7 @@ import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
 import { requireRole } from '@/lib/roleRedirect';
+import { canAttemptAction, inspectTextSafety, safeExternalUrl } from '@/lib/security';
 
 /* === Leaflet Map === */
 import dynamic from 'next/dynamic';
@@ -618,6 +619,8 @@ export default function WorkerPage() {
   const [workerSelfProfile, setWorkerSelfProfile] = useState(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [chatViewportHeight, setChatViewportHeight] = useState('100dvh');
+  const [chatKeyboardOffset, setChatKeyboardOffset] = useState(0);
    const [isActive, setIsActive] = useState(true);
   const [hasUnread, setHasUnread] = useState(false);
 const [unreadCount, setUnreadCount] = useState(0);
@@ -633,10 +636,21 @@ const [workerTab, setWorkerTab] = useState('jobs');
 const inputRef = useRef(null);
 const chatChannelRef = useRef(null);
 const bottomRef = useRef(null);
+const chatMessagesRef = useRef(null);
 const soundRef = useRef(null);
 const typingTimeoutRef = useRef(null);
 const workerChatIdsRef = useRef(new Set());
 const openedChatParamRef = useRef(null);
+
+function scrollWorkerChatToBottom(behavior = chatKeyboardOffset > 40 ? 'auto' : 'smooth') {
+  const wrap = chatMessagesRef.current;
+  if (wrap) {
+    wrap.scrollTo({ top: wrap.scrollHeight, behavior });
+    return;
+  }
+
+  bottomRef.current?.scrollIntoView({ behavior });
+}
 
   const [status, setStatus] = useState(() => {
     if (typeof window === 'undefined') return 'available';
@@ -646,6 +660,37 @@ const openedChatParamRef = useRef(null);
   const [isConnected, setIsConnected] = useState(true);
 
   const meta = workerModeMeta(status);
+
+  useEffect(() => {
+    if (!isChatOpen) {
+      setChatViewportHeight('100dvh');
+      setChatKeyboardOffset(0);
+      return undefined;
+    }
+
+    if (typeof window === 'undefined' || !window.visualViewport) return undefined;
+
+    const updateViewport = () => {
+      const viewport = window.visualViewport;
+      setChatViewportHeight(`${viewport.height}px`);
+      setChatKeyboardOffset(Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop));
+    };
+
+    updateViewport();
+    window.visualViewport.addEventListener('resize', updateViewport);
+    window.visualViewport.addEventListener('scroll', updateViewport);
+
+    return () => {
+      window.visualViewport.removeEventListener('resize', updateViewport);
+      window.visualViewport.removeEventListener('scroll', updateViewport);
+    };
+  }, [isChatOpen]);
+
+  useEffect(() => {
+    if (!isChatOpen) return;
+    scrollWorkerChatToBottom(chatKeyboardOffset > 40 ? 'auto' : 'smooth');
+  }, [messages.length, chatKeyboardOffset, isChatOpen]);
+
   useEffect(() => {
   if (!selectedJob?.client_id) return;
 
@@ -767,10 +812,13 @@ function openExternalNavigation(lat, lng) {
     return;
   }
 
-  window.open(
+  const mapUrl = safeExternalUrl(
     `https://www.google.com/maps/dir/?api=1&destination=${la},${lo}&travelmode=driving`,
-    '_blank'
+    { allowedHosts: ['google.com'] }
   );
+  if (!mapUrl) return;
+
+  window.open(mapUrl, '_blank', 'noopener,noreferrer');
 }
 const stats = useMemo(() => {
   const total = jobs.length;
@@ -1831,8 +1879,8 @@ setWorkerUnreadByJob((prev) => {
           }
 
           setTimeout(() => {
-            bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-          }, 200);
+            scrollWorkerChatToBottom();
+          }, 80);
         }
       )
       .on('broadcast', { event: 'typing' }, (payload) => {
@@ -1914,8 +1962,11 @@ useEffect(() => {
 
 /* === SEND MESSAGE === */
 async function sendMessage() {
-  const text = inputRef.current?.value?.trim();
-  if (!text) return;
+  const safety = inspectTextSafety(inputRef.current?.value || '');
+  if (!safety.ok) {
+    toast.error(safety.error);
+    return;
+  }
 
   if (!selectedJob?.chat_id) {
     toast.error('No hay chat activo');
@@ -1928,11 +1979,17 @@ async function sendMessage() {
   }
 
   try {
+    const attempt = canAttemptAction(`worker-panel-chat:${selectedJob.chat_id}:${user.id}`, { limit: 8, windowMs: 60_000 });
+    if (!attempt.allowed) {
+      toast.warning('Estás enviando muy rápido. Esperá unos segundos.');
+      return;
+    }
+
     setSending(true);
 
     const { data, error } = await supabase
       .from('messages')
-      .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, text }])
+      .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, text: safety.text, content: safety.text }])
       .select();
 
     if (error) throw error;
@@ -1943,7 +2000,7 @@ async function sendMessage() {
     });
 
     inputRef.current.value = '';
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 200);
+    setTimeout(() => scrollWorkerChatToBottom(), 80);
   } catch (err) {
     console.error('❌ Error enviando mensaje:', err);
     toast.error('No se pudo enviar el mensaje');
@@ -2331,7 +2388,10 @@ const unreadMessages =
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[90] overflow-hidden bg-[#63c0ba] text-[#123437]"
     >
-      <div className="mx-auto flex h-[100dvh] max-w-3xl flex-col bg-[#63c0ba]">
+      <div
+        className="mx-auto flex max-w-3xl flex-col bg-[#63c0ba]"
+        style={{ height: chatViewportHeight }}
+      >
         <header className="z-20 border-b border-white/35 bg-[#63c0ba]/95 px-3 py-2 shadow-[0_10px_28px_rgba(18,52,55,0.10)] backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <button
@@ -2396,7 +2456,7 @@ const unreadMessages =
           )}
         </header>
 
-        <main className="relative flex-1 overflow-y-auto px-3 py-4">
+        <main ref={chatMessagesRef} className="relative min-h-0 flex-1 overflow-y-auto px-3 py-4">
           <ChatServicePattern />
 
           <div className="relative z-10">
@@ -2580,6 +2640,7 @@ const unreadMessages =
   <div className="flex min-h-[48px] flex-1 items-center rounded-[24px] bg-white/38 px-4 shadow-[0_10px_28px_rgba(18,52,55,0.10)] backdrop-blur-md">
     <input
       ref={inputRef}
+      onFocus={() => setTimeout(() => scrollWorkerChatToBottom('auto'), 120)}
       placeholder="Escribí un mensaje"
       className="h-12 flex-1 bg-transparent text-[15px] font-bold text-[#123437] outline-none placeholder:text-[#1e4e53]/55"
     />

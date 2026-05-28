@@ -13,6 +13,7 @@ Se aplico un primer hardening seguro:
 Segunda ronda aplicada:
 - `app/client/profile/page.jsx`: timeouts en subida de foto, update de auth, update de profile y logout; proteccion contra doble guardado; limpieza de previews `blob:` para evitar memoria retenida en iOS.
 - `app/client/chat/[id]/page.jsx`: ajuste con `visualViewport` para teclado en iOS/Android y scroll automatico sin animacion cuando el teclado esta abierto.
+- `app/chat/[chatId]/page.jsx` y `app/job/[id]/chat/page.jsx`: chats legacy endurecidos con `visualViewport`, scroll estable y dedupe de mensajes realtime.
 - `app/worker/route/[jobId]/page.jsx` y `app/worker-route/page.jsx`: rutas pasan por `/api/ors/route`, se reduce frecuencia de recalculo a 15s, se evita trabajo en pestana oculta y se suaviza GPS.
 - GPS suavizado en cliente/trabajador/feed/onboarding/nearby para usar `maximumAge`, timeout y menor consumo de bateria por defecto.
 - `lib/realtimeCore.js`: eventos de jobs ahora incluyen `__source`, worker profile se filtra por usuario, se baja ruido de ping/reconexion y no reconecta mientras la pestana esta oculta.
@@ -138,7 +139,7 @@ Correccion recomendada:
 - Mantener solo un componente de chat oficial.
 - Agregar `padding-bottom` dinamico por `visualViewport`.
 
-Estado: mitigado en `app/client/chat/[id]/page.jsx`. Pendiente replicar en chats legacy: `app/chat/[chatId]/page.jsx`, `app/job/[id]/chat/page.jsx` y chat modal de trabajador.
+Estado: mitigado en `app/client/chat/[id]/page.jsx`, `app/chat/[chatId]/page.jsx` y `app/job/[id]/chat/page.jsx`. Pendiente revisar en dispositivo real el chat modal de trabajador.
 
 ### 5. Video/feed: el riesgo principal es memoria, autoplay y red lenta
 

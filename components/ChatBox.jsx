@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { SendHorizontal } from 'lucide-react';
 import { getSupabase } from '@/lib/supabase';
+import { canAttemptAction, inspectTextSafety } from '@/lib/security';
 
 const supabase = getSupabase();
 
@@ -13,7 +14,9 @@ function messageText(message) {
 export default function ChatBox({ chatId, user }) {
   const [messages, setMessages] = useState([]);
   const [newMsg, setNewMsg] = useState('');
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const endRef = useRef(null);
+  const messagesWrapRef = useRef(null);
 
   useEffect(() => {
     if (!chatId) return;
@@ -70,21 +73,62 @@ export default function ChatBox({ chatId, user }) {
   }, [chatId]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (typeof window === 'undefined') return;
+
+    const syncViewport = () => {
+      const visualViewport = window.visualViewport;
+      const height = Math.round(visualViewport?.height || window.innerHeight);
+      const offset = Math.max(
+        0,
+        Math.round(window.innerHeight - height - (visualViewport?.offsetTop || 0))
+      );
+
+      setKeyboardOffset(offset);
+    };
+
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('scroll', syncViewport);
+
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('scroll', syncViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    const wrap = messagesWrapRef.current;
+    if (!wrap) return;
+
+    wrap.scrollTo({
+      top: wrap.scrollHeight,
+      behavior: keyboardOffset > 40 ? 'auto' : 'smooth',
+    });
+  }, [messages, keyboardOffset]);
 
   async function sendMessage(event) {
     event.preventDefault();
 
-    const text = newMsg.trim();
-    if (!text || !user?.id || !chatId) return;
+    const safety = inspectTextSafety(newMsg);
+    if (!safety.ok || !user?.id || !chatId) {
+      if (safety.error) alert(safety.error);
+      return;
+    }
+
+    const attempt = canAttemptAction(`chat:${chatId}:${user.id}`, { limit: 8, windowMs: 60_000 });
+    if (!attempt.allowed) {
+      alert('Estás enviando muy rápido. Esperá unos segundos.');
+      return;
+    }
 
     const { error } = await supabase.from('messages').insert([
       {
         chat_id: chatId,
         sender_id: user.id,
-        text,
-        content: text,
+        text: safety.text,
+        content: safety.text,
       },
     ]);
 
@@ -99,7 +143,7 @@ export default function ChatBox({ chatId, user }) {
 
   return (
     <div className="flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-md">
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div ref={messagesWrapRef} className="flex-1 space-y-3 overflow-y-auto p-4">
         {messages.map((message) => {
           const mine = message.sender_id === user?.id;
 
@@ -129,6 +173,13 @@ export default function ChatBox({ chatId, user }) {
           className="flex-1 rounded-xl border border-gray-300 px-3 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           value={newMsg}
           onChange={(event) => setNewMsg(event.target.value)}
+          onFocus={() => {
+            setTimeout(() => {
+              const wrap = messagesWrapRef.current;
+              if (!wrap) return;
+              wrap.scrollTo({ top: wrap.scrollHeight, behavior: 'auto' });
+            }, 80);
+          }}
         />
         <button
           type="submit"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -854,6 +854,9 @@ function buildOperationalSnapshot({
    PAGE
 ========================= */
 export default function AdminAnalyticsPage() {
+  const fetchingAllRef = useRef(false);
+  const queuedFetchAllRef = useRef(false);
+
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState(30);
   const [activeTab, setActiveTab] = useState('overview');
@@ -1079,6 +1082,13 @@ export default function AdminAnalyticsPage() {
   }, [range, hasAccess]);
 
   async function fetchAll() {
+    if (fetchingAllRef.current) {
+      queuedFetchAllRef.current = true;
+      return;
+    }
+
+    fetchingAllRef.current = true;
+
     try {
       setLoading(true);
 
@@ -1348,7 +1358,13 @@ export default function AdminAnalyticsPage() {
       console.error(err);
       toast.error('Error cargando analítica avanzada');
     } finally {
+      fetchingAllRef.current = false;
       setLoading(false);
+
+      if (queuedFetchAllRef.current) {
+        queuedFetchAllRef.current = false;
+        setTimeout(() => fetchAll(), 80);
+      }
     }
   }
 

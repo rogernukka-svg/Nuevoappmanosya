@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
+import { validateMediaFile } from '@/lib/security';
 
 const supabase = getSupabase();
 const PROFILE_OP_TIMEOUT_MS = 25000;
@@ -125,6 +126,15 @@ export default function ClientProfilePage() {
   }
 
   function validateImage(file) {
+    const safety = validateMediaFile(file, {
+      allowedTypes: ['image/jpeg', 'image/png', 'image/webp'],
+      maxBytes: 5 * 1024 * 1024,
+    });
+    if (!safety.ok) {
+      toast.error(safety.error || 'Usá una imagen JPG, PNG o WEBP');
+      return false;
+    }
+
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
     if (!allowedTypes.includes(file.type)) {

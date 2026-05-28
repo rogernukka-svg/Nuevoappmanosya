@@ -34,11 +34,11 @@ export default function Nav() {
         // 🔹 Revisar rol admin
         const { data: p } = await supabase
           .from('profiles')
-          .select('role')
+          .select('role, admin_role')
           .eq('id', u.id)
           .maybeSingle();
 
-        setIsAdmin(p?.role === 'admin' || u?.email === 'isaacminho6@gmail.com');
+        setIsAdmin(p?.role === 'admin' || ['admin', 'superadmin'].includes(p?.admin_role || ''));
       } else {
         setIsWorker(false);
         setIsAdmin(false);

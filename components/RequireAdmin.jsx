@@ -11,10 +11,10 @@ export default function RequireAdmin({ children }) {
       if (!uid) return setOk(false);
       const { data: p } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, admin_role')
         .eq('id', uid)
         .maybeSingle();
-      setOk(p?.role === 'admin');
+      setOk(p?.role === 'admin' || ['admin', 'superadmin'].includes(p?.admin_role || ''));
     })();
   }, []);
   if (ok === null) return <div className="container"><div className="card p-5 mt-6">Cargando…</div></div>;

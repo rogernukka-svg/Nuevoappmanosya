@@ -6,6 +6,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
 import { supabase } from '@/lib/supabase';
+import { canAttemptAction, inspectTextSafety } from '@/lib/security';
 
 const STATUS_LABEL = {
   open: 'Publicado',
@@ -387,15 +388,23 @@ function ChatBox({ jobId, canChat }) {
   async function sendMsg(e) {
     e.preventDefault();
     setErr(null);
-    const body = draft.trim();
-    if (!body) return;
+    const safety = inspectTextSafety(draft);
+    if (!safety.ok) {
+      setErr(safety.error);
+      return;
+    }
     try {
       const { data: u } = await supabase.auth.getUser();
       const uid = u?.user?.id;
+      const attempt = canAttemptAction(`job-page-chat:${jobId}:${uid || 'anon'}`, { limit: 8, windowMs: 60_000 });
+      if (!attempt.allowed) {
+        setErr('Estás enviando muy rápido. Esperá unos segundos.');
+        return;
+      }
       const { error } = await supabase.from('messages').insert({
         job_id: jobId,
         sender_id: uid,
-        body
+        body: safety.text
       });
       if (error) throw error;
       setDraft('');

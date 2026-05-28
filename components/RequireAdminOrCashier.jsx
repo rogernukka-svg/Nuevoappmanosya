@@ -8,8 +8,12 @@ export default function RequireAdminOrCashier({ children }) {
     async function check() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.href = '/auth/login'; return; }
-      const { data: p } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
-      if (p?.role === 'admin' || p?.role === 'cashier') setOk(true);
+      const { data: p } = await supabase.from('profiles').select('role, admin_role').eq('id', user.id).maybeSingle();
+      if (
+        p?.role === 'admin' ||
+        p?.role === 'cashier' ||
+        ['admin', 'superadmin', 'cashier'].includes(p?.admin_role || '')
+      ) setOk(true);
       else window.location.href = '/';
     }
     check();

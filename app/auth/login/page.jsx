@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getSupabase } from '@/lib/supabase';
 import { redirectToRole } from '@/lib/roleRedirect';
+import { validateMediaFile } from '@/lib/security';
 import { toast } from 'sonner';
 
 const supabase = getSupabase();
@@ -1395,6 +1396,15 @@ const [cameraReady, setCameraReady] = useState(false);
 
   async function uploadAvatar(userId) {
     if (!photoFile) return null;
+
+    const safety = validateMediaFile(photoFile, {
+      allowedTypes: ['image/jpeg', 'image/png', 'image/webp'],
+      maxBytes: 5 * 1024 * 1024,
+    });
+    if (!safety.ok) {
+      toast.error(safety.error || 'La foto no es válida');
+      return null;
+    }
 
     const ext = photoFile.name.split('.').pop() || 'jpg';
     const path = `avatars/${userId}-${Date.now()}.${ext}`;

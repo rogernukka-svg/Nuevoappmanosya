@@ -7,6 +7,7 @@ import { getSupabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Rocket } from 'lucide-react';
 import { requireRole } from '@/lib/roleRedirect';
+import { canAttemptAction, inspectTextSafety } from '@/lib/security';
 
 const supabase = getSupabase();
 
@@ -43,9 +44,13 @@ function ChatBox({ chatId, userId }) {
 
   async function sendMessage(e) {
     e.preventDefault();
-    const cleanText = text.trim();
-    if (!cleanText) return;
-    await supabase.from('messages').insert([{ chat_id: chatId, sender_id: userId, text: cleanText, content: cleanText }]);
+    const safety = inspectTextSafety(text);
+    if (!safety.ok) return;
+
+    const attempt = canAttemptAction(`worker-jobs-chat:${chatId}:${userId}`, { limit: 8, windowMs: 60_000 });
+    if (!attempt.allowed) return;
+
+    await supabase.from('messages').insert([{ chat_id: chatId, sender_id: userId, text: safety.text, content: safety.text }]);
     setText('');
   }
 
