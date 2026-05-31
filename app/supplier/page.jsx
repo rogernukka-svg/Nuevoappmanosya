@@ -16,6 +16,7 @@ import {
   Sparkles,
   Store,
   Trash2,
+  UploadCloud,
   X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -118,20 +119,13 @@ function SupplierFeedCard({ worker, isActive, onPublishForService, onOpenWorker 
           {worker?.post_description || worker?.caption || worker?.bio || 'Trabajo activo dentro de ManosYA.'}
         </p>
 
-        <div className="mt-3 flex items-center gap-2">
+                <div className="mt-3">
           <button
             type="button"
             onClick={() => onPublishForService(serviceSlug)}
-            className="min-w-0 flex-1 rounded-full bg-[#62bfb9] px-4 py-3 text-[13px] font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.30)] active:scale-[0.98]"
+            className="w-full rounded-full bg-[#62bfb9] px-4 py-3 text-[13px] font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.30)] active:scale-[0.98]"
           >
             Publicar insumo
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenWorker(worker)}
-            className="flex h-11 min-w-[64px] items-center justify-center rounded-full border border-white/20 bg-white/12 px-4 text-[13px] font-black text-white backdrop-blur-md active:scale-[0.98]"
-          >
-            Ver
           </button>
         </div>
       </div>
@@ -192,12 +186,14 @@ export default function SupplierPage() {
     whatsapp_url: '',
     address_text: '',
   });
-  const [productForm, setProductForm] = useState({
+    const [productForm, setProductForm] = useState({
     title: '',
     description: '',
     price_text: '',
     service_slug: 'plomeria',
     image_url: '',
+    media_type: 'image',
+    need_keywords: '',
     contact_url: '',
   });
 
@@ -471,10 +467,56 @@ export default function SupplierPage() {
       setBusy(false);
     }
   }
-
   function openProductForService(serviceSlug) {
-    setProductForm((prev) => ({ ...prev, service_slug: serviceSlug || 'servicio-general' }));
+    setProductForm((prev) => ({
+      ...prev,
+      service_slug: serviceSlug || 'servicio-general',
+    }));
     setSheet('product');
+  }
+    async function uploadSupplierMedia(file, folder, onDone) {
+    if (!file || !me?.id) return;
+
+    try {
+      const isVideo = file.type.startsWith('video/');
+      const isImage = file.type.startsWith('image/');
+
+      if (!isVideo && !isImage) {
+        toast.error('Subí una foto o video válido');
+        return;
+      }
+
+      const maxSize = isVideo ? 80 * 1024 * 1024 : 8 * 1024 * 1024;
+
+      if (file.size > maxSize) {
+        toast.error(isVideo ? 'Video muy pesado. Máximo 80MB.' : 'Foto muy pesada. Máximo 8MB.');
+        return;
+      }
+
+      const ext = file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
+      const path = `${folder}/${me.id}-${Date.now()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('supplier-media')
+        .upload(path, file, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: file.type,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('supplier-media').getPublicUrl(path);
+      const publicUrl = data?.publicUrl || '';
+
+      if (!publicUrl) throw new Error('No se pudo generar la URL pública');
+
+      onDone(publicUrl, isVideo ? 'video' : 'image');
+      toast.success(isVideo ? 'Video subido' : 'Foto subida');
+    } catch (error) {
+      console.error(error);
+      toast.error('No pudimos subir el archivo');
+    }
   }
 
   async function saveSupplierProfile(event) {
@@ -522,34 +564,58 @@ export default function SupplierPage() {
     }
   }
 
-  async function saveProduct(event) {
+   async function saveProduct(event) {
     event.preventDefault();
     if (!me?.id || saving) return;
+
     if (!productForm.title.trim()) {
-      toast.error('Pone el nombre del producto');
+      toast.error('Poné el nombre del producto');
+      return;
+    }
+
+    if (!productForm.image_url.trim()) {
+      toast.error('Subí una foto o video del producto');
       return;
     }
 
     setSaving(true);
+
     try {
-      const supplierName = supplierProfile?.store_name || profileForm.store_name || profile?.full_name || profile?.email || 'Proveedor ManosYA';
+      const supplierName =
+        supplierProfile?.store_name ||
+        profileForm.store_name ||
+        profile?.full_name ||
+        profile?.email ||
+        'Proveedor ManosYA';
+
       const contactUrl = productForm.contact_url.trim()
         ? safeExternalUrl(productForm.contact_url.trim(), { httpsOnly: true })
         : '';
+
       if (productForm.contact_url.trim() && !contactUrl) {
-        toast.error('El link de contacto debe ser seguro y empezar con https://');
+        toast.error('El link externo debe empezar con https://');
         setSaving(false);
         return;
       }
+
+      const smartDescription = [
+        cleanSecurityText(productForm.description, 600),
+        productForm.need_keywords.trim()
+          ? `Necesidades relacionadas: ${cleanSecurityText(productForm.need_keywords, 220)}`
+          : '',
+        `Rubro ManosYA: ${serviceName(productForm.service_slug)}`,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
 
       const payload = {
         supplier_id: me.id,
         supplier_name: cleanSecurityText(supplierName, 90),
         title: cleanSecurityText(productForm.title, 90),
-        description: cleanSecurityText(productForm.description, 700),
+        description: smartDescription,
         price_text: cleanSecurityText(productForm.price_text, 60),
         service_slug: productForm.service_slug,
-        image_url: safeExternalUrl(productForm.image_url.trim(), { httpsOnly: true }) || '',
+        image_url: productForm.image_url,
         contact_url: contactUrl,
         is_active: true,
         updated_at: new Date().toISOString(),
@@ -558,8 +624,19 @@ export default function SupplierPage() {
       const { error } = await supabase.from('supplier_products').insert([payload]);
       if (error) throw error;
 
-      toast.success('Producto publicado');
-      setProductForm((prev) => ({ ...prev, title: '', description: '', price_text: '', image_url: '' }));
+      toast.success('Producto publicado en la necesidad correcta');
+
+      setProductForm({
+        title: '',
+        description: '',
+        price_text: '',
+        service_slug: 'plomeria',
+        image_url: '',
+        media_type: 'image',
+        need_keywords: '',
+        contact_url: '',
+      });
+
       await loadProducts();
       setSheet(null);
     } catch (error) {
@@ -706,12 +783,32 @@ export default function SupplierPage() {
           <Field label="Nombre comercial">
             <input value={profileForm.store_name} onChange={(e) => setProfileForm((prev) => ({ ...prev, store_name: e.target.value }))} placeholder="Ferreteria San Jose" className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
-          <Field label="Foto / logo URL">
-            <input value={profileForm.avatar_url} onChange={(e) => setProfileForm((prev) => ({ ...prev, avatar_url: e.target.value }))} placeholder="https://..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
+                   <Field label="Logo o foto de la tienda">
+           <MediaUploader
+              value={profileForm.avatar_url}
+              label="Subir logo"
+              hint="Foto cuadrada, clara y profesional."
+              onFile={(file) =>
+                uploadSupplierMedia(file, 'logos', (url) =>
+                  setProfileForm((prev) => ({ ...prev, avatar_url: url }))
+                )
+              }
+            />
           </Field>
-          <Field label="Portada URL">
-            <input value={profileForm.cover_url} onChange={(e) => setProfileForm((prev) => ({ ...prev, cover_url: e.target.value }))} placeholder="https://..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
-          </Field>
+
+          <Field label="Portada de tienda">
+  <MediaUploader
+    value={profileForm.cover_url}
+    label="Subir portada"
+    hint="Mostrá tu local, productos o depósito."
+    wide
+    onFile={(file) =>
+      uploadSupplierMedia(file, 'covers', (url) =>
+        setProfileForm((prev) => ({ ...prev, cover_url: url }))
+      )
+    }
+  />
+</Field>
           <Field label="Respaldo externo opcional">
             <input value={profileForm.whatsapp_url} onChange={(e) => setProfileForm((prev) => ({ ...prev, whatsapp_url: e.target.value }))} placeholder="Link opcional, ej: https://wa.me/595..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
@@ -728,44 +825,82 @@ export default function SupplierPage() {
         </form>
       </SupplierSheet>
 
-      <SupplierSheet title="Publicar producto" open={sheet === 'product'} onClose={() => setSheet(null)}>
+                  <SupplierSheet title="Nuevo producto" open={sheet === 'product'} onClose={() => setSheet(null)}>
         <form onSubmit={saveProduct} className="space-y-4">
-          <div className="rounded-[26px] border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#62bfb9] text-white">
-                <MessageSquareText size={20} />
-              </div>
-              <div>
-                <div className="text-[15px] font-black text-slate-950">Publica para recibir pedidos dentro de ManosYA</div>
-                <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
-                  El cliente ve tu producto en la app y te consulta desde ManosYA. El link externo es opcional.
-                </p>
-              </div>
-            </div>
-          </div>
-          <Field label="Producto">
-            <input value={productForm.title} onChange={(e) => setProductForm((prev) => ({ ...prev, title: e.target.value }))} placeholder="Cano PVC 40mm, canilla monocomando..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
+          <MediaUploader
+            value={productForm.image_url}
+            mediaType={productForm.media_type}
+            label="Subir foto o video"
+            wide
+            onFile={(file) =>
+              uploadSupplierMedia(file, 'products', (url, mediaType) =>
+                setProductForm((prev) => ({
+                  ...prev,
+                  image_url: url,
+                  media_type: mediaType,
+                }))
+              )
+            }
+          />
+
+          <Field label="Nombre del producto">
+            <input
+              value={productForm.title}
+              onChange={(e) => setProductForm((prev) => ({ ...prev, title: e.target.value }))}
+              placeholder="Ej: Cable, canilla, cemento"
+              className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]"
+            />
           </Field>
-          <Field label="Oficio donde aparece">
-            <select value={productForm.service_slug} onChange={(e) => setProductForm((prev) => ({ ...prev, service_slug: e.target.value }))} className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]">
-              {SERVICES.map((service) => <option key={service.slug} value={service.slug}>{service.name} - {service.hint}</option>)}
+
+          <Field label="Rubro">
+            <select
+              value={productForm.service_slug}
+              onChange={(e) => setProductForm((prev) => ({ ...prev, service_slug: e.target.value }))}
+              className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]"
+            >
+              {SERVICES.map((service) => (
+                <option key={service.slug} value={service.slug}>
+                  {service.name}
+                </option>
+              ))}
             </select>
           </Field>
-          <Field label="Precio o promo">
-            <input value={productForm.price_text} onChange={(e) => setProductForm((prev) => ({ ...prev, price_text: e.target.value }))} placeholder="Gs. 25.000 / desde Gs. 90.000" className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
+
+          <Field label="Precio">
+            <input
+              value={productForm.price_text}
+              onChange={(e) => setProductForm((prev) => ({ ...prev, price_text: e.target.value }))}
+              placeholder="Ej: Gs. 25.000"
+              className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]"
+            />
           </Field>
-          <Field label="Imagen URL">
-            <input value={productForm.image_url} onChange={(e) => setProductForm((prev) => ({ ...prev, image_url: e.target.value }))} placeholder="https://..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
+
+          <Field label="Palabras clave">
+            <input
+              value={productForm.need_keywords}
+              onChange={(e) => setProductForm((prev) => ({ ...prev, need_keywords: e.target.value }))}
+              placeholder="Ej: aire, cable, foco, caño"
+              className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]"
+            />
           </Field>
-          <Field label="Link externo opcional">
-            <input value={productForm.contact_url} onChange={(e) => setProductForm((prev) => ({ ...prev, contact_url: e.target.value }))} placeholder="Opcional. Si lo dejas vacio, se prioriza ManosYA." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
+
+          <Field label="Descripción">
+            <textarea
+              value={productForm.description}
+              onChange={(e) => setProductForm((prev) => ({ ...prev, description: e.target.value }))}
+              rows={3}
+              placeholder="Detalle corto del producto"
+              className="min-h-[92px] w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]"
+            />
           </Field>
-          <Field label="Descripcion">
-            <textarea value={productForm.description} onChange={(e) => setProductForm((prev) => ({ ...prev, description: e.target.value }))} rows={3} placeholder="Ideal para este tipo de trabajo..." className="min-h-[92px] w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
-          </Field>
-          <button type="submit" disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-[22px] bg-[#62bfb9] px-5 py-4 text-sm font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.35)] disabled:opacity-60">
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex w-full items-center justify-center gap-2 rounded-[22px] bg-[#62bfb9] px-5 py-4 text-sm font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.35)] disabled:opacity-60"
+          >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal size={17} />}
-            Publicar producto
+            Publicar
           </button>
         </form>
       </SupplierSheet>
@@ -868,22 +1003,21 @@ export default function SupplierPage() {
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {contact.contact_url ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const contactUrl = safeExternalUrl(contact.contact_url || '', { httpsOnly: true });
-                          if (!contactUrl) {
-                            toast.error('Link de contacto inseguro o inválido');
-                            return;
-                          }
-                          window.open(contactUrl, '_blank', 'noopener,noreferrer');
-                        }}
-                        className="rounded-full bg-[#62bfb9] px-4 py-2 text-xs font-black text-white shadow-[0_10px_20px_rgba(98,191,185,0.24)] active:scale-95"
-                      >
-                        Abrir contacto
-                      </button>
-                    ) : null}
+                                       <button
+                      type="button"
+                      onClick={() => {
+                        const requesterId = contact.requester_id;
+                        if (!requesterId) {
+                          toast.error('No encontramos el usuario para responder');
+                          return;
+                        }
+
+                        router.push(`/chat?supplier=${me.id}&to=${requesterId}&contact=${contact.id}`);
+                      }}
+                      className="rounded-full bg-[#62bfb9] px-4 py-2 text-xs font-black text-white shadow-[0_10px_20px_rgba(98,191,185,0.24)] active:scale-95"
+                    >
+                      Responder en chat
+                    </button>
                     {!handled ? (
                       <button
                         type="button"
@@ -934,7 +1068,45 @@ export default function SupplierPage() {
     </main>
   );
 }
+function MediaUploader({ value, mediaType = 'image', label, wide = false, onFile }) {
+  const isVideo = mediaType === 'video';
 
+  return (
+    <div className="rounded-[24px] border border-slate-200 bg-white p-3">
+      {value ? (
+        <div className={wide ? 'aspect-[16/9] overflow-hidden rounded-[22px] bg-black' : 'h-24 w-24 overflow-hidden rounded-[24px] bg-black'}>
+          {isVideo ? (
+            <video src={value} controls playsInline className="h-full w-full object-cover" />
+          ) : (
+            <img
+              src={value}
+              onError={(event) => {
+                event.currentTarget.src = '/avatar-fallback.png';
+              }}
+              alt={label}
+              className="h-full w-full object-cover"
+            />
+          )}
+        </div>
+      ) : null}
+
+      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-[#62bfb9] px-4 py-4 text-sm font-black text-white active:scale-[0.98]">
+        <UploadCloud size={18} />
+        {label}
+        <input
+          type="file"
+          accept="image/*,video/*"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) onFile(file);
+            event.target.value = '';
+          }}
+        />
+      </label>
+    </div>
+  );
+}
 function Field({ label, children }) {
   return (
     <label className="block">

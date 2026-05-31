@@ -36,6 +36,7 @@ import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
 import { requireRole } from '@/lib/roleRedirect';
 import { canAttemptAction, inspectTextSafety, safeExternalUrl } from '@/lib/security';
+import { trackUserEvent } from '@/lib/userEvents';
 
 const supabase = getSupabase();
 
@@ -511,7 +512,23 @@ function SupplierProductStrip({ products, serviceName, onContact }) {
     </div>
   );
 }
+function trackWorkerClientEvent(eventType, worker, metadata = {}) {
+  const workerId = worker?.user_id || worker?.worker_id || worker?.id;
+  const serviceSlug = normalizeSlug(
+    splitWorkerServices(worker)?.[0] ||
+    worker?.service_type ||
+    worker?.main_skill ||
+    ''
+  );
 
+  trackUserEvent({
+    event_type: eventType,
+    target_type: 'worker',
+    target_id: workerId,
+    service_slug: serviceSlug || null,
+    metadata,
+  });
+}
 function FeedCard({ worker, isActive, isFollowed, isLiked, products = [], onOpen, onAddFriend, onMessage, onRequest, onNearbyMap, onComments, onLike, onSupplierContact }) {
   const [bioOpen, setBioOpen] = useState(false);
   const [paused, setPaused] = useState(!isActive);
@@ -552,7 +569,19 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, products = [], onOpen
       document.removeEventListener('keydown', markSoundEnabled, true);
     };
   }, [isActive]);
+useEffect(() => {
+  if (!isActive || !isVideo) return;
 
+  const timer = setTimeout(() => {
+    trackWorkerClientEvent('watch_video', worker, {
+      source: 'client_feed',
+      seconds: 5,
+      media_url: mediaUrl || null,
+    });
+  }, 5000);
+
+  return () => clearTimeout(timer);
+}, [isActive, isVideo, mediaUrl, worker?.user_id, worker?.worker_id]);
   useEffect(() => {
     if (!isVideo || !videoRef.current) return;
 
@@ -598,19 +627,30 @@ function FeedCard({ worker, isActive, isFollowed, isLiked, products = [], onOpen
     }
   }
   const shareWorker = async () => {
-    const text = `Mirá este trabajo en ManosYA: ${workerName} · ${primaryService}`;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: `${workerName} en ManosYA`, text: `Mira este perfil en ManosYA: ${workerName} - ${primaryService}\n${workerShareUrl(worker, '/client')}`, url: workerShareUrl(worker, '/client') });
-        return;
-      }
+  const url = workerShareUrl(worker, '/client');
+  const shareText = `Mira este perfil en ManosYA: ${workerName} - ${primaryService}\n${url}`;
 
-      await navigator.clipboard.writeText(`Mira este perfil en ManosYA: ${workerName} - ${primaryService}\n${workerShareUrl(worker, '/client')}`);
-      toast.success('Link copiado para compartir');
-    } catch (error) {
-      if (error?.name !== 'AbortError') toast.error('No pudimos compartir ahora');
+  trackWorkerClientEvent('share_post', worker, {
+    source: 'client_feed_share',
+    service_name: primaryService,
+  });
+
+  try {
+    if (navigator.share) {
+      await navigator.share({
+        title: `${workerName} en ManosYA`,
+        text: shareText,
+        url,
+      });
+      return;
     }
-  };
+
+    await navigator.clipboard.writeText(shareText);
+    toast.success('Link copiado para compartir');
+  } catch (error) {
+    if (error?.name !== 'AbortError') toast.error('No pudimos compartir ahora');
+  }
+};
 
   return (
     <motion.div
@@ -1629,10 +1669,30 @@ const [bookingTime] = useState(initialTimingFromUrl || '');
   const hasMeCoords = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
 
   useEffect(() => {
-    return () => {
-      if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current);
-    };
-  }, []);
+  return () => {
+    if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current);
+  };
+}, []);
+
+useEffect(() => {
+  const q = normalizeText(serviceQuery);
+  if (!q || q.length < 3) return;
+
+  const timer = setTimeout(() => {
+    trackUserEvent({
+      event_type: 'search_service',
+      target_type: 'service',
+      target_id: q,
+      service_slug: normalizeSlug(selectedService || q),
+      metadata: {
+        source: 'client_search',
+        query: q,
+      },
+    });
+  }, 900);
+
+  return () => clearTimeout(timer);
+}, [serviceQuery, selectedService]);
 
   useEffect(() => {
     setMounted(true);
@@ -2564,6 +2624,11 @@ async function openMessage(worker, presetMessage = '') {
   try {
     const workerId = String(target.user_id);
 
+trackWorkerClientEvent('contact_worker', target, {
+  source: 'client_open_message',
+  distance_km: target?._distKm ?? null,
+});
+
     const chosenService =
       selectedService ||
       normalizeSlug(splitWorkerServices(target)[0] || target?.service_type || '');
@@ -2677,6 +2742,11 @@ async function openMessage(worker, presetMessage = '') {
 
   try {
     const workerId = String(activeWorker.user_id);
+
+trackWorkerClientEvent('request_service', activeWorker, {
+  source: 'client_request_worker',
+  distance_km: activeWorker?._distKm ?? null,
+});
 
     const chosenService =
       selectedService ||
@@ -3004,24 +3074,73 @@ async function cancelActiveJob() {
     style={{ scrollSnapStop: 'always' }}
     className="h-[var(--real-vh,100dvh)] snap-start snap-always"
   >
-      <FeedCard
-  worker={worker}
-  products={productsForWorker(worker)}
-  isActive={idx === feedIndex}
-  isFollowed={followedUserIds.includes(String(worker.user_id || worker.worker_id))}
-  isLiked={likedWorkerIds.includes(String(worker.user_id || worker.worker_id))}
-  onOpen={() => openProfile(worker)}
-  onAddFriend={() => addFriend(worker)}
-  onComments={() => openComments(worker)}
-  onMessage={() => openMessage(worker)}
-  onRequest={() => requestWorker(worker)}
-  onLike={() => toggleWorkerLike(worker)}
-  onSupplierContact={(product) => contactSupplierProduct(product, worker)}
-  onNearbyMap={() => {
-    setNearbyMapWorker(worker);
-    setNearbyMapOpen(true);
-  }}
-/>
+            <FeedCard
+        worker={worker}
+        products={productsForWorker(worker)}
+        isActive={idx === feedIndex}
+        isFollowed={followedUserIds.includes(String(worker.user_id || worker.worker_id))}
+        isLiked={likedWorkerIds.includes(String(worker.user_id || worker.worker_id))}
+        onOpen={() => {
+          trackWorkerClientEvent('open_worker_profile', worker, {
+            source: 'client_feed',
+            distance_km: worker?._distKm ?? null,
+          });
+          openProfile(worker);
+        }}
+        onAddFriend={() => {
+          trackWorkerClientEvent('save_worker', worker, {
+            source: 'client_feed',
+          });
+          addFriend(worker);
+        }}
+        onComments={() => {
+          trackWorkerClientEvent('comment_post', worker, {
+            source: 'client_feed_open_comments',
+          });
+          openComments(worker);
+        }}
+        onMessage={() => {
+          trackWorkerClientEvent('contact_worker', worker, {
+            source: 'client_feed_message',
+            distance_km: worker?._distKm ?? null,
+          });
+          openMessage(worker);
+        }}
+        onRequest={() => {
+          trackWorkerClientEvent('request_service', worker, {
+            source: 'client_feed_request',
+            distance_km: worker?._distKm ?? null,
+          });
+          requestWorker(worker);
+        }}
+        onLike={() => {
+          trackWorkerClientEvent('like_post', worker, {
+            source: 'client_feed',
+          });
+          toggleWorkerLike(worker);
+        }}
+        onSupplierContact={(product) => {
+          trackUserEvent({
+            event_type: 'contact_provider',
+            target_type: 'provider_product',
+            target_id: product?.id,
+            service_slug: product?.service_slug || null,
+            metadata: {
+              source: 'client_feed_supplier_strip',
+              worker_id: worker?.user_id || worker?.worker_id || worker?.id || null,
+            },
+          });
+          contactSupplierProduct(product, worker);
+        }}
+        onNearbyMap={() => {
+          trackWorkerClientEvent('open_nearby_map', worker, {
+            source: 'client_feed',
+            distance_km: worker?._distKm ?? null,
+          });
+          setNearbyMapWorker(worker);
+          setNearbyMapOpen(true);
+        }}
+      />
 
     
     </div>
