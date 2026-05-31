@@ -23,6 +23,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
+import {
+  FEED_VIDEO_ATTR,
+  pauseFeedVideo,
+  pauseOtherFeedVideos,
+  playFeedVideo,
+} from '@/lib/feedVideoPlayback';
 import { requireRole } from '@/lib/roleRedirect';
 import { cleanSecurityText, safeExternalUrl } from '@/lib/security';
 import {
@@ -68,6 +74,7 @@ function primaryServiceSlug(worker) {
 
 function SupplierFeedCard({ worker, selectedService = '', isActive, onPublishForService, onOpenWorker }) {
   const videoRef = useRef(null);
+  const playbackTokenRef = useRef(0);
   const mediaUrl = worker?.media_url || worker?.thumbnail_url || worker?.avatar_url || '/avatar-fallback.png';
   const isVideo = String(worker?.media_type || '').toLowerCase() === 'video';
   const serviceSlug = normalizeSlug(selectedService) || primaryServiceSlug(worker);
@@ -78,13 +85,33 @@ function SupplierFeedCard({ worker, selectedService = '', isActive, onPublishFor
   useEffect(() => {
     if (!isVideo || !videoRef.current) return;
     const video = videoRef.current;
+    const token = ++playbackTokenRef.current;
+
     if (isActive) {
-      video.muted = true;
-      video.playsInline = true;
-      video.play().catch(() => {});
+      playFeedVideo(video, {
+        withSound: false,
+        isCurrent: () => playbackTokenRef.current === token,
+      });
     } else {
-      video.pause();
+      pauseFeedVideo(video);
     }
+
+    const stopIfHidden = () => {
+      if (document.hidden) {
+        playbackTokenRef.current += 1;
+        pauseFeedVideo(video);
+      }
+    };
+
+    document.addEventListener('visibilitychange', stopIfHidden);
+    window.addEventListener('pagehide', stopIfHidden);
+
+    return () => {
+      playbackTokenRef.current += 1;
+      document.removeEventListener('visibilitychange', stopIfHidden);
+      window.removeEventListener('pagehide', stopIfHidden);
+      pauseFeedVideo(video);
+    };
   }, [isActive, isVideo, mediaUrl]);
 
   return (
@@ -93,7 +120,7 @@ function SupplierFeedCard({ worker, selectedService = '', isActive, onPublishFor
       className="relative h-[var(--real-vh,100dvh)] w-full snap-start snap-always overflow-hidden bg-black"
     >
       {isVideo ? (
-        <video ref={videoRef} src={mediaUrl} muted loop playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover" />
+        <video ref={videoRef} {...{ [FEED_VIDEO_ATTR]: 'true' }} src={mediaUrl} muted loop playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover" />
       ) : (
         <img src={mediaUrl} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={name} className="absolute inset-0 h-full w-full object-cover" />
       )}
@@ -254,6 +281,12 @@ export default function SupplierPage() {
 
     return () => clearTimeout(timer);
   }, [loopedWorkers.length, workers.length, selectedService]);
+
+  useEffect(() => {
+    const activeVideo =
+      feedRef.current?.children?.[feedSlotIndex]?.querySelector?.('video[data-manosya-feed-video="true"]') || null;
+    pauseOtherFeedVideos(activeVideo);
+  }, [feedSlotIndex, loopedWorkers.length]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

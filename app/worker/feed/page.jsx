@@ -31,6 +31,12 @@ import {
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
+import {
+  FEED_VIDEO_ATTR,
+  pauseFeedVideo,
+  pauseOtherFeedVideos,
+  playFeedVideo,
+} from '@/lib/feedVideoPlayback';
 import { requireRole } from '@/lib/roleRedirect';
 import { canAttemptAction, inspectTextSafety, safeExternalUrl, validateMediaFile } from '@/lib/security';
 
@@ -399,6 +405,7 @@ function SupplierProductStrip({ products, serviceName, onContact }) {
 function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], onOpen, onAddFriend, onComments, onLike, onNearbyMap, onSupplierContact }) {
   const [bioOpen, setBioOpen] = useState(false);
   const videoRef = useRef(null);
+  const playbackTokenRef = useRef(0);
    const [paused, setPaused] = useState(!isActive);
   const [muted, setMuted] = useState(() => !isFeedSoundEnabled());
 
@@ -431,9 +438,14 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], 
       setMuted(false);
       const video = videoRef.current;
       if (!video || !isActive) return;
-      video.muted = false;
-      video.volume = 1;
-      video.play().then(() => setPaused(false)).catch(() => {});
+      const token = ++playbackTokenRef.current;
+      playFeedVideo(video, {
+        withSound: true,
+        isCurrent: () => playbackTokenRef.current === token,
+      }).then((played) => {
+        if (!played || playbackTokenRef.current !== token) return;
+        setPaused(false);
+      });
     };
 
     window.addEventListener('manosya-feed-sound-unlocked', syncSound);
@@ -453,27 +465,47 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], 
     if (!isVideo || !videoRef.current) return;
 
     const video = videoRef.current;
+    const token = ++playbackTokenRef.current;
 
     if (isActive) {
-      video.currentTime = video.currentTime || 0;
       const shouldPlayWithSound = isFeedSoundEnabled();
-      video.muted = !shouldPlayWithSound;
-      video.volume = 1;
       setMuted(!shouldPlayWithSound);
-
-      video
-        .play()
-        .then(() => setPaused(false))
-        .catch(() => {
-          video.muted = true;
-          setMuted(true);
-          video.play().then(() => setPaused(false)).catch(() => setPaused(true));
-        });
+      playFeedVideo(video, {
+        withSound: shouldPlayWithSound,
+        isCurrent: () => playbackTokenRef.current === token,
+      }).then((played) => {
+        if (playbackTokenRef.current !== token) return;
+        if (played) {
+          setPaused(false);
+          setMuted(video.muted);
+        } else {
+          setPaused(true);
+        }
+      });
     } else {
-      video.pause();
-      video.currentTime = 0;
+      pauseFeedVideo(video);
       setPaused(true);
     }
+
+    const stopIfHidden = () => {
+      if (document.hidden) {
+        playbackTokenRef.current += 1;
+        pauseFeedVideo(video);
+        setPaused(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', stopIfHidden);
+    window.addEventListener('pagehide', stopIfHidden);
+
+    return () => {
+      playbackTokenRef.current += 1;
+      document.removeEventListener('visibilitychange', stopIfHidden);
+      window.removeEventListener('pagehide', stopIfHidden);
+      pauseFeedVideo(video);
+      setMuted(true);
+      setPaused(true);
+    };
   }, [isActive, isVideo, mediaUrl]);
 
     function toggleVideoPlay() {
@@ -482,18 +514,21 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], 
     unlockFeedSound();
 
     if (video.paused || paused) {
-      video.muted = false;
-      video.volume = 1;
       setMuted(false);
-      video.play().then(() => setPaused(false)).catch(() => {
-        video.muted = true;
-        setMuted(true);
-        video.play().then(() => setPaused(false)).catch(() => setPaused(true));
+      const token = ++playbackTokenRef.current;
+      playFeedVideo(video, {
+        withSound: true,
+        isCurrent: () => playbackTokenRef.current === token,
+      }).then((played) => {
+        if (playbackTokenRef.current !== token) return;
+        setPaused(!played);
+        setMuted(video.muted);
       });
       return;
     }
 
-    video.pause();
+    playbackTokenRef.current += 1;
+    pauseFeedVideo(video);
     setPaused(true);
   }
 
@@ -528,6 +563,7 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], 
         <div onClick={toggleVideoPlay} className="absolute inset-0 h-full w-full cursor-pointer">
           <video
             ref={videoRef}
+            {...{ [FEED_VIDEO_ATTR]: 'true' }}
             src={mediaUrl}
             loop
             muted={muted}
@@ -2051,6 +2087,11 @@ async function fetchWorkers(serviceFilter = '') {
 
     return () => clearTimeout(timer);
   }, [loopedFeedWorkers.length, feedWorkers.length, feedMode, feedSeed, selectedService]);
+  useEffect(() => {
+    const activeVideo =
+      feedRef.current?.children?.[feedSlotIndex]?.querySelector?.('video[data-manosya-feed-video="true"]') || null;
+    pauseOtherFeedVideos(activeVideo);
+  }, [feedSlotIndex, loopedFeedWorkers.length]);
 
   const productsForWorker = (worker) => {
     const tokens = worker?._serviceTokens?.length
