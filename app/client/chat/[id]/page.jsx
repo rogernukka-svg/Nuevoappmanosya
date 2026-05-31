@@ -17,6 +17,14 @@ import { useRouter, useParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { canAttemptAction, inspectTextSafety, safeExternalUrl } from '@/lib/security';
+import {
+  getServiceLabel,
+  normalizeServiceSlug,
+  readServiceIntent,
+  saveServiceIntent,
+  workerIntentSummary,
+  workerServiceSlugs,
+} from '@/lib/services';
 
 const supabase = getSupabase();
 
@@ -69,26 +77,15 @@ function normalizeText(value) {
 }
 
 function normalizeSlug(value) {
-  return normalizeText(value)
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
+  return normalizeServiceSlug(value);
 }
 
 function splitWorkerServices(worker) {
-  const raw = [];
-
-  if (Array.isArray(worker?.skills)) raw.push(...worker.skills);
-  else if (typeof worker?.skills === 'string') raw.push(...worker.skills.split(','));
-
-  if (worker?.main_skill) raw.push(worker.main_skill);
-  if (worker?.service_type) raw.push(worker.service_type);
-
-  return raw.map((v) => String(v || '').trim()).filter(Boolean);
+  return workerServiceSlugs(worker);
 }
 
 function serviceLabelForWorker(worker) {
-  return splitWorkerServices(worker)[0] || 'Servicio general';
+  return workerIntentSummary(worker).primaryLabel;
 }
 
 function formatTime(value) {
@@ -176,21 +173,37 @@ if (alive) {
   setWorkerUserProfile(userProfile || null);
 }
 
-         const { data: jobs } = await supabase
-  .from('jobs')
-  .select('*')
-  .eq('client_id', user.id)
-  .eq('worker_id', chat.worker_id)
- .in('status', [
-  'open',
-  'scheduled',
-  'accepted',
-  'assigned',
-])
-  .order('created_at', { ascending: false })
-  .limit(1);
+          let jobForChat = null;
 
-          if (alive) setActiveJob(jobs?.[0] || null);
+          if (chat?.job_id) {
+            const { data: linkedJob } = await supabase
+              .from('jobs')
+              .select('*')
+              .eq('id', chat.job_id)
+              .maybeSingle();
+
+            jobForChat = linkedJob || null;
+          }
+
+          if (!jobForChat) {
+            const { data: jobs } = await supabase
+              .from('jobs')
+              .select('*')
+              .eq('client_id', user.id)
+              .eq('worker_id', chat.worker_id)
+              .in('status', [
+                'open',
+                'scheduled',
+                'accepted',
+                'assigned',
+              ])
+              .order('created_at', { ascending: false })
+              .limit(1);
+
+            jobForChat = jobs?.[0] || null;
+          }
+
+          if (alive) setActiveJob(jobForChat);
         }
       } catch (err) {
         console.error(err);
@@ -304,7 +317,15 @@ if (alive) {
   workerProfile?.photo_url ||
   workerUserProfile?.avatar_url ||
   '/avatar-fallback.png';
-  const workerService = serviceLabelForWorker(workerProfile);
+  const chatServiceSlug = normalizeSlug(
+    activeJob?.service_type ||
+    chatMeta?.service_type ||
+    readServiceIntent()?.serviceSlug ||
+    ''
+  );
+  const workerService = chatServiceSlug
+    ? getServiceLabel(chatServiceSlug)
+    : serviceLabelForWorker(workerProfile);
 
   const suggestionChips = useMemo(
     () => [
@@ -460,10 +481,15 @@ async function requestWorkerFromChat(customText = '') {
     setRequesting(true);
 
     const chosenService = normalizeSlug(
-      splitWorkerServices(workerProfile)[0] || workerProfile?.service_type || ''
+      activeJob?.service_type ||
+      chatServiceSlug ||
+      readServiceIntent()?.serviceSlug ||
+      splitWorkerServices(workerProfile)[0] ||
+      workerProfile?.service_type ||
+      ''
     );
 
-    const serviceLabel = workerService || serviceLabelForWorker(workerProfile);
+    const serviceLabel = getServiceLabel(chosenService, workerService || serviceLabelForWorker(workerProfile));
 
     const { data: job, error: jobError } = await supabase
       .from('jobs')
@@ -510,9 +536,20 @@ async function requestWorkerFromChat(customText = '') {
           jstatus: job.status,
           cid: chatId,
           selectedWorker: workerProfile || null,
+          serviceIntent: {
+            serviceSlug: chosenService || null,
+            serviceName: serviceLabel,
+          },
         })
       );
     } catch {}
+
+    saveServiceIntent({
+      role: 'client',
+      serviceSlug: chosenService,
+      serviceName: serviceLabel,
+      source: 'client_chat_request',
+    });
 
     setActiveJob(job);
     setInput('');
@@ -558,7 +595,7 @@ async function requestWorkerFromChat(customText = '') {
             </div>
 
             <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[12px] font-bold text-white/82">
-              <span className="truncate">{workerService}</span>
+              <span className="truncate">{chatServiceSlug ? `Consulta por ${workerService}` : workerService}</span>
 
               {workerProfile?._distKm != null && (
                 <span className="inline-flex shrink-0 items-center gap-1">

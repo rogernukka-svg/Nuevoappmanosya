@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   BadgeCheck,
@@ -25,32 +25,37 @@ import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
 import { requireRole } from '@/lib/roleRedirect';
 import { cleanSecurityText, safeExternalUrl } from '@/lib/security';
+import {
+  getServiceLabel,
+  normalizeServiceSlug,
+  productMatchesService,
+  readServiceIntent,
+  saveServiceIntent,
+  serviceIntentFromSearchParams,
+  workerIntentSummary,
+  workerMatchesService,
+  workerRelatedToService,
+} from '@/lib/services';
 
 const supabase = getSupabase();
 const LAST_GPS_KEY = 'manosya_supplier_feed_gps';
 
 const SERVICES = [
-  { slug: 'plomeria', name: 'Plomeria', hint: 'canos, canillas, griferia' },
+  { slug: 'plomeria', name: 'Plomería', hint: 'caños, canillas, grifería' },
   { slug: 'electricidad', name: 'Electricidad', hint: 'cables, llaves, termicas' },
   { slug: 'limpieza', name: 'Limpieza', hint: 'quimicos, escobas, equipos' },
-  { slug: 'albanileria', name: 'Albanileria', hint: 'cemento, mezcla, herramientas' },
+  { slug: 'albanileria', name: 'Albañilería', hint: 'cemento, mezcla, herramientas' },
   { slug: 'pintura', name: 'Pintura', hint: 'pinturas, rodillos, lijas' },
-  { slug: 'jardineria', name: 'Jardineria', hint: 'mangueras, tijeras, sustratos' },
+  { slug: 'jardineria', name: 'Jardinería', hint: 'mangueras, tijeras, sustratos' },
   { slug: 'servicio-general', name: 'Servicio general', hint: 'insumos rapidos' },
 ];
 
 function normalizeSlug(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  return normalizeServiceSlug(value);
 }
 
 function serviceName(slug) {
-  const normalized = normalizeSlug(slug);
-  return SERVICES.find((item) => item.slug === normalized)?.name || 'Servicio general';
+  return getServiceLabel(slug);
 }
 
 function primaryServiceSlug(worker) {
@@ -61,12 +66,13 @@ function primaryServiceSlug(worker) {
   return matched?.slug || normalized || 'servicio-general';
 }
 
-function SupplierFeedCard({ worker, isActive, onPublishForService, onOpenWorker }) {
+function SupplierFeedCard({ worker, selectedService = '', isActive, onPublishForService, onOpenWorker }) {
   const videoRef = useRef(null);
   const mediaUrl = worker?.media_url || worker?.thumbnail_url || worker?.avatar_url || '/avatar-fallback.png';
   const isVideo = String(worker?.media_type || '').toLowerCase() === 'video';
-  const serviceSlug = primaryServiceSlug(worker);
+  const serviceSlug = normalizeSlug(selectedService) || primaryServiceSlug(worker);
   const serviceLabel = serviceName(serviceSlug);
+  const serviceIntent = workerIntentSummary(worker, selectedService);
   const name = worker?.full_name || worker?.username || 'Trabajador ManosYA';
 
   useEffect(() => {
@@ -104,7 +110,7 @@ function SupplierFeedCard({ worker, isActive, onPublishForService, onOpenWorker 
           <button type="button" onClick={() => onOpenWorker(worker)} className="min-w-0 text-left">
             <div className="truncate text-[20px] font-black leading-tight">@{name}</div>
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-white/82">
-              <span>{serviceLabel}</span>
+              <span>{serviceIntent.detailText || serviceLabel}</span>
               {worker?.is_verified && (
                 <span className="inline-flex items-center gap-1 text-sky-200">
                   <BadgeCheck size={14} />
@@ -125,7 +131,7 @@ function SupplierFeedCard({ worker, isActive, onPublishForService, onOpenWorker 
             onClick={() => onPublishForService(serviceSlug)}
             className="w-full rounded-full bg-[#62bfb9] px-4 py-3 text-[13px] font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.30)] active:scale-[0.98]"
           >
-            Publicar insumo
+            Publicar insumo para {serviceLabel}
           </button>
         </div>
       </div>
@@ -164,6 +170,7 @@ function SupplierSheet({ title, open, onClose, children }) {
 
 export default function SupplierPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const feedRef = useRef(null);
   const feedSnapTimerRef = useRef(null);
   const [me, setMe] = useState(null);
@@ -175,9 +182,12 @@ export default function SupplierPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [feedIndex, setFeedIndex] = useState(0);
+  const [feedSlotIndex, setFeedSlotIndex] = useState(0);
   const [sheet, setSheet] = useState(null);
   const [saving, setSaving] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const initialServiceIntent = serviceIntentFromSearchParams(searchParams) || readServiceIntent();
+  const [selectedService, setSelectedService] = useState(() => normalizeSlug(initialServiceIntent?.serviceSlug || ''));
   const [profileForm, setProfileForm] = useState({
     store_name: '',
     bio: '',
@@ -190,14 +200,24 @@ export default function SupplierPage() {
     title: '',
     description: '',
     price_text: '',
-    service_slug: 'plomeria',
+    service_slug: normalizeSlug(initialServiceIntent?.serviceSlug || 'plomeria') || 'plomeria',
     image_url: '',
     media_type: 'image',
     need_keywords: '',
     contact_url: '',
   });
 
-  const activeProducts = useMemo(() => products.filter((item) => item.is_active !== false), [products]);
+  const activeProducts = useMemo(() => {
+    const visibleProducts = products.filter((item) => item.is_active !== false);
+    if (!selectedService) return visibleProducts;
+    const exact = visibleProducts.filter((item) => productMatchesService(item, selectedService));
+    return exact.length ? exact : visibleProducts;
+  }, [products, selectedService]);
+  const selectedServiceLabel = selectedService ? serviceName(selectedService) : '';
+  const loopedWorkers = useMemo(() => {
+    if (workers.length <= 1) return workers;
+    return Array.from({ length: 5 }, () => workers).flat();
+  }, [workers]);
   const unreadContacts = useMemo(
     () => contacts.filter((item) => item.status !== 'handled' && !item.read_at).length,
     [contacts]
@@ -220,6 +240,22 @@ export default function SupplierPage() {
   }, []);
 
   useEffect(() => {
+    if (!loopedWorkers.length) return;
+
+    const targetSlot = workers.length > 1 ? workers.length * 2 : 0;
+    setFeedIndex(0);
+    setFeedSlotIndex(targetSlot);
+
+    const timer = setTimeout(() => {
+      const el = feedRef.current;
+      if (!el) return;
+      el.scrollTo({ top: targetSlot * Math.max(1, el.clientHeight), behavior: 'auto' });
+    }, 80);
+
+    return () => clearTimeout(timer);
+  }, [loopedWorkers.length, workers.length, selectedService]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return;
     const setRealVH = () => {
       const h = window.visualViewport?.height ?? window.innerHeight;
@@ -233,6 +269,25 @@ export default function SupplierPage() {
       window.visualViewport?.removeEventListener('resize', setRealVH);
     };
   }, []);
+
+  useEffect(() => {
+    const intent = serviceIntentFromSearchParams(searchParams) || readServiceIntent();
+    const nextService = normalizeSlug(intent?.serviceSlug || '');
+    if (!nextService) return;
+
+    setSelectedService(nextService);
+    setProductForm((prev) => ({
+      ...prev,
+      service_slug: nextService,
+    }));
+    saveServiceIntent({
+      ...intent,
+      role: intent?.role || 'supplier',
+      serviceSlug: nextService,
+      serviceName: serviceName(nextService),
+      source: intent?.source || 'supplier_context',
+    });
+  }, [searchParams]);
 
   useEffect(() => {
     let alive = true;
@@ -270,6 +325,11 @@ export default function SupplierPage() {
     loadContacts();
     loadWorkers();
   }, [me?.id]);
+
+  useEffect(() => {
+    if (!me?.id) return;
+    loadWorkers();
+  }, [me?.id, selectedService]);
 
   useEffect(() => {
     if (!me?.id) return;
@@ -459,7 +519,21 @@ export default function SupplierPage() {
           post_description: worker.bio || 'Profesional activo en ManosYA.',
         }));
 
-      setWorkers([...postCards, ...fallbackCards].slice(0, 80));
+      const allCards = [...postCards, ...fallbackCards].map((worker) => ({
+        ...worker,
+        _matchesSelectedService: selectedService ? workerMatchesService(worker, selectedService) : false,
+        _relatedToSelectedService: selectedService ? workerRelatedToService(worker, selectedService) : false,
+      }));
+
+      const rankedCards = selectedService
+        ? [...allCards].sort((a, b) => {
+            if (a._matchesSelectedService !== b._matchesSelectedService) return a._matchesSelectedService ? -1 : 1;
+            if (a._relatedToSelectedService !== b._relatedToSelectedService) return a._relatedToSelectedService ? -1 : 1;
+            return 0;
+          })
+        : allCards;
+
+      setWorkers(rankedCards.slice(0, 80));
     } catch (error) {
       console.error(error);
       toast.error('No pudimos cargar el feed');
@@ -468,10 +542,17 @@ export default function SupplierPage() {
     }
   }
   function openProductForService(serviceSlug) {
+    const nextService = normalizeSlug(serviceSlug || selectedService || 'servicio-general');
     setProductForm((prev) => ({
       ...prev,
-      service_slug: serviceSlug || 'servicio-general',
+      service_slug: nextService,
     }));
+    saveServiceIntent({
+      role: 'supplier',
+      serviceSlug: nextService,
+      serviceName: serviceName(nextService),
+      source: 'supplier_publish_cta',
+    });
     setSheet('product');
   }
     async function uploadSupplierMedia(file, folder, onDone) {
@@ -614,7 +695,7 @@ export default function SupplierPage() {
         title: cleanSecurityText(productForm.title, 90),
         description: smartDescription,
         price_text: cleanSecurityText(productForm.price_text, 60),
-        service_slug: productForm.service_slug,
+        service_slug: normalizeSlug(productForm.service_slug || selectedService || 'servicio-general'),
         image_url: productForm.image_url,
         contact_url: contactUrl,
         is_active: true,
@@ -630,7 +711,7 @@ export default function SupplierPage() {
         title: '',
         description: '',
         price_text: '',
-        service_slug: 'plomeria',
+        service_slug: selectedService || 'plomeria',
         image_url: '',
         media_type: 'image',
         need_keywords: '',
@@ -696,6 +777,13 @@ export default function SupplierPage() {
             <span className="ml-1">{activeProducts.length}</span>
           </button>
         </div>
+        {selectedServiceLabel && (
+          <div className="mx-auto mt-2 flex max-w-4xl justify-center">
+            <div className="rounded-full border border-white/16 bg-black/34 px-3 py-1.5 text-[11px] font-black text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+              Proveedores e insumos para {selectedServiceLabel}
+            </div>
+          </div>
+        )}
       </div>
 
       {busy ? (
@@ -719,13 +807,20 @@ export default function SupplierPage() {
           onScroll={(event) => {
             const el = event.currentTarget;
             const cardHeight = Math.max(1, el.clientHeight);
-            const next = Math.max(0, Math.min(workers.length - 1, Math.round(el.scrollTop / cardHeight)));
+            const rawIndex = Math.max(0, Math.min(loopedWorkers.length - 1, Math.round(el.scrollTop / cardHeight)));
+            const next = workers.length ? rawIndex % workers.length : 0;
             if (next !== feedIndex) setFeedIndex(next);
+            if (rawIndex !== feedSlotIndex) setFeedSlotIndex(rawIndex);
 
             if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current);
             feedSnapTimerRef.current = setTimeout(() => {
-              const snapIndex = Math.max(0, Math.min(workers.length - 1, Math.round(el.scrollTop / cardHeight)));
-              el.scrollTo({ top: snapIndex * cardHeight, behavior: 'auto' });
+              const snapIndex = Math.max(0, Math.min(loopedWorkers.length - 1, Math.round(el.scrollTop / cardHeight)));
+              const realIndex = workers.length ? snapIndex % workers.length : 0;
+              const shouldRecenter = workers.length > 1 && (snapIndex < workers.length || snapIndex >= workers.length * 4);
+              const targetIndex = shouldRecenter ? workers.length * 2 + realIndex : snapIndex;
+              setFeedIndex(realIndex);
+              setFeedSlotIndex(targetIndex);
+              el.scrollTo({ top: targetIndex * cardHeight, behavior: 'auto' });
             }, 120);
           }}
           style={{
@@ -735,11 +830,12 @@ export default function SupplierPage() {
           }}
           className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain"
         >
-          {workers.map((worker, index) => (
+          {loopedWorkers.map((worker, index) => (
             <SupplierFeedCard
-              key={String(worker.post_id || worker.id || worker.user_id || index)}
+              key={`${String(worker.post_id || worker.id || worker.user_id || 'worker')}-${index}`}
               worker={worker}
-              isActive={index === feedIndex}
+              selectedService={selectedService}
+              isActive={index === feedSlotIndex}
               onPublishForService={openProductForService}
               onOpenWorker={(item) => router.push(`/worker/feed?worker=${item.user_id || item.worker_id || item.id}`)}
             />
@@ -1115,4 +1211,3 @@ function Field({ label, children }) {
     </label>
   );
 }
-

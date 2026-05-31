@@ -37,6 +37,19 @@ import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
 import { requireRole } from '@/lib/roleRedirect';
 import { canAttemptAction, inspectTextSafety, safeExternalUrl } from '@/lib/security';
 import { trackUserEvent } from '@/lib/userEvents';
+import {
+  clearServiceIntent,
+  getServiceLabel,
+  normalizeServiceSlug,
+  productMatchesService,
+  readServiceIntent,
+  saveServiceIntent,
+  serviceIntentFromSearchParams,
+  workerIntentSummary,
+  workerMatchesService,
+  workerRelatedToService,
+  workerServiceSlugs,
+} from '@/lib/services';
 
 const supabase = getSupabase();
 
@@ -122,10 +135,7 @@ function normalizeText(value) {
 }
 
 function normalizeSlug(value) {
-  return normalizeText(value)
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
+  return normalizeServiceSlug(value);
 }
 const SEARCH_KEYWORDS = {
   plomeria: [
@@ -395,29 +405,20 @@ function prioritizeSearchResultsByVideo(list, seed = 1) {
     .flatMap((score, index) => prioritizeVideoWorkers(buckets.get(String(score)), seed + index * 19));
 }
 function splitWorkerServices(worker) {
-  const raw = [];
-
-  if (Array.isArray(worker?.skills)) raw.push(...worker.skills);
-  else if (typeof worker?.skills === 'string') raw.push(...worker.skills.split(','));
-
-  if (worker?.main_skill) raw.push(worker.main_skill);
-  if (worker?.service_type) raw.push(worker.service_type);
-
-  return raw
-    .map((v) => String(v || '').trim())
-    .filter(Boolean);
+  const slugs = workerServiceSlugs(worker);
+  return slugs.length ? slugs : [];
 }
 
-function serviceMetaBySlug(slug) {
-  const normalized = normalizeSlug(slug);
-  return SERVICE_CATALOG.find((item) => normalizeSlug(item.slug) === normalized) || null;
+function serviceLabelForWorker(worker, selectedService = '') {
+  return workerIntentSummary(worker, selectedService).primaryLabel;
 }
 
-function serviceLabelForWorker(worker) {
-  const first = splitWorkerServices(worker)[0];
-  if (!first) return 'Servicio general';
-  const meta = serviceMetaBySlug(first);
-  return meta?.name || first;
+function serviceSlugForWorker(worker) {
+  return workerServiceSlugs(worker)[0] || normalizeSlug(worker?.service_type || worker?.main_skill || '');
+}
+
+function serviceLabelForSelected(selectedService) {
+  return getServiceLabel(selectedService, '');
 }
 
 function mapAccentColor(worker) {
@@ -515,9 +516,9 @@ function SupplierProductStrip({ products, serviceName, onContact }) {
 function trackWorkerClientEvent(eventType, worker, metadata = {}) {
   const workerId = worker?.user_id || worker?.worker_id || worker?.id;
   const serviceSlug = normalizeSlug(
-    splitWorkerServices(worker)?.[0] ||
-    worker?.service_type ||
-    worker?.main_skill ||
+    metadata.service_slug ||
+    metadata.service_intent ||
+    serviceSlugForWorker(worker) ||
     ''
   );
 
@@ -529,12 +530,15 @@ function trackWorkerClientEvent(eventType, worker, metadata = {}) {
     metadata,
   });
 }
-function FeedCard({ worker, isActive, isFollowed, isLiked, products = [], onOpen, onAddFriend, onMessage, onRequest, onNearbyMap, onComments, onLike, onSupplierContact }) {
+function FeedCard({ worker, selectedService = '', isActive, isFollowed, isLiked, products = [], onOpen, onAddFriend, onMessage, onRequest, onNearbyMap, onComments, onLike, onSupplierContact }) {
   const [bioOpen, setBioOpen] = useState(false);
   const [paused, setPaused] = useState(!isActive);
   const [muted, setMuted] = useState(() => !isFeedSoundEnabled());
   const videoRef = useRef(null);
-  const primaryService = serviceLabelForWorker(worker);
+  const serviceIntent = workerIntentSummary(worker, selectedService);
+  const primaryService = serviceIntent.primaryLabel;
+  const serviceBadgeText = serviceIntent.badgeText;
+  const serviceDetailText = serviceIntent.detailText;
   const mediaUrl = worker?.media_url || worker?.cover_url || worker?.video_thumb_url || worker?.avatar_url || '/avatar-fallback.png';
   const isVideo = worker?.media_type === 'video';
   const likes = worker?.likes_count || worker?.like_count || 0;
@@ -776,7 +780,7 @@ useEffect(() => {
               )}
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-white/86">
-              <span>{primaryService}</span>
+              <span>{serviceDetailText || serviceBadgeText || primaryService}</span>
               {worker?._distKm != null && <span>• {formatKm(worker._distKm)}</span>}
               <span>• {formatWorkerRatingClean(worker)}</span>
             </div>
@@ -803,14 +807,14 @@ useEffect(() => {
 
         <div className="mt-2 flex items-center gap-2 rounded-[24px] border border-white/45 bg-black/28 px-3 py-2 shadow-[0_10px_22px_rgba(0,0,0,0.20)] backdrop-blur-md">
           <input
-            defaultValue="Hola, ¿estás disponible?..."
+            defaultValue={`Hola, necesito ${String(primaryService).toLowerCase()}...`}
             className="min-w-0 flex-1 bg-transparent px-2 text-[13px] font-semibold text-white/80 placeholder:text-white/55 outline-none"
           />
 
           <button
             type="button"
             onClick={() => {
-              const message = `Hola ${workerName}, vi tu publicación. ¿Estás disponible?`;
+              const message = `Hola ${workerName}, vi tu publicación. Consulta por ${primaryService}: ¿estás disponible?`;
               onMessage?.(worker, message);
             }}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_10px_20px_rgba(98,191,185,0.42)] ring-1 ring-white/35 active:scale-95"
@@ -930,8 +934,9 @@ function CommentsSheet({
     </div>
   );
 }
-function WorkerRow({ worker, onSelect, onMessage, onRequest }) {
+function WorkerRow({ worker, selectedService = '', onSelect, onMessage, onRequest }) {
   const online = isOnlineRecent(worker);
+  const serviceIntent = workerIntentSummary(worker, selectedService);
   return (
     <div className="flex items-center gap-3 rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
       <img
@@ -947,7 +952,7 @@ function WorkerRow({ worker, onSelect, onMessage, onRequest }) {
          <div className="truncate text-[17px] font-black text-slate-900">{worker?.full_name || 'Trabajador'}</div>
         </button>
         <div className="mt-1 flex flex-wrap gap-2 text-[12px] text-slate-500">
-          <span>{serviceLabelForWorker(worker)}</span>
+          <span>{serviceIntent.detailText || serviceIntent.primaryLabel}</span>
           {worker?._distKm != null && <span>• {formatKm(worker._distKm)}</span>}
           <span>• {formatWorkerRatingClean(worker)}</span>
         </div>
@@ -1036,12 +1041,13 @@ function ProfileMediaViewer({ media, onClose }) {
   );
 }
 
-function WorkerProfileSheet({ worker, onClose, onRequest, onMessage }) {
+function WorkerProfileSheet({ worker, selectedService = '', onClose, onRequest, onMessage }) {
   const [selectedMedia, setSelectedMedia] = useState(null);
 
   if (!worker) return null;
 
   const services = splitWorkerServices(worker);
+  const serviceIntent = workerIntentSummary(worker, selectedService);
   const online = isOnlineRecent(worker);
   const profileMedia = Array.isArray(worker?.profile_media) && worker.profile_media.length
     ? worker.profile_media
@@ -1098,7 +1104,7 @@ function WorkerProfileSheet({ worker, onClose, onRequest, onMessage }) {
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-white/85">
                   <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 backdrop-blur-md">
                     <Sparkles size={14} />
-                    {serviceLabelForWorker(worker)}
+                    {serviceIntent.badgeText || serviceIntent.primaryLabel}
                   </span>
                   {online && (
                     <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[11px] font-black text-emerald-200">
@@ -1165,12 +1171,16 @@ function WorkerProfileSheet({ worker, onClose, onRequest, onMessage }) {
           <div className="mt-5 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
             <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Servicios</div>
             <div className="mt-4 flex flex-wrap gap-2">
-              {(services.length ? services : ['Servicio general']).map((item, idx) => (
+              {(services.length ? services : [selectedService || 'servicio-general']).map((item, idx) => (
                 <span
                   key={`${item}-${idx}`}
-                  className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-bold text-[#0c6b70]"
+                  className={`rounded-full border px-3 py-2 text-sm font-bold ${
+                    selectedService && normalizeSlug(item) === normalizeSlug(selectedService)
+                      ? 'border-[#0c6b70] bg-[#dff7f5] text-[#0c6b70]'
+                      : 'border-emerald-100 bg-emerald-50 text-[#0c6b70]'
+                  }`}
                 >
-                  {serviceMetaBySlug(item)?.name || item}
+                  {getServiceLabel(item, item)}
                 </span>
               ))}
             </div>
@@ -1191,7 +1201,7 @@ function WorkerProfileSheet({ worker, onClose, onRequest, onMessage }) {
               onClick={onRequest}
               className="flex-1 rounded-[22px] bg-gradient-to-r from-[#0c6b70] via-[#62bfb9] to-[#9ee5df] px-5 py-4 text-sm font-black text-white shadow-[0_16px_34px_rgba(98,191,185,0.34)]"
             >
-              Solicitar ahora
+              {selectedService ? `Solicitar ${getServiceLabel(selectedService).toLowerCase()}` : 'Solicitar ahora'}
             </button>
           </div>
         </div>
@@ -1199,7 +1209,7 @@ function WorkerProfileSheet({ worker, onClose, onRequest, onMessage }) {
     </div>
   );
 }
-function NearbyMapSheet({ open, workers, center, hasMeCoords, me, selectedWorker, onSelectWorker, onClose, onMessage, onRequest }) {
+function NearbyMapSheet({ open, workers, center, hasMeCoords, me, selectedWorker, selectedService = '', onSelectWorker, onClose, onMessage, onRequest }) {
  const [activeIndex, setActiveIndex] = useState(0);
  const [activeWorker, setActiveWorker] = useState(null);
 
@@ -1378,7 +1388,7 @@ function goNextWorker() {
           </div>
 
           <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] font-bold text-slate-500">
-            <span>{serviceLabelForWorker(active)}</span>
+            <span>{workerIntentSummary(active, selectedService).detailText}</span>
             {active?._distKm != null && <span>• {formatKm(active._distKm)}</span>}
             <span>• {formatWorkerRatingClean(active)}</span>
           </div>
@@ -1422,7 +1432,7 @@ function goNextWorker() {
     </div>
   );
 }
-function AllWorkersSheet({ open, workers, workersSheetTitle, onClose, onSelect, onMessage, onRequest }) {
+function AllWorkersSheet({ open, workers, workersSheetTitle, selectedService = '', onClose, onSelect, onMessage, onRequest }) {
   if (!open) return null;
 
   return (
@@ -1455,6 +1465,7 @@ function AllWorkersSheet({ open, workers, workersSheetTitle, onClose, onSelect, 
               <WorkerRow
                 key={String(worker.user_id)}
                 worker={worker}
+                selectedService={selectedService}
                 onSelect={() => onSelect(worker)}
                 onMessage={() => onMessage(worker)}
                 onRequest={() => onRequest(worker)}
@@ -1624,7 +1635,8 @@ const feedSnapTimerRef = useRef(null);
 const sharedWorkerOpenedRef = useRef('');
 const [mounted, setMounted] = useState(false);
 
-  const initialServiceFromUrl = normalizeSlug(searchParams?.get('service') || '');
+  const initialIntentFromUrl = serviceIntentFromSearchParams(searchParams);
+  const initialServiceFromUrl = normalizeSlug(initialIntentFromUrl?.serviceSlug || searchParams?.get('service') || '');
   const initialTimingFromUrl = searchParams?.get('timing') || '';
 
 const [me, setMe] = useState({ id: null, lat: null, lon: null });
@@ -1632,11 +1644,15 @@ const [clientProfile, setClientProfile] = useState(null);
 const [workers, setWorkers] = useState([]);
 const [supplierProducts, setSupplierProducts] = useState([]);
 const [busy, setBusy] = useState(false);
-const [selectedService, setSelectedService] = useState(initialServiceFromUrl || '');
-const [serviceQuery, setServiceQuery] = useState('');
+const [selectedService, setSelectedService] = useState(() => initialServiceFromUrl || readServiceIntent()?.serviceSlug || '');
+const [serviceQuery, setServiceQuery] = useState(() => {
+  const initial = initialServiceFromUrl || readServiceIntent()?.serviceSlug || '';
+  return initial ? getServiceLabel(initial, '') : '';
+});
 const [feedMode, setFeedMode] = useState('all');
 const [feedSeed, setFeedSeed] = useState(Date.now());
 const [feedIndex, setFeedIndex] = useState(0);
+const [feedSlotIndex, setFeedSlotIndex] = useState(0);
   const [selected, setSelected] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showAllWorkers, setShowAllWorkers] = useState(false);
@@ -1712,6 +1728,34 @@ useEffect(() => {
       window.visualViewport?.removeEventListener('resize', setRealVH);
     };
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    const urlIntent = serviceIntentFromSearchParams(searchParams);
+    const storedIntent = readServiceIntent();
+    const nextIntent = urlIntent || storedIntent;
+    const nextService = normalizeSlug(nextIntent?.serviceSlug || '');
+
+    if (!nextService) return;
+
+    if (nextService !== selectedService) {
+      setSelectedService(nextService);
+      setFeedIndex(0);
+    }
+
+    const label = getServiceLabel(nextService, '');
+    if (label && (!serviceQuery || normalizeSlug(serviceQuery) === normalizeSlug(selectedService))) {
+      setServiceQuery(label);
+    }
+
+    saveServiceIntent({
+      ...nextIntent,
+      serviceSlug: nextService,
+      serviceName: label,
+      source: urlIntent ? 'client_url' : 'client_storage',
+    });
+  }, [mounted, searchParams, selectedService, serviceQuery]);
 
   useEffect(() => {
     let alive = true;
@@ -1979,9 +2023,7 @@ async function fetchWorkers(serviceFilter = '') {
           ? haversineKm(Number(me.lat), Number(me.lon), lat, lng)
           : null;
 
-      const tokens = splitWorkerServices(worker).map((item) =>
-        normalizeSlug(item)
-      );
+      const tokens = workerServiceSlugs({ ...worker, ...profile });
 
       const mediaUrl =
         post?.media_url ||
@@ -2049,17 +2091,23 @@ async function fetchWorkers(serviceFilter = '') {
     });
 
     if (normalizedFilter) {
-      merged = merged.filter((w) =>
-        (w._serviceTokens || []).some((token) => {
-          if (token === normalizedFilter) return true;
-          if (token.includes(normalizedFilter)) return true;
-          if (normalizedFilter.includes(token)) return true;
-          return false;
-        })
-      );
+      merged = merged
+        .map((worker) => ({
+          ...worker,
+          _matchesSelectedService: workerMatchesService(worker, normalizedFilter),
+          _relatedToSelectedService: workerRelatedToService(worker, normalizedFilter),
+        }))
+        .sort((a, b) => {
+          if (a._matchesSelectedService !== b._matchesSelectedService) return a._matchesSelectedService ? -1 : 1;
+          if (a._relatedToSelectedService !== b._relatedToSelectedService) return a._relatedToSelectedService ? -1 : 1;
+          return 0;
+        });
     }
 
     merged.sort((a, b) => {
+      if (a._matchesSelectedService !== b._matchesSelectedService) return a._matchesSelectedService ? -1 : 1;
+      if (a._relatedToSelectedService !== b._relatedToSelectedService) return a._relatedToSelectedService ? -1 : 1;
+
       const aHasPost = Boolean(a.post_id);
       const bHasPost = Boolean(b.post_id);
       if (aHasPost !== bHasPost) return aHasPost ? -1 : 1;
@@ -2089,11 +2137,6 @@ async function fetchWorkers(serviceFilter = '') {
 
  useEffect(() => {
   if (!mounted) return;
-
-  if (feedMode === 'all') {
-    fetchWorkers('');
-    return;
-  }
 
   fetchWorkers(selectedService);
 }, [mounted, selectedService, hasMeCoords, feedMode]);
@@ -2158,13 +2201,29 @@ useEffect(() => {
 
 const feedWorkers = useMemo(() => {
   const base = Array.isArray(workers) ? workers : [];
-  const q = normalizeText(serviceQuery);
+  const selectedSlug = normalizeSlug(selectedService);
+  const q = selectedSlug && normalizeSlug(serviceQuery) === selectedSlug ? '' : normalizeText(serviceQuery);
+  const rankBySelectedService = (list) => {
+    if (!selectedSlug) return list;
+
+    return [...list].sort((a, b) => {
+      const aExact = workerMatchesService(a, selectedSlug);
+      const bExact = workerMatchesService(b, selectedSlug);
+      if (aExact !== bExact) return aExact ? -1 : 1;
+
+      const aRelated = workerRelatedToService(a, selectedSlug);
+      const bRelated = workerRelatedToService(b, selectedSlug);
+      if (aRelated !== bRelated) return aRelated ? -1 : 1;
+
+      return 0;
+    });
+  };
 
   if (q) {
     const matches = base
       .map((worker) => ({
         ...worker,
-        _searchScore: workerSearchScore(worker, q),
+        _searchScore: workerSearchScore(worker, q) + (selectedSlug && workerMatchesService(worker, selectedSlug) ? 180 : 0),
       }))
       .filter((worker) => worker._searchScore > 0)
       .sort((a, b) => {
@@ -2173,7 +2232,7 @@ const feedWorkers = useMemo(() => {
         return Number(b?.avg_rating || 0) - Number(a?.avg_rating || 0);
       });
 
-    return prioritizeSearchResultsByVideo(matches, feedSeed).slice(0, 60);
+    return prioritizeSearchResultsByVideo(rankBySelectedService(matches), feedSeed).slice(0, 60);
   }
 
   if (feedMode === 'near') {
@@ -2182,13 +2241,22 @@ const feedWorkers = useMemo(() => {
       .filter((worker) => Number(worker._distKm) <= 15)
       .sort((a, b) => Number(a._distKm) - Number(b._distKm));
 
-    return prioritizeVideoWorkers(nearby, feedSeed).slice(0, 24);
+    return prioritizeVideoWorkers(rankBySelectedService(nearby), feedSeed).slice(0, 24);
   }
 
-  return prioritizeVideoWorkers(base, feedSeed).slice(0, 60);
-}, [workers, feedMode, feedSeed, serviceQuery]);
+  return prioritizeVideoWorkers(rankBySelectedService(base), feedSeed).slice(0, 60);
+}, [workers, feedMode, feedSeed, serviceQuery, selectedService]);
+
+const loopedFeedWorkers = useMemo(() => {
+  if (feedWorkers.length <= 1) return feedWorkers;
+  return Array.from({ length: 5 }, () => feedWorkers).flat();
+}, [feedWorkers]);
 
 const currentWorker = feedWorkers[feedIndex] || null;
+const selectedServiceLabel = selectedService ? serviceLabelForSelected(selectedService) : '';
+const exactServiceMatches = selectedService
+  ? (workers || []).filter((worker) => workerMatchesService(worker, selectedService)).length
+  : 0;
 
 useEffect(() => {
   if (!feedWorkers.length) return;
@@ -2207,10 +2275,34 @@ useEffect(() => {
   return () => cancelSchedule(handle);
 }, [feedWorkers]);
 
+useEffect(() => {
+  if (!loopedFeedWorkers.length) return;
+
+  const targetSlot = feedWorkers.length > 1 ? feedWorkers.length * 2 : 0;
+  setFeedSlotIndex(targetSlot);
+  setFeedIndex(0);
+
+  const timer = setTimeout(() => {
+    const el = feedRef.current;
+    if (!el) return;
+    el.scrollTo({ top: targetSlot * Math.max(1, el.clientHeight), behavior: 'auto' });
+  }, 80);
+
+  return () => clearTimeout(timer);
+}, [loopedFeedWorkers.length, feedWorkers.length, feedMode, feedSeed, selectedService]);
+
 const productsForWorker = (worker) => {
+  const selectedSlug = normalizeSlug(selectedService);
+  if (selectedSlug) {
+    const matchingIntentProducts = (supplierProducts || []).filter((product) =>
+      productMatchesService(product, selectedSlug)
+    );
+    if (matchingIntentProducts.length) return matchingIntentProducts.slice(0, 4);
+  }
+
   const tokens = worker?._serviceTokens?.length
     ? worker._serviceTokens
-    : splitWorkerServices(worker).map((item) => normalizeSlug(item));
+    : workerServiceSlugs(worker);
   return (supplierProducts || []).filter((product) => {
     const slug = normalizeSlug(product.service_slug || '');
     if (!slug) return false;
@@ -2229,8 +2321,9 @@ async function contactSupplierProduct(product, worker = null) {
     }
 
     const contactUrl = safeExternalUrl(product.contact_url || '', { httpsOnly: true });
+    const serviceLabel = getServiceLabel(selectedService || product.service_slug, serviceLabelForWorker(worker, selectedService));
     const messageSafety = inspectTextSafety(
-      `Interes por ${product.title || 'producto'}${worker?.full_name ? ` visto desde ${worker.full_name}` : ''}`,
+      `Interés por ${product.title || 'producto'} para ${serviceLabel}${worker?.full_name ? ` visto desde ${worker.full_name}` : ''}`,
       { maxLength: 300 }
     );
     if (!messageSafety.ok) throw new Error(messageSafety.error);
@@ -2289,13 +2382,15 @@ const nearbyWorkers = useMemo(() => {
     if (idx < 0) return;
 
     sharedWorkerOpenedRef.current = workerId;
+    const targetSlot = feedWorkers.length > 1 ? feedWorkers.length * 2 + idx : idx;
     setFeedIndex(idx);
+    setFeedSlotIndex(targetSlot);
     setSelected(feedWorkers[idx]);
     setShowProfile(true);
     setTimeout(() => {
       const el = feedRef.current;
       if (!el) return;
-      el.scrollTo({ top: idx * Math.max(1, el.clientHeight), behavior: 'auto' });
+      el.scrollTo({ top: targetSlot * Math.max(1, el.clientHeight), behavior: 'auto' });
     }, 120);
   }, [feedWorkers, searchParams]);
 
@@ -2627,14 +2722,15 @@ async function openMessage(worker, presetMessage = '') {
 trackWorkerClientEvent('contact_worker', target, {
   source: 'client_open_message',
   distance_km: target?._distKm ?? null,
+  service_intent: selectedService || null,
 });
 
     const chosenService =
-      selectedService ||
-      normalizeSlug(splitWorkerServices(target)[0] || target?.service_type || '');
+      normalizeSlug(selectedService) ||
+      serviceSlugForWorker(target);
 
     const serviceLabel =
-      serviceMetaBySlug(chosenService)?.name || serviceLabelForWorker(target);
+      getServiceLabel(chosenService, serviceLabelForWorker(target, selectedService));
 
     const messageText =
       presetMessage?.trim() ||
@@ -2650,7 +2746,7 @@ trackWorkerClientEvent('contact_worker', target, {
 
     const { data: activeJob, error: activeJobError } = await supabase
       .from('jobs')
-      .select('id, status')
+      .select('id, status, service_type')
       .eq('client_id', me.id)
       .eq('worker_id', workerId)
       .in('status', ['open', 'accepted', 'assigned', 'scheduled'])
@@ -2660,7 +2756,9 @@ trackWorkerClientEvent('contact_worker', target, {
 
     if (activeJobError) throw activeJobError;
 
-    let jobId = activeJob?.id || null;
+    const activeJobMatchesService =
+      !chosenService || normalizeSlug(activeJob?.service_type || '') === chosenService;
+    let jobId = activeJobMatchesService ? activeJob?.id || null : null;
 
     if (!jobId) {
       const { data: newJob, error: jobError } = await supabase
@@ -2729,6 +2827,14 @@ trackWorkerClientEvent('contact_worker', target, {
     setJobId(jobId);
     setChatId(nextChatId);
 
+    saveServiceIntent({
+      role: 'client',
+      serviceSlug: chosenService,
+      serviceName: serviceLabel,
+      timing: bookingTime || null,
+      source: 'client_open_message',
+    });
+
     toast.success('Mensaje enviado al trabajador');
     router.push(`/client/chat/${nextChatId}`);
   } catch (error) {
@@ -2746,14 +2852,15 @@ trackWorkerClientEvent('contact_worker', target, {
 trackWorkerClientEvent('request_service', activeWorker, {
   source: 'client_request_worker',
   distance_km: activeWorker?._distKm ?? null,
+  service_intent: selectedService || null,
 });
 
     const chosenService =
-      selectedService ||
-      normalizeSlug(splitWorkerServices(activeWorker)[0] || activeWorker?.service_type || '');
+      normalizeSlug(selectedService) ||
+      serviceSlugForWorker(activeWorker);
 
     const serviceLabel =
-      serviceMetaBySlug(chosenService)?.name || serviceLabelForWorker(activeWorker);
+      getServiceLabel(chosenService, serviceLabelForWorker(activeWorker, selectedService));
 
     const descriptionParts = [`Servicio: ${serviceLabel}`];
     if (bookingTime) descriptionParts.push(`Hora solicitada: ${bookingTime}`);
@@ -2845,9 +2952,22 @@ trackWorkerClientEvent('request_service', activeWorker, {
           jstatus: job.status,
           cid: nextChatId,
           selectedWorker: activeWorker,
+          serviceIntent: {
+            serviceSlug: chosenService || null,
+            serviceName: serviceLabel,
+            timing: bookingTime || null,
+          },
         })
       );
     } catch {}
+
+    saveServiceIntent({
+      role: 'client',
+      serviceSlug: chosenService,
+      serviceName: serviceLabel,
+      timing: bookingTime || null,
+      source: 'client_request_worker',
+    });
 
     toast.success('Solicitud enviada. Chat conectado con el trabajador.');
   } catch (error) {
@@ -2910,6 +3030,8 @@ async function cancelActiveJob() {
         setFeedMode('all');
         setSelectedService('');
         setServiceQuery('');
+        clearServiceIntent();
+        router.replace('/client');
       }}
       className="flex shrink-0 items-center text-[18px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]"
     >
@@ -2940,6 +3062,15 @@ async function cancelActiveJob() {
           });
 
           setSelectedService(matchedService ? matchedService.slug : '');
+          if (matchedService) {
+            saveServiceIntent({
+              role: 'client',
+              serviceSlug: matchedService.slug,
+              serviceName: getServiceLabel(matchedService.slug),
+              timing: bookingTime || null,
+              source: 'client_search',
+            });
+          }
         }}
         placeholder="Buscar..."
         className="h-9 w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/60 outline-none"
@@ -2951,6 +3082,8 @@ async function cancelActiveJob() {
           onClick={() => {
             setServiceQuery('');
             setSelectedService('');
+            clearServiceIntent();
+            router.replace('/client');
           }}
           className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/14 text-white/80 active:scale-95"
         >
@@ -2974,6 +3107,30 @@ async function cancelActiveJob() {
     </button>
   </div>
 
+  {selectedServiceLabel && (
+    <div className="mt-2 flex justify-center">
+      <div className="flex max-w-full items-center gap-2 rounded-full border border-white/20 bg-black/28 px-3 py-1.5 text-[11px] font-black text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+        <span className="truncate">
+          Estás viendo trabajadores para {selectedServiceLabel}
+          {exactServiceMatches === 0 ? ' · te mostramos relacionados' : ''}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedService('');
+            setServiceQuery('');
+            clearServiceIntent();
+            router.replace('/client');
+            fetchWorkers('');
+          }}
+          className="shrink-0 rounded-full bg-white/18 px-2 py-1 text-[10px] text-white active:scale-95"
+        >
+          Cambiar
+        </button>
+      </div>
+    </div>
+  )}
+
   <div className="mt-2 flex justify-center">
     <div className="relative inline-flex items-center rounded-full bg-white/20 p-1 shadow-lg backdrop-blur-md">
       <motion.div
@@ -2991,10 +3148,13 @@ async function cancelActiveJob() {
           setFeedMode('all');
           setSelectedService('');
           setServiceQuery('');
-          setFeedSeed(Date.now() + Math.random());
-          setFeedIndex(0);
-          setSelected(null);
-          setNearbyMapWorker(null);
+            setFeedSeed(Date.now() + Math.random());
+            setFeedIndex(0);
+            setFeedSlotIndex(0);
+            setSelected(null);
+            setNearbyMapWorker(null);
+            clearServiceIntent();
+          router.replace('/client');
           fetchWorkers('');
           feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
         }}
@@ -3011,6 +3171,7 @@ async function cancelActiveJob() {
           setFeedMode('near');
           setFeedSeed(Date.now() + Math.random());
           setFeedIndex(0);
+          setFeedSlotIndex(0);
           setSelected(null);
           setNearbyMapWorker(null);
           feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
@@ -3048,17 +3209,25 @@ async function cancelActiveJob() {
   onScroll={(e) => {
     const el = e.currentTarget;
     const cardHeight = Math.max(1, el.clientHeight);
-    const nextIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight)));
+    const rawIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight)));
+    const nextIndex = feedWorkers.length ? rawIndex % feedWorkers.length : 0;
 
     if (nextIndex !== feedIndex && feedWorkers[nextIndex]) {
       setFeedIndex(nextIndex);
       setSelected(feedWorkers[nextIndex]);
     }
+    if (rawIndex !== feedSlotIndex) setFeedSlotIndex(rawIndex);
 
     if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current);
     feedSnapTimerRef.current = setTimeout(() => {
-      const snapIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight)));
-      el.scrollTo({ top: snapIndex * cardHeight, behavior: 'auto' });
+      const snapIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight)));
+      const realIndex = feedWorkers.length ? snapIndex % feedWorkers.length : 0;
+      const shouldRecenter = feedWorkers.length > 1 && (snapIndex < feedWorkers.length || snapIndex >= feedWorkers.length * 4);
+      const targetIndex = shouldRecenter ? feedWorkers.length * 2 + realIndex : snapIndex;
+      setFeedSlotIndex(targetIndex);
+      setFeedIndex(realIndex);
+      if (feedWorkers[realIndex]) setSelected(feedWorkers[realIndex]);
+      el.scrollTo({ top: targetIndex * cardHeight, behavior: 'auto' });
     }, 120);
   }}
   style={{
@@ -3068,54 +3237,61 @@ async function cancelActiveJob() {
   }}
   className="h-full overflow-y-auto overscroll-y-contain snap-y snap-mandatory"
 >
-  {feedWorkers.map((worker, idx) => (
+  {loopedFeedWorkers.map((worker, idx) => (
   <div
-    key={String(worker.user_id)}
+    key={`${String(worker.user_id)}-${idx}`}
     style={{ scrollSnapStop: 'always' }}
     className="h-[var(--real-vh,100dvh)] snap-start snap-always"
   >
             <FeedCard
         worker={worker}
+        selectedService={selectedService}
         products={productsForWorker(worker)}
-        isActive={idx === feedIndex}
+        isActive={idx === feedSlotIndex}
         isFollowed={followedUserIds.includes(String(worker.user_id || worker.worker_id))}
         isLiked={likedWorkerIds.includes(String(worker.user_id || worker.worker_id))}
         onOpen={() => {
           trackWorkerClientEvent('open_worker_profile', worker, {
             source: 'client_feed',
             distance_km: worker?._distKm ?? null,
+            service_intent: selectedService || null,
           });
           openProfile(worker);
         }}
         onAddFriend={() => {
           trackWorkerClientEvent('save_worker', worker, {
             source: 'client_feed',
+            service_intent: selectedService || null,
           });
           addFriend(worker);
         }}
         onComments={() => {
           trackWorkerClientEvent('comment_post', worker, {
             source: 'client_feed_open_comments',
+            service_intent: selectedService || null,
           });
           openComments(worker);
         }}
-        onMessage={() => {
+        onMessage={(targetWorker, presetMessage) => {
           trackWorkerClientEvent('contact_worker', worker, {
             source: 'client_feed_message',
             distance_km: worker?._distKm ?? null,
+            service_intent: selectedService || null,
           });
-          openMessage(worker);
+          openMessage(targetWorker || worker, presetMessage);
         }}
         onRequest={() => {
           trackWorkerClientEvent('request_service', worker, {
             source: 'client_feed_request',
             distance_km: worker?._distKm ?? null,
+            service_intent: selectedService || null,
           });
           requestWorker(worker);
         }}
         onLike={() => {
           trackWorkerClientEvent('like_post', worker, {
             source: 'client_feed',
+            service_intent: selectedService || null,
           });
           toggleWorkerLike(worker);
         }}
@@ -3124,7 +3300,7 @@ async function cancelActiveJob() {
             event_type: 'contact_provider',
             target_type: 'provider_product',
             target_id: product?.id,
-            service_slug: product?.service_slug || null,
+            service_slug: selectedService || product?.service_slug || null,
             metadata: {
               source: 'client_feed_supplier_strip',
               worker_id: worker?.user_id || worker?.worker_id || worker?.id || null,
@@ -3136,6 +3312,7 @@ async function cancelActiveJob() {
           trackWorkerClientEvent('open_nearby_map', worker, {
             source: 'client_feed',
             distance_km: worker?._distKm ?? null,
+            service_intent: selectedService || null,
           });
           setNearbyMapWorker(worker);
           setNearbyMapOpen(true);
@@ -3235,7 +3412,7 @@ async function cancelActiveJob() {
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-white/80">
                             <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1">
                               <Sparkles size={13} />
-                              {serviceLabelForWorker(trackingWorker)}
+                              {workerIntentSummary(trackingWorker, selectedService).primaryLabel}
                             </span>
                             {etaMinutes != null && (
                               <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1">
@@ -3387,6 +3564,7 @@ async function cancelActiveJob() {
           hasMeCoords={hasMeCoords}
           me={me}
           selectedWorker={nearbyMapWorker}
+          selectedService={selectedService}
           onSelectWorker={(worker) => setNearbyMapWorker(worker)}
           onClose={() => setNearbyMapOpen(false)}
           onMessage={(worker) => openMessage(worker)}
@@ -3405,6 +3583,7 @@ async function cancelActiveJob() {
             {showProfile && (
               <WorkerProfileSheet
                 worker={selected}
+                selectedService={selectedService}
                 onClose={() => setShowProfile(false)}
                 onMessage={() => openMessage(selected)}
                 onRequest={() => requestWorker(selected)}
@@ -3422,6 +3601,7 @@ async function cancelActiveJob() {
   open={showAllWorkers}
   workers={workersSheetList.length ? workersSheetList : workers}
 workersSheetTitle={workersSheetTitle}
+  selectedService={selectedService}
                 onClose={() => setShowAllWorkers(false)}
                 onSelect={(worker) => {
                   setShowAllWorkers(false);

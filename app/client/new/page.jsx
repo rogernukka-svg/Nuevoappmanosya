@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
@@ -25,6 +26,13 @@ import {
   BrainCircuit,
   Layers3,
 } from 'lucide-react';
+import {
+  getServiceLabel,
+  normalizeServiceSlug,
+  readServiceIntent,
+  saveServiceIntent,
+  serviceIntentFromSearchParams,
+} from '@/lib/services';
 
 const supabase = getSupabase();
 
@@ -45,7 +53,8 @@ const SKILLS = [
 ===================================== */
 
 function skillLabel(slug) {
-  return SKILLS.find((s) => s.slug === slug)?.name || 'Servicio general';
+  const normalized = normalizeServiceSlug(slug);
+  return SKILLS.find((s) => s.slug === normalized)?.name || getServiceLabel(normalized);
 }
 
 function formatGs(value) {
@@ -138,9 +147,11 @@ function TopStat({ icon, label, value }) {
 ===================================== */
 
 function Form() {
+  const searchParams = useSearchParams();
+  const initialIntent = serviceIntentFromSearchParams(searchParams) || readServiceIntent();
   const [title, setTitle] = useState('');
   const [description, setDesc] = useState('');
-  const [skill, setSkill] = useState(SKILLS[0].slug);
+  const [skill, setSkill] = useState(() => normalizeServiceSlug(initialIntent?.serviceSlug || SKILLS[0].slug) || SKILLS[0].slug);
   const [address, setAddress] = useState('');
   const [price, setPrice] = useState(25000);
 
@@ -164,6 +175,20 @@ function Form() {
     );
   }, []);
 
+  useEffect(() => {
+    const intent = serviceIntentFromSearchParams(searchParams) || readServiceIntent();
+    const nextSkill = normalizeServiceSlug(intent?.serviceSlug || '');
+    if (!nextSkill) return;
+
+    setSkill(nextSkill);
+    saveServiceIntent({
+      ...intent,
+      serviceSlug: nextSkill,
+      serviceName: skillLabel(nextSkill),
+      source: intent?.source || 'client_new_job',
+    });
+  }, [searchParams]);
+
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
@@ -183,7 +208,8 @@ function Form() {
           client_id: profile.id,
           title,
           description,
-          skill_slug: skill,
+          skill_slug: normalizeServiceSlug(skill),
+          service_type: normalizeServiceSlug(skill),
           lon: coords?.lon,
           lat: coords?.lat,
           price_offer: Number(price),

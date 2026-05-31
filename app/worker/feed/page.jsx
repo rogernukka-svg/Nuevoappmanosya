@@ -1405,6 +1405,7 @@ const [busy, setBusy] = useState(false);
   const [feedMode, setFeedMode] = useState('all');
   const [feedSeed, setFeedSeed] = useState(Date.now());
   const [feedIndex, setFeedIndex] = useState(0);
+  const [feedSlotIndex, setFeedSlotIndex] = useState(0);
   const [selected, setSelected] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showAllWorkers, setShowAllWorkers] = useState(false);
@@ -1939,6 +1940,7 @@ async function fetchWorkers(serviceFilter = '') {
 
     setWorkers(merged);
     setFeedIndex(0);
+    setFeedSlotIndex(0);
   } catch (error) {
     console.error('fetchWorkers error:', error);
     toast.error('No pudimos cargar publicaciones');
@@ -2013,6 +2015,10 @@ async function fetchWorkers(serviceFilter = '') {
 
     return prioritizeVideoWorkers(base, feedSeed).slice(0, 60);
   }, [workers, feedMode, feedSeed, serviceQuery]);
+  const loopedFeedWorkers = useMemo(() => {
+    if (feedWorkers.length <= 1) return feedWorkers;
+    return Array.from({ length: 5 }, () => feedWorkers).flat();
+  }, [feedWorkers]);
   const currentWorker = feedWorkers[feedIndex] || null;
   useEffect(() => {
     if (!feedWorkers.length) return;
@@ -2030,6 +2036,21 @@ async function fetchWorkers(serviceFilter = '') {
 
     return () => cancelSchedule(handle);
   }, [feedWorkers]);
+  useEffect(() => {
+    if (!loopedFeedWorkers.length) return;
+
+    const targetSlot = feedWorkers.length > 1 ? feedWorkers.length * 2 : 0;
+    setFeedIndex(0);
+    setFeedSlotIndex(targetSlot);
+
+    const timer = setTimeout(() => {
+      const el = feedRef.current;
+      if (!el) return;
+      el.scrollTo({ top: targetSlot * Math.max(1, el.clientHeight), behavior: 'auto' });
+    }, 80);
+
+    return () => clearTimeout(timer);
+  }, [loopedFeedWorkers.length, feedWorkers.length, feedMode, feedSeed, selectedService]);
 
   const productsForWorker = (worker) => {
     const tokens = worker?._serviceTokens?.length
@@ -2118,13 +2139,15 @@ async function fetchWorkers(serviceFilter = '') {
     if (idx < 0) return;
 
     sharedWorkerOpenedRef.current = workerId;
+    const targetSlot = feedWorkers.length > 1 ? feedWorkers.length * 2 + idx : idx;
     setFeedIndex(idx);
+    setFeedSlotIndex(targetSlot);
     setSelected(feedWorkers[idx]);
     setShowProfile(true);
     setTimeout(() => {
       const el = feedRef.current;
       if (!el) return;
-      el.scrollTo({ top: idx * Math.max(1, el.clientHeight), behavior: 'auto' });
+      el.scrollTo({ top: targetSlot * Math.max(1, el.clientHeight), behavior: 'auto' });
     }, 120);
   }, [feedWorkers, searchParams]);
   function markNotificationsRead() {
@@ -2670,6 +2693,7 @@ async function publishWorkerPost() {
     setServiceQuery('');
     setFeedSeed(Date.now() + Math.random());
     setFeedIndex(0);
+    setFeedSlotIndex(0);
 
     await fetchWorkers('');
   } catch (error) {
@@ -2771,13 +2795,13 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
   
   return (
     
-    <div className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-slate-900"><div className="pointer-events-none absolute inset-0 bg-black" /><div className="relative z-10 mx-auto h-[var(--real-vh,100dvh)] w-full max-w-6xl overflow-hidden px-0"><div className="relative h-full"><div className="relative z-10 h-full"><div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white"><div className="flex items-center gap-2"><button type="button" onClick={() => router.push('/worker')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/20 text-white backdrop-blur-xl active:scale-95" aria-label="Volver"><ArrowLeft size={18} /></button><button type="button" onClick={() => { setSelectedService(''); setServiceQuery(''); setFeedMode('all'); setFeedSeed(Date.now() + Math.random()); fetchWorkers(''); }} className="flex shrink-0 items-center text-[18px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">ManosYA</button><div className="relative min-w-0 flex-1 rounded-full border border-white/25 bg-black/18 shadow-[0_10px_24px_rgba(0,0,0,0.20)] backdrop-blur-xl"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={15} /><input value={serviceQuery} onChange={(e) => { const value = e.target.value; setServiceQuery(value); const normalizedValue = normalizeSlug(value); const matchedService = SERVICE_CATALOG.find((service) => { const slug = normalizeSlug(service.slug); const name = normalizeSlug(service.name); return slug.includes(normalizedValue) || name.includes(normalizedValue) || normalizedValue.includes(slug); }); setSelectedService(matchedService ? matchedService.slug : ''); }} placeholder="Buscar nombre, oficio o problema..." className="h-9 w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/60 outline-none" />{serviceQuery && <button type="button" onClick={() => { setServiceQuery(''); setSelectedService(''); }} className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/14 text-white/80 active:scale-95"><X size={14} /></button>}</div></div><div className="mt-2 flex justify-center"><div className="relative inline-flex items-center rounded-full bg-white/20 p-1 shadow-lg backdrop-blur-md"><motion.div layout transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="absolute bottom-1 top-1 w-1/2 rounded-full bg-white" style={{ left: feedMode === 'all' ? '4px' : 'calc(50% + 2px)' }} /><button type="button" onClick={() => { setFeedMode('all'); setSelectedService(''); setServiceQuery(''); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); fetchWorkers(''); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${feedMode === 'all' ? 'text-black' : 'text-white'}`}>Todos</button><button type="button" onClick={() => { setFeedMode('near'); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${feedMode === 'near' ? 'text-black' : 'text-white'}`}>Cerca tuyo</button></div></div></div>{busy ? <div className="flex h-full items-center justify-center bg-[#081924] text-white"><div className="text-center"><div className="text-xl font-black">Cargando trabajadores</div><div className="mt-2 text-sm text-white/70">Estamos ordenando lo mejor para vos.</div></div></div> : !feedWorkers.length ? <div className="flex h-full items-center justify-center bg-[#081924] px-8 text-center text-white"><div><Compass className="mx-auto mb-3 text-white/70" size={34} /><div className="text-xl font-black">No encontramos trabajadores</div><div className="mt-2 text-sm text-white/70">ProbÃ¡ cambiar el filtro o revisar tu zona.</div><button type="button" onClick={() => fetchWorkers('')} className="mt-6 rounded-full bg-[#62bfb9] px-6 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(98,191,185,0.35)]">Actualizar</button></div></div> : <div key={`${feedMode}-${feedSeed}-${selectedService || 'todos'}`} ref={feedRef} onScroll={(e) => { const el = e.currentTarget; const cardHeight = Math.max(1, el.clientHeight); const nextIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); if (nextIndex !== feedIndex && feedWorkers[nextIndex]) { setFeedIndex(nextIndex); setSelected(feedWorkers[nextIndex]); } if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current); feedSnapTimerRef.current = setTimeout(() => { const snapIndex = Math.max(0, Math.min(feedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); el.scrollTo({ top: snapIndex * cardHeight, behavior: 'auto' }); }, 120); }} style={{ scrollSnapType: 'y mandatory', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch' }} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black">
-      {feedWorkers.map((worker, index) => (
+    <div className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-slate-900"><div className="pointer-events-none absolute inset-0 bg-black" /><div className="relative z-10 mx-auto h-[var(--real-vh,100dvh)] w-full max-w-6xl overflow-hidden px-0"><div className="relative h-full"><div className="relative z-10 h-full"><div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white"><div className="flex items-center gap-2"><button type="button" onClick={() => router.push('/worker')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/20 text-white backdrop-blur-xl active:scale-95" aria-label="Volver"><ArrowLeft size={18} /></button><button type="button" onClick={() => { setSelectedService(''); setServiceQuery(''); setFeedMode('all'); setFeedSeed(Date.now() + Math.random()); fetchWorkers(''); }} className="flex shrink-0 items-center text-[18px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">ManosYA</button><div className="relative min-w-0 flex-1 rounded-full border border-white/25 bg-black/18 shadow-[0_10px_24px_rgba(0,0,0,0.20)] backdrop-blur-xl"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={15} /><input value={serviceQuery} onChange={(e) => { const value = e.target.value; setServiceQuery(value); const normalizedValue = normalizeSlug(value); const matchedService = SERVICE_CATALOG.find((service) => { const slug = normalizeSlug(service.slug); const name = normalizeSlug(service.name); return slug.includes(normalizedValue) || name.includes(normalizedValue) || normalizedValue.includes(slug); }); setSelectedService(matchedService ? matchedService.slug : ''); }} placeholder="Buscar nombre, oficio o problema..." className="h-9 w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/60 outline-none" />{serviceQuery && <button type="button" onClick={() => { setServiceQuery(''); setSelectedService(''); }} className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/14 text-white/80 active:scale-95"><X size={14} /></button>}</div></div><div className="mt-2 flex justify-center"><div className="relative inline-flex items-center rounded-full bg-white/20 p-1 shadow-lg backdrop-blur-md"><motion.div layout transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="absolute bottom-1 top-1 w-1/2 rounded-full bg-white" style={{ left: feedMode === 'all' ? '4px' : 'calc(50% + 2px)' }} /><button type="button" onClick={() => { setFeedMode('all'); setSelectedService(''); setServiceQuery(''); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); fetchWorkers(''); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${feedMode === 'all' ? 'text-black' : 'text-white'}`}>Todos</button><button type="button" onClick={() => { setFeedMode('near'); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${feedMode === 'near' ? 'text-black' : 'text-white'}`}>Cerca tuyo</button></div></div></div>{busy ? <div className="flex h-full items-center justify-center bg-[#081924] text-white"><div className="text-center"><div className="text-xl font-black">Cargando trabajadores</div><div className="mt-2 text-sm text-white/70">Estamos ordenando lo mejor para vos.</div></div></div> : !feedWorkers.length ? <div className="flex h-full items-center justify-center bg-[#081924] px-8 text-center text-white"><div><Compass className="mx-auto mb-3 text-white/70" size={34} /><div className="text-xl font-black">No encontramos trabajadores</div><div className="mt-2 text-sm text-white/70">ProbÃ¡ cambiar el filtro o revisar tu zona.</div><button type="button" onClick={() => fetchWorkers('')} className="mt-6 rounded-full bg-[#62bfb9] px-6 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(98,191,185,0.35)]">Actualizar</button></div></div> : <div key={`${feedMode}-${feedSeed}-${selectedService || 'todos'}`} ref={feedRef} onScroll={(e) => { const el = e.currentTarget; const cardHeight = Math.max(1, el.clientHeight); const rawIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); const nextIndex = feedWorkers.length ? rawIndex % feedWorkers.length : 0; if (nextIndex !== feedIndex && feedWorkers[nextIndex]) { setFeedIndex(nextIndex); setSelected(feedWorkers[nextIndex]); } if (rawIndex !== feedSlotIndex) setFeedSlotIndex(rawIndex); if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current); feedSnapTimerRef.current = setTimeout(() => { const snapIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); const realIndex = feedWorkers.length ? snapIndex % feedWorkers.length : 0; const shouldRecenter = feedWorkers.length > 1 && (snapIndex < feedWorkers.length || snapIndex >= feedWorkers.length * 4); const targetIndex = shouldRecenter ? feedWorkers.length * 2 + realIndex : snapIndex; setFeedSlotIndex(targetIndex); setFeedIndex(realIndex); if (feedWorkers[realIndex]) setSelected(feedWorkers[realIndex]); el.scrollTo({ top: targetIndex * cardHeight, behavior: 'auto' }); }, 120); }} style={{ scrollSnapType: 'y mandatory', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch' }} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black">
+      {loopedFeedWorkers.map((worker, index) => (
   <WorkerFeedCard
-    key={String(worker.post_id || worker.user_id)}
+    key={String(worker.post_id || worker.user_id || 'worker') + '-' + index}
     worker={worker}
     products={productsForWorker(worker)}
-    isActive={index === feedIndex}
+    isActive={index === feedSlotIndex}
     isFollowed={followedUserIds.includes(String(worker.user_id || worker.worker_id))}
     isLiked={likedWorkerIds.includes(String(worker.user_id || worker.worker_id))}
     onOpen={() => openProfile(worker)}

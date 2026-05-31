@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getSupabase } from '@/lib/supabase';
 import { redirectToRole } from '@/lib/roleRedirect';
 import { validateMediaFile } from '@/lib/security';
+import { saveServiceIntent } from '@/lib/services';
 import { toast } from 'sonner';
 
 const supabase = getSupabase();
@@ -540,6 +541,10 @@ function getDisplayNameFromEmail(email) {
 
 function saveLastIntent(intent) {
   if (typeof window === 'undefined') return;
+  saveServiceIntent({
+    ...intent,
+    source: intent?.source || 'auth_flow',
+  });
   localStorage.setItem(
     LS_LAST_INTENT,
     JSON.stringify({
