@@ -992,21 +992,20 @@
           <span id="musicText">La música empieza al abrir la caja</span>
         </div>
 
-        <div class="signature">
-          hecho en código por Roger Núñez ✦ 0603.mp3 conectado
+        <div class="signature" id="signature">
+          hecho en código por Roger Núñez ✦ música lista
         </div>
       </div>
     </section>
   </main>
 
-  <audio id="music" preload="auto" loop playsinline>
-    <source src="/0603.mp3" type="audio/mpeg" />
-  </audio>
+  <audio id="music" preload="auto" loop playsinline></audio>
 
   <script>
     const music = document.getElementById('music');
     const musicUi = document.getElementById('musicUi');
     const musicText = document.getElementById('musicText');
+    const signature = document.getElementById('signature');
     const stars = document.getElementById('stars');
     const burstLayer = document.getElementById('burstLayer');
     const giftCore = document.getElementById('giftCore');
@@ -1026,6 +1025,19 @@
     let musicStarted = false;
     let opening = false;
     let lastTapAt = 0;
+    let resolvedAudioSrc = '';
+
+    const AUDIO_PATHS = [
+  '/audios/0603.mp3',
+  './audios/0603.mp3',
+  'audios/0603.mp3',
+  '/audio/0603.mp3',
+  '/0603.mp3',
+  './audio/0603.mp3',
+  './0603.mp3',
+  'audio/0603.mp3',
+  '0603.mp3'
+];
 
     function activateStep(number) {
       step1.classList.toggle('active', number >= 1);
@@ -1130,12 +1142,71 @@
       }
     }
 
+    function canPlayAudioPath(path) {
+      return new Promise((resolve) => {
+        const tester = new Audio();
+        let finished = false;
+
+        const done = (ok) => {
+          if (finished) return;
+          finished = true;
+
+          tester.removeAttribute('src');
+          tester.load();
+
+          resolve(ok);
+        };
+
+        tester.preload = 'metadata';
+        tester.src = path + '?v=' + Date.now();
+
+        tester.addEventListener('canplaythrough', () => done(true), { once: true });
+        tester.addEventListener('loadedmetadata', () => done(true), { once: true });
+        tester.addEventListener('error', () => done(false), { once: true });
+
+        setTimeout(() => done(false), 2200);
+
+        tester.load();
+      });
+    }
+
+    async function resolveAudioSource() {
+      if (resolvedAudioSrc) return resolvedAudioSrc;
+
+      musicText.textContent = 'Buscando música...';
+
+      for (const path of AUDIO_PATHS) {
+        const ok = await canPlayAudioPath(path);
+
+        if (ok) {
+          resolvedAudioSrc = path;
+          music.src = path;
+          music.load();
+          musicText.textContent = 'La música empieza al abrir la caja';
+          signature.textContent = 'hecho en código por Roger Núñez ✦ audio conectado';
+          return resolvedAudioSrc;
+        }
+      }
+
+      musicText.textContent = 'Audio no encontrado en Render';
+     signature.textContent = 'Subí el archivo a public/audios/0603.mp3';
+      return '';
+    }
+
     async function startMusic() {
       if (musicStarted) return;
 
       try {
+        const src = await resolveAudioSource();
+
+        if (!src) {
+         musicText.textContent = 'Falta subir 0603.mp3 a public/audios';
+          return;
+        }
+
         music.volume = 0.72;
         await music.play();
+
         musicStarted = true;
         musicUi.classList.add('playing');
         musicText.textContent = 'Música encendida';
@@ -1173,7 +1244,7 @@
       activateStep(2);
       giftCore.classList.add('opening');
 
-      await startMusic();
+      startMusic();
 
       setTimeout(() => {
         giftCore.classList.add('opened');
@@ -1220,6 +1291,7 @@
     }, { passive: false });
 
     createSky();
+    resolveAudioSource();
   </script>
 </body>
 </html>
