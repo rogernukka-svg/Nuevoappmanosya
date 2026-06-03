@@ -805,7 +805,7 @@ export default function SupplierPage() {
             <MessageSquareText size={15} />
             <span className="ml-1">{unreadContacts || contacts.length}</span>
           </button>
-          <button type="button" onClick={() => setSheet('catalog')} className="flex h-9 min-w-9 items-center justify-center rounded-full bg-white px-3 text-[11px] font-black text-slate-950 active:scale-95" aria-label="Catalogo">
+          <button type="button" onClick={() => setSheet('catalog')} className="flex h-9 min-w-9 items-center justify-center rounded-full bg-white px-3 text-[11px] font-black text-slate-950 active:scale-95" aria-label="Catálogo">
             <Store size={15} />
             <span className="ml-1">{activeProducts.length}</span>
           </button>
@@ -830,7 +830,7 @@ export default function SupplierPage() {
         <div className="flex h-full items-center justify-center px-8 text-center">
           <div>
             <BriefcaseBusiness className="mx-auto mb-3 text-white/60" size={34} />
-            <div className="text-xl font-black">Todavia no hay feed</div>
+            <div className="text-xl font-black">Todavía no hay feed</div>
             <button type="button" onClick={loadWorkers} className="mt-5 rounded-full bg-[#62bfb9] px-5 py-3 text-sm font-black">Actualizar</button>
           </div>
         </div>
@@ -888,7 +888,7 @@ export default function SupplierPage() {
             Consultas
           </button>
           <button type="button" onClick={() => setSheet('catalog')} className="rounded-full px-2 py-2.5 text-[11px] font-black text-white active:scale-95">
-            Catalogo
+            Catálogo
           </button>
         </div>
       </div>
@@ -910,7 +910,7 @@ export default function SupplierPage() {
             </p>
           </div>
           <Field label="Nombre comercial">
-            <input value={profileForm.store_name} onChange={(e) => setProfileForm((prev) => ({ ...prev, store_name: e.target.value }))} placeholder="Ferreteria San Jose" className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
+            <input value={profileForm.store_name} onChange={(e) => setProfileForm((prev) => ({ ...prev, store_name: e.target.value }))} placeholder="Ferretería San José" className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
                    <Field label="Logo o foto de la tienda">
            <MediaUploader
@@ -941,10 +941,10 @@ export default function SupplierPage() {
           <Field label="Respaldo externo opcional">
             <input value={profileForm.whatsapp_url} onChange={(e) => setProfileForm((prev) => ({ ...prev, whatsapp_url: e.target.value }))} placeholder="Link opcional, ej: https://wa.me/595..." className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
-          <Field label="Direccion">
+          <Field label="Dirección">
             <input value={profileForm.address_text} onChange={(e) => setProfileForm((prev) => ({ ...prev, address_text: e.target.value }))} placeholder="Ciudad, barrio, calle" className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
-          <Field label="Descripcion">
+          <Field label="Descripción">
             <textarea value={profileForm.bio} onChange={(e) => setProfileForm((prev) => ({ ...prev, bio: e.target.value }))} rows={3} placeholder="Vendemos insumos para profesionales, respondemos pedidos en ManosYA y hacemos entregas en la zona..." className="min-h-[92px] w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]" />
           </Field>
           <button type="submit" disabled={savingProfile} className="flex w-full items-center justify-center gap-2 rounded-[22px] bg-[#08233a] px-5 py-4 text-sm font-black text-white disabled:opacity-60">
@@ -1041,15 +1041,15 @@ export default function SupplierPage() {
               <Clapperboard size={15} />
               Proveedor influencer
             </div>
-            <h3 className="mt-4 text-3xl font-black leading-tight">Mostra tu cara, explica tu producto y gana confianza.</h3>
+            <h3 className="mt-4 text-3xl font-black leading-tight">Mostrá tu cara, explicá tu producto y ganá confianza.</h3>
             <p className="mt-3 text-sm font-semibold leading-6 text-white/78">
-              Los clientes compran mas cuando ven quien esta atras del negocio. Graba videos simples, verticales y reales.
+              Los clientes compran más cuando ven quién está detrás del negocio. Grabá videos simples, verticales y reales.
             </p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             {[
-              ['Presentacion', 'Soy de Ferreteria San Jose, vendo cables, focos y herramientas. Entrego en la zona.'],
+              ['Presentación', 'Soy de Ferretería San José, vendo cables, focos y herramientas. Entrego en la zona.'],
               ['Consejo', 'Para instalar una canilla, estos son los tres insumos que no te pueden faltar.'],
               ['Oferta', 'Hoy tengo promo en cemento y arena. Pedime dentro de ManosYA y te preparo el pedido.'],
             ].map(([title, text]) => (
@@ -1066,11 +1066,11 @@ export default function SupplierPage() {
           <div className="rounded-[26px] border border-[#d6f4f1] bg-[#effffb] p-5">
             <div className="text-[11px] font-black uppercase tracking-[0.14em] text-[#0c6b70]">Regla ManosYA</div>
             <p className="mt-2 text-[15px] font-bold leading-7 text-slate-700">
-              Cierra el video diciendo: &quot;Pedime por ManosYA&quot;. Asi el cliente vuelve a la app, tu tienda sube de nivel y el negocio queda ordenado.
+              Cerrá el video diciendo: &quot;Pedime por ManosYA&quot;. Así el cliente vuelve a la app, tu tienda sube de nivel y el negocio queda ordenado.
             </p>
             <button type="button" onClick={() => setSheet('product')} className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#62bfb9] px-5 py-3 text-sm font-black text-white shadow-[0_12px_26px_rgba(98,191,185,0.32)] active:scale-95">
               <PackagePlus size={17} />
-              Publicar producto despues del video
+              Publicar producto después del video
             </button>
           </div>
         </div>
@@ -1081,9 +1081,9 @@ export default function SupplierPage() {
           <div className="flex min-h-[240px] items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
             <div>
               <MessageSquareText className="mx-auto mb-3 text-slate-300" size={36} />
-              <div className="text-lg font-black text-slate-950">Todavia no llegaron consultas</div>
+              <div className="text-lg font-black text-slate-950">Todavía no llegaron consultas</div>
               <p className="mt-2 text-sm font-semibold text-slate-500">
-                Cuando un cliente o trabajador toque tus productos, lo vas a ver aca.
+                Cuando un trabajador o cliente elija tus productos, lo podrás ver acá.
               </p>
             </div>
           </div>
@@ -1141,7 +1141,7 @@ export default function SupplierPage() {
                           return;
                         }
 
-                        router.push(`/chat?supplier=${me.id}&to=${requesterId}&contact=${contact.id}`);
+                        router.push(`/dm/${requesterId}?contact=${contact.id}`);
                       }}
                       className="rounded-full bg-[#62bfb9] px-4 py-2 text-xs font-black text-white shadow-[0_10px_20px_rgba(98,191,185,0.24)] active:scale-95"
                     >
@@ -1164,13 +1164,13 @@ export default function SupplierPage() {
         )}
       </SupplierSheet>
 
-      <SupplierSheet title="Mi catalogo" open={sheet === 'catalog'} onClose={() => setSheet(null)}>
+      <SupplierSheet title="Mi catálogo" open={sheet === 'catalog'} onClose={() => setSheet(null)}>
         {!activeProducts.length ? (
           <div className="flex min-h-[240px] items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
             <div>
               <Store className="mx-auto mb-3 text-slate-300" size={36} />
-              <div className="text-lg font-black text-slate-950">Todavia no publicaste productos</div>
-              <p className="mt-2 text-sm font-semibold text-slate-500">Desde el feed toca Producto o publica segun el oficio del trabajador.</p>
+              <div className="text-lg font-black text-slate-950">Todavía no publicaste productos</div>
+              <p className="mt-2 text-sm font-semibold text-slate-500">Desde el feed tocá Producto o publicá según el oficio del trabajador.</p>
             </div>
           </div>
         ) : (

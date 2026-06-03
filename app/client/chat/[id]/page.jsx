@@ -90,10 +90,22 @@ function serviceLabelForWorker(worker) {
 
 function formatTime(value) {
   if (!value) return '';
-  return new Date(value).toLocaleTimeString([], {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return date.toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function normalizeMessageRecord(message) {
+  if (!message) return null;
+
+  return {
+    ...message,
+    text: String(message.text || message.content || ''),
+  };
 }
 
 export default function ChatPage() {
@@ -136,10 +148,16 @@ export default function ChatPage() {
           .from('chats')
           .select('*')
           .eq('id', chatId)
-          .single();
+          .maybeSingle();
 
         if (chatError) throw chatError;
         if (!alive) return;
+
+        if (!chat?.id) {
+          toast.error('No encontramos este chat');
+          router.replace('/client');
+          return;
+        }
 
         if (String(chat?.client_id || '') !== String(user.id)) {
           router.replace('/client');
@@ -234,7 +252,7 @@ if (alive) {
           .order('created_at', { ascending: true });
 
         if (error) throw error;
-        if (alive) setMessages(data || []);
+        if (alive) setMessages((data || []).map(normalizeMessageRecord).filter(Boolean));
       } catch (err) {
         console.error(err);
         toast.error('No pudimos cargar mensajes');
@@ -258,7 +276,8 @@ if (alive) {
         (payload) => {
           setMessages((prev) => {
             if (prev.some((m) => m.id === payload.new.id)) return prev;
-            return [...prev, payload.new];
+            const nextMessage = normalizeMessageRecord(payload.new);
+            return nextMessage ? [...prev, nextMessage] : prev;
           });
         }
       )
@@ -323,9 +342,11 @@ if (alive) {
     readServiceIntent()?.serviceSlug ||
     ''
   );
-  const workerService = chatServiceSlug
-    ? getServiceLabel(chatServiceSlug)
-    : serviceLabelForWorker(workerProfile);
+  const workerService = String(
+    chatServiceSlug
+      ? getServiceLabel(chatServiceSlug)
+      : serviceLabelForWorker(workerProfile) || 'Servicio general'
+  );
 
   const suggestionChips = useMemo(
     () => [
@@ -361,6 +382,7 @@ async function sendMessage(e) {
           chat_id: chatId,
           sender_id: user.id,
           text: safety.text,
+          content: safety.text,
         },
       ])
       .select()
@@ -370,7 +392,8 @@ async function sendMessage(e) {
 
     setMessages((prev) => {
       if (prev.some((m) => m.id === data.id)) return prev;
-      return [...prev, data];
+      const nextMessage = normalizeMessageRecord(data);
+      return nextMessage ? [...prev, nextMessage] : prev;
     });
 
     setInput('');
@@ -425,6 +448,7 @@ async function shareClientLocation() {
         chat_id: chatId,
         sender_id: user.id,
         text: '📍 Te compartí mi ubicación.',
+        content: '📍 Te compartí mi ubicación.',
       },
     ]);
 
@@ -514,8 +538,9 @@ async function requestWorkerFromChat(customText = '') {
 
     if (chatError) throw chatError;
 
+    const customMessage = typeof customText === 'string' ? customText : '';
     const finalText =
-      customText ||
+      customMessage ||
       `Hola, quiero solicitar tu servicio de ${String(serviceLabel).toLowerCase()}.`;
     const requestSafety = inspectTextSafety(finalText, { maxLength: 500 });
     if (!requestSafety.ok) throw new Error(requestSafety.error);
@@ -525,6 +550,7 @@ async function requestWorkerFromChat(customText = '') {
         chat_id: chatId,
         sender_id: user.id,
         text: requestSafety.text,
+        content: requestSafety.text,
       },
     ]);
 
@@ -654,10 +680,11 @@ async function requestWorkerFromChat(customText = '') {
             <div className="space-y-2">
               {messages.map((m) => {
                 const mine = m.sender_id === user?.id;
+                const messageText = String(m.text || m.content || '');
 
                 return (
                   <div
-                    key={m.id}
+                    key={m.id || `${m.sender_id || 'message'}-${m.created_at || messageText}`}
                     className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
                   >
                     <div

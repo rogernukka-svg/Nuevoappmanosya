@@ -2838,10 +2838,12 @@ trackWorkerClientEvent('contact_worker', target, {
     let nextChatId = existingChat?.id || null;
 
     if (nextChatId) {
-      await supabase
+      const { error: chatUpdateError } = await supabase
         .from('chats')
         .update({ job_id: jobId })
         .eq('id', nextChatId);
+
+      if (chatUpdateError) throw chatUpdateError;
     } else {
       const { data: newChat, error: chatError } = await supabase
         .from('chats')
@@ -2856,14 +2858,17 @@ trackWorkerClientEvent('contact_worker', target, {
         .single();
 
       if (chatError) throw chatError;
-      nextChatId = newChat.id;
+      nextChatId = newChat?.id || null;
     }
+
+    if (!nextChatId) throw new Error('No pudimos abrir el chat creado');
 
     const { error: messageError } = await supabase.from('messages').insert([
       {
         chat_id: nextChatId,
         sender_id: me.id,
         text: messageSafety.text,
+        content: messageSafety.text,
       },
     ]);
 

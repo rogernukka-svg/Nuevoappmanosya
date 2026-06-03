@@ -423,13 +423,13 @@ const visibleAvailableSkillItems = useMemo(() => {
     },
     {
       eyebrow: 'Paso 2 de 7',
-      title: 'Datos basicos',
+      title: 'Datos básicos',
       subtitle: 'Primero lo simple: quien sos, donde trabajas y una foto que genere confianza.',
     },
     {
       eyebrow: 'Paso 3 de 7',
-      title: 'Que servicios ofreces',
-      subtitle: 'Contame que haces mejor. Mientras mas claro seas, mas facil te encuentran.',
+      title: 'Qué servicios ofrecés',
+      subtitle: 'Contame qué hacés mejor. Mientras más claro seas, más fácil te encuentran.',
     },
     {
       eyebrow: 'Paso 4 de 7',
@@ -438,18 +438,18 @@ const visibleAvailableSkillItems = useMemo(() => {
     },
     {
       eyebrow: 'Paso 5 de 7',
-      title: 'Presentacion profesional',
-      subtitle: 'Unas pocas palabras bien dichas valen mas que un formulario eterno.',
+      title: 'Presentación profesional',
+      subtitle: 'Unas pocas palabras bien dichas valen más que un formulario eterno.',
     },
     {
       eyebrow: 'Paso 6 de 7',
-      title: 'Verificacion segura',
-      subtitle: 'Esto cuida a los clientes y tambien te cuida a vos como profesional.',
+      title: 'Verificación segura',
+      subtitle: 'Esto cuida a los clientes y también te cuida a vos como profesional.',
     },
     {
       eyebrow: 'Paso 7 de 7',
       title: 'Enviar perfil',
-      subtitle: 'Ultima mirada. Si todo esta bien, lo mandamos a revision.',
+      subtitle: 'Última mirada. Si todo está bien, lo mandamos a revisión.',
     },
   ], []);
 
@@ -971,7 +971,7 @@ function getCurrentTrackFacingMode() {
         { onConflict: 'user_id' }
       );
 
-      setMsg('Perfil enviado a revision correctamente.');
+      setMsg('Perfil enviado a revisión correctamente.');
       setSubmittedForReview(true);
       setReviewEditMode(false);
       setCurrentStep(0);
@@ -1107,7 +1107,7 @@ function getCurrentTrackFacingMode() {
               </p>
             </div>
 
-            {['Tus datos basicos', 'Tus servicios', 'Tu zona de trabajo', 'Tu verificacion'].map((item) => (
+            {['Tus datos básicos', 'Tus servicios', 'Tu zona de trabajo', 'Tu verificación'].map((item) => (
               <div key={item} className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
                 <span className="h-2.5 w-2.5 rounded-full bg-[#69c4c0]" />
                 <span className="text-sm font-black text-[#06182a]">{item}</span>
@@ -1143,11 +1143,11 @@ function getCurrentTrackFacingMode() {
               <Field label="Nombre y apellido">
                 <ModernInput value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Ej: Juan Perez" />
               </Field>
-              <Field label="Numero de telefono">
+              <Field label="Número de teléfono">
                 <ModernInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ej: 0984 123 456" />
               </Field>
               <div className="md:col-span-2">
-                <Field label="Ciudad donde trabajas">
+                <Field label="Ciudad donde trabajás">
                   <CitySelect value={city} onChange={(e) => setCity(e.target.value)} />
                 </Field>
               </div>
@@ -1162,13 +1162,13 @@ function getCurrentTrackFacingMode() {
               <ModernInput
                 value={skillQuery}
                 onChange={(e) => setSkillQuery(e.target.value)}
-                placeholder="Ej: plomeria, chofer, limpieza..."
+                placeholder="Ej: plomería, chofer, limpieza..."
               />
             </Field>
 
             <SkillPanel
               title="Tus servicios"
-              empty="Todavia no elegiste ningun rubro."
+              empty="Todavía no elegiste ningún rubro."
               items={selectedSkillItems}
               active
               onClick={(skill) => setSkills(skills.filter((slug) => slug !== skill.slug))}
@@ -1183,7 +1183,7 @@ function getCurrentTrackFacingMode() {
             ) : (
               <SkillPanel
                 title="Todos los rubros"
-                empty="No encontramos rubros con esa busqueda."
+                empty="No encontramos rubros con esa búsqueda."
                 items={visibleAvailableSkillItems}
                 onClick={(skill) => setSkills([...skills, skill.slug])}
               />
@@ -1204,7 +1204,7 @@ function getCurrentTrackFacingMode() {
       case 3:
         return (
           <div className="grid gap-5 md:grid-cols-2">
-            <Field label="Hasta donde queres trabajar">
+            <Field label="Hasta dónde querés trabajar">
               <select value={radius} onChange={(e) => setRadius(Number(e.target.value))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-bold outline-none focus:ring-2 focus:ring-[#62bfb9]">
                 {RADII.map((km) => (
                   <option key={km} value={km}>{km} km</option>
@@ -1218,11 +1218,11 @@ function getCurrentTrackFacingMode() {
               </select>
             </Field>
             <div className="md:col-span-2 rounded-[28px] border border-[#62bfb9]/25 bg-[#62bfb9]/10 p-5">
-              <div className="text-lg font-black text-slate-950">Asi los clientes cercanos pueden encontrarte mas rapido.</div>
+              <div className="text-lg font-black text-slate-950">Así los clientes cercanos pueden encontrarte más rápido.</div>
               <button type="button" onClick={saveLocation} className="mt-4 rounded-2xl bg-[#69c4c0] px-5 py-4 text-sm font-black text-white shadow-[0_12px_24px_rgba(105,196,192,0.30)]">
-                Usar mi ubicacion actual
+                Usar mi ubicación actual
               </button>
-              {coords && <p className="mt-3 text-sm font-bold text-[#137d78]">Ubicacion guardada correctamente.</p>}
+              {coords && <p className="mt-3 text-sm font-bold text-[#137d78]">Ubicación guardada correctamente.</p>}
             </div>
           </div>
         );
@@ -1230,7 +1230,7 @@ function getCurrentTrackFacingMode() {
       case 4:
         return (
           <div className="grid gap-5">
-            <Field label="Descripcion corta">
+            <Field label="Descripción corta">
               <textarea
                 rows={5}
                 className="w-full resize-none rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold outline-none focus:ring-2 focus:ring-[#62bfb9]"
@@ -1239,7 +1239,7 @@ function getCurrentTrackFacingMode() {
                 placeholder="Ej: Soy responsable, puntual y tengo experiencia atendiendo clientes."
               />
             </Field>
-            <Field label="Anios de experiencia">
+            <Field label="Años de experiencia">
               <ModernInput type="number" min={0} value={yearsExp} onChange={(e) => setYearsExp(e.target.value)} placeholder="Ej: 3" />
             </Field>
           </div>
@@ -1259,7 +1259,7 @@ function getCurrentTrackFacingMode() {
                 </select>
               </Field>
               <div className="md:col-span-2">
-                <Field label="Numero de documento">
+                <Field label="Número de documento">
                   <ModernInput value={docNumber} onChange={(e) => setDocNumber(e.target.value)} placeholder="Ej: 12345678" />
                 </Field>
               </div>
@@ -1274,8 +1274,8 @@ function getCurrentTrackFacingMode() {
             <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-600">
               <input type="checkbox" required checked={acceptedPrivacy} onChange={(e) => setAcceptedPrivacy(e.target.checked)} className="mt-1 accent-[#62bfb9]" />
               <span>
-                Declaro haber leido y aceptado la{' '}
-                <a href="/privacy-policy" target="_blank" className="font-black text-[#137d78] underline">Politica de Privacidad</a>.
+                Declaro haber leído y aceptado la{' '}
+                <a href="/privacy-policy" target="_blank" className="font-black text-[#137d78] underline">Política de Privacidad</a>.
               </span>
             </label>
           </div>
@@ -1299,7 +1299,7 @@ function getCurrentTrackFacingMode() {
                 disabled={!canSave || busy}
                 className="mt-5 w-full rounded-3xl bg-[#69c4c0] px-5 py-5 text-lg font-black text-white shadow-[0_18px_38px_rgba(105,196,192,0.30)] disabled:opacity-50"
               >
-                {busy ? 'Enviando...' : 'Enviar mi perfil a revision'}
+                {busy ? 'Enviando...' : 'Enviar mi perfil a revisión'}
               </button>
             </div>
           </div>
@@ -1336,7 +1336,7 @@ function getCurrentTrackFacingMode() {
             ¡Perfil aprobado!
           </h1>
           <p className="mt-4 text-lg font-semibold text-white/78">
-            Ya podes recibir pedidos en ManosYA.
+            Ya podés recibir pedidos en ManosYA.
           </p>
           <button
             type="button"
@@ -1363,17 +1363,17 @@ function getCurrentTrackFacingMode() {
           className="mx-auto max-w-3xl text-center"
         >
           <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-amber-700">
-            En revision
+            En revisión
           </div>
           <h1 className="mt-6 text-4xl font-black leading-[1.02] tracking-[-0.055em] text-slate-950 sm:text-6xl">
-            Tu perfil ya esta en la mesa de verificacion
+            Tu perfil ya está en la mesa de verificación
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base font-semibold leading-relaxed text-slate-600">
-            El equipo ManosYA esta revisando tus datos para activar tu perfil con confianza.
-            Estas a un paso de aparecer frente a clientes reales.
+            El equipo ManosYA está revisando tus datos para activar tu perfil con confianza.
+            Estás a un paso de aparecer frente a clientes reales.
           </p>
           <div className="mt-6 rounded-[28px] bg-[#62bfb9]/10 p-5 text-sm font-black text-[#137d78]">
-            Estamos preparando tu entrada al mapa. Cuando te aprobemos, se prende la maquina.
+            Estamos preparando tu entrada al mapa. Cuando te aprobemos, se prende la máquina.
           </div>
           <button
             type="button"
@@ -1478,7 +1478,7 @@ function getCurrentTrackFacingMode() {
             disabled={currentStep === 0}
             className="rounded-2xl border border-slate-200 px-5 py-4 text-sm font-black text-slate-700 disabled:opacity-35"
           >
-            Atras
+            Atrás
           </button>
           {currentStep < wizardSteps.length - 1 ? (
             <button
@@ -1494,7 +1494,7 @@ function getCurrentTrackFacingMode() {
               disabled={!canSave || busy}
               className="rounded-2xl bg-[#62bfb9] px-5 py-4 text-sm font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.35)] disabled:opacity-50"
             >
-              {busy ? 'Enviando...' : 'Enviar mi perfil a revision'}
+              {busy ? 'Enviando...' : 'Enviar mi perfil a revisión'}
             </button>
           )}
         </div>
