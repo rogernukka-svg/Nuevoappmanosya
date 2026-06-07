@@ -12,11 +12,18 @@ import {
   MapPinned,
   Store,
   Settings,
+  Mail,
+  Phone,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const supabase = getSupabase();
 const LOGIN_BG = '#62bfb9';
+const SUPPORT_EMAIL = 'manosya.py@gmail.com';
+const SUPPORT_PHONE_LABEL = '+595 984 921 024';
+const SUPPORT_PHONE_TEL = '+595984921024';
+const HELP_CENTER_PHONE_LABEL = '0982 030 926';
+const HELP_CENTER_PHONE_TEL = '0982030926';
 
 export default function RoleSelectorPage() {
   const router = useRouter();
@@ -217,6 +224,45 @@ export default function RoleSelectorPage() {
             <Settings className="h-4 w-4" />
             Gestionar perfil
           </button>
+
+          <section className="mt-4 w-full rounded-[28px] border border-white/34 bg-white/28 p-4 text-left shadow-[0_14px_36px_rgba(8,15,52,0.08)] backdrop-blur-xl">
+            <div className="text-[12px] font-black uppercase tracking-[0.14em] text-[#08233a]/58">
+              Soporte ManosYA
+            </div>
+            <div className="mt-3 grid gap-2">
+              <a
+                href={`mailto:${SUPPORT_EMAIL}`}
+                className="flex items-center gap-3 rounded-[18px] bg-white/64 px-4 py-3 text-[13px] font-black text-[#08233a] active:scale-[0.98]"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#08233a] text-white">
+                  <Mail className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 truncate">{SUPPORT_EMAIL}</span>
+              </a>
+
+              <a
+                href={`tel:${SUPPORT_PHONE_TEL}`}
+                className="flex items-center gap-3 rounded-[18px] bg-white/64 px-4 py-3 text-[13px] font-black text-[#08233a] active:scale-[0.98]"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0c6b70] text-white">
+                  <Phone className="h-4 w-4" />
+                </span>
+                <span>{SUPPORT_PHONE_LABEL}</span>
+              </a>
+
+              <a
+                href={`tel:${HELP_CENTER_PHONE_TEL}`}
+                className="flex items-center gap-3 rounded-[18px] bg-white/64 px-4 py-3 text-[13px] font-black text-[#08233a] active:scale-[0.98]"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#0c6b70] shadow-sm">
+                  <Phone className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  Centro de ayuda: {HELP_CENTER_PHONE_LABEL}
+                </span>
+              </a>
+            </div>
+          </section>
 
           <button
             type="button"
