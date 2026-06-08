@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendFacebookMessage } from '@/lib/social/meta';
-import { generateSocialReply } from '@/lib/social/openai';
+import { generateSocialReply } from '@/lib/social/local';
 import { classifyMessage } from '@/lib/social/intent';
 import { addMessage, getRecentMessages } from '@/lib/social/conversation';
 

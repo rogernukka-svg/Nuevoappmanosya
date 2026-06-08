@@ -80,6 +80,11 @@ const WORKER_WORDS = [
 ];
 
 const SERVICE_NEED_WORDS = [
+  'servicio',
+  'servicios',
+  'buscar ayuda',
+  'busco ayuda',
+  'quiero ayuda',
   'necesito',
   'busco',
   'quiero contratar',
@@ -103,6 +108,15 @@ const SERVICE_NEED_WORDS = [
   'ahora',
   'hoy',
   'manana',
+];
+
+const SERVICE_GENERIC_WORDS = [
+  'servicio',
+  'servicios',
+  'ayuda',
+  'buscar ayuda',
+  'necesito servicio',
+  'necesito servicios',
 ];
 
 const SUPPLIER_WORDS = [
@@ -348,6 +362,9 @@ export function classifyMessage(messageText: string): ClassificationResult {
   } else if (includesAny(clean, ['donde', 'ubicacion', 'ciudad', 'zona'])) {
     intent = 'location_question';
     leadType = 'CURIOUS_LEAD';
+  } else if (includesAny(clean, SERVICE_GENERIC_WORDS)) {
+    intent = 'user_needs_service';
+    leadType = 'USER_LEAD';
   } else if (includesAny(clean, SERVICE_NEED_WORDS)) {
     intent = 'user_needs_service';
     leadType = 'USER_LEAD';
