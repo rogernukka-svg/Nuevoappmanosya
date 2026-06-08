@@ -1,174 +1,382 @@
-import type { LocalIntentResult, SocialIntent, SocialLeadType } from './types';
+import type { ClassificationResult, Intent, LeadType } from './types';
 
-const WORKER_SKILLS = [
-  'plomero',
-  'plomeria',
+const GREETINGS = [
+  'hola',
+  'holaa',
+  'holaaa',
+  'buenas',
+  'buen dia',
+  'buenos dias',
+  'buenas tardes',
+  'buenas noches',
+  'que tal',
+  'como estas',
+  'saludos',
+  'hey',
+  'ei',
+  'ola',
+  'holi',
+  'hello',
+];
+
+const WORKER_WORDS = [
   'electricista',
+  'plomero',
+  'fontanero',
   'albanil',
-  'albañil',
   'pintor',
   'jardinero',
-  'jardineria',
   'limpieza',
-  'chofer',
-  'taxi',
+  'limpiadora',
+  'limpiador',
+  'ninera',
+  'cuidadora',
+  'enfermera',
+  'cocinera',
+  'cocinero',
   'mecanico',
-  'mecánico',
-  'cerrajero',
+  'chapista',
+  'soldador',
   'carpintero',
   'herrero',
-  'soldador',
   'tecnico',
-  'técnico',
-  'niñera',
-  'cuidador',
-  'cocinero',
+  'refrigeracion',
+  'aire acondicionado',
+  'instalador',
+  'cerrajero',
   'delivery',
-  'mudanza',
+  'repartidor',
+  'chofer',
+  'conductor',
+  'taxista',
+  'mototaxi',
   'flete',
+  'mudanza',
+  'mudanzas',
+  'construccion',
+  'mantenimiento',
+  'seguridad',
+  'guardia',
+  'peluquera',
+  'peluquero',
+  'barberia',
+  'maquillaje',
+  'unas',
+  'manicura',
+  'masajista',
+  'profesor',
+  'particular',
+  'contador',
+  'abogado',
+  'gestor',
+  'disenador',
+  'programador',
+  'informatico',
+  'tecnico de celular',
+  'reparacion',
+  'lavar auto',
+  'detailing',
+  'fumigacion',
 ];
 
-const SUPPLIER_WORDS = [
-  'tengo negocio',
-  'vendo',
-  'ferreteria',
-  'ferretería',
-  'local',
-  'comercio',
-  'proveedor',
-  'productos',
-  'tienda',
-  'almacen',
-  'almacén',
-  'distribuidora',
-];
-
-const USER_NEED_WORDS = [
+const SERVICE_NEED_WORDS = [
   'necesito',
   'busco',
   'quiero contratar',
   'me hace falta',
   'preciso',
+  'necesito ayuda',
+  'quien hace',
+  'tenes alguien',
+  'conoces alguien',
+  'necesito un plomero',
+  'necesito electricista',
+  'necesito limpieza',
+  'necesito chofer',
+  'necesito flete',
+  'necesito jardinero',
+  'cuanto cuesta',
+  'precio',
+  'presupuesto',
   'urgente',
-  'me arreglan',
-  'alguien que',
+  'emergencia',
+  'ahora',
+  'hoy',
+  'manana',
+];
+
+const SUPPLIER_WORDS = [
+  'tengo negocio',
+  'tengo local',
+  'comercio',
+  'proveedor',
+  'vendo',
+  'ventas',
+  'ferreteria',
+  'almacen',
+  'despensa',
+  'supermercado',
+  'tienda',
+  'boutique',
+  'roperia',
+  'repuestos',
+  'lubricantes',
+  'materiales',
+  'construccion',
+  'distribuidora',
+  'fabrica',
+  'panaderia',
+  'restaurante',
+  'comedor',
+  'lomiteria',
+  'rotiseria',
+  'farmacia',
+  'veterinaria',
+  'agropecuaria',
+  'bazar',
+  'importadora',
+  'mayorista',
+  'minorista',
+  'productos',
+  'catalogo',
+  'stock',
+];
+
+const DRIVER_WORDS = [
+  'chofer',
+  'taxi',
+  'taxista',
+  'conductor',
+  'movilidad',
+  'viaje',
+  'viajes',
+  'bolt',
+  'uber',
+  'pasajero',
+  'traslado',
+  'llevar',
+  'traer',
+  'aeropuerto',
+  'terminal',
+  'michofer',
+  'mi chofer',
+  'auto',
+  'vehiculo',
+  'moto',
+  'remis',
 ];
 
 const FLIRTY_WORDS = [
+  'sos lindo',
+  'sos linda',
+  'que lindo sos',
+  'que linda',
+  'me gustas',
+  'me encantas',
+  'sos soltero',
+  'sos soltera',
+  'tenes novia',
+  'tenes novio',
+  'estas soltero',
+  'amor',
+  'bebe',
+  'bb',
   'lindo',
   'linda',
-  'soltero',
-  'soltera',
-  'novia',
-  'novio',
-  'me gustas',
-  'me gustás',
   'hermoso',
   'hermosa',
   'guapo',
-  'guapa',
+  'preciosa',
+  'precioso',
 ];
 
-const SUPPORT_WORDS = [
-  'problema',
-  'no puedo entrar',
-  'no me funciona',
-  'reclamo',
-  'me cobraron',
-  'cobraron mal',
-  'no aparece mi perfil',
-  'soporte',
-  'ayuda con mi cuenta',
-];
-
-const UNSAFE_WORDS = [
-  'puta',
-  'mierda',
-  'idiota',
-  'estafa',
+const SEXUAL_WORDS = [
   'sexo',
   'desnudo',
   'desnuda',
-  'porno',
-  'xxx',
-  'promo gratis',
-  'bitcoin',
-  'cripto',
+  'manda foto',
+  'foto intima',
+  'cama',
+  'caliente',
+  'coger',
+  'follar',
+  'nudes',
+  'pack',
+  'contenido sexual',
 ];
 
-function normalize(value: string) {
+const AGGRESSIVE_WORDS = [
+  'puta',
+  'mierda',
+  'idiota',
+  'amenaza',
+  'te voy a',
+  'estafa',
+  'estafador',
+  'spam',
+  'ganar dinero rapido',
+  'crypto',
+  'bitcoin',
+  'apuestas',
+  'casino',
+];
+
+const SUPPORT_WORDS = [
+  'no funciona',
+  'error',
+  'problema',
+  'no puedo entrar',
+  'no me deja',
+  'no carga',
+  'no aparece',
+  'no recibo',
+  'no puedo registrarme',
+  'ayuda',
+  'soporte',
+  'reclamo',
+  'queja',
+  'me cobraron',
+  'no me responde',
+  'se trabo',
+  'fallo',
+  'bug',
+];
+
+const CITIES = [
+  'ciudad del este',
+  'cde',
+  'asuncion',
+  'luque',
+  'san lorenzo',
+  'fernando de la mora',
+  'lambare',
+  'mariano roque alonso',
+  'encarnacion',
+  'caaguazu',
+  'coronel oviedo',
+  'hernandarias',
+  'presidente franco',
+  'pdte franco',
+  'minga guazu',
+  'salto del guaira',
+  'villarrica',
+  'caazapa',
+  'pilar',
+  'concepcion',
+  'pedro juan caballero',
+  'itaugua',
+  'limpio',
+  'capiata',
+];
+
+export function normalizeSocialText(value: string) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
-function includesAny(text: string, words: string[]) {
-  const clean = normalize(text);
-  return words.some((word) => clean.includes(normalize(word)));
+function includesAny(clean: string, words: string[]) {
+  return words.some((word) => clean.includes(normalizeSocialText(word)));
 }
 
-function findProfession(text: string) {
-  const clean = normalize(text);
-  return WORKER_SKILLS.find((skill) => clean.includes(normalize(skill))) || null;
+function firstMatch(clean: string, words: string[]) {
+  return words.find((word) => clean.includes(normalizeSocialText(word))) || null;
 }
 
-function looksLikeGreeting(text: string) {
-  const clean = normalize(text).replace(/[!¡?¿.,]/g, '').trim();
-  return ['hola', 'buenas', 'buen dia', 'buenos dias', 'buenas tardes', 'buenas noches', 'hey'].includes(clean);
+function looksLikeGreeting(clean: string) {
+  return GREETINGS.includes(clean) || includesAny(clean, GREETINGS);
 }
 
-function extractCity(text: string) {
-  const match = String(text || '').match(/\b(?:soy de|estoy en|vivo en|ciudad)\s+([a-záéíóúñ\s]{3,40})/i);
-  return match?.[1]?.trim() || null;
+function getConfidence(intent: Intent) {
+  if (['sexual', 'aggressive', 'support', 'flirty'].includes(intent)) return 0.94;
+  if (['user_needs_service', 'worker_has_skill', 'supplier_has_business', 'driver_interest'].includes(intent)) {
+    return 0.88;
+  }
+  if (['greeting', 'ask_about_manosya', 'ask_about_roger'].includes(intent)) return 0.78;
+  return 0.45;
 }
 
-export function classifySocialIntent(messageText: string): LocalIntentResult {
-  const text = String(messageText || '');
-  const profession = findProfession(text);
+export function classifyMessage(messageText: string): ClassificationResult {
+  const clean = normalizeSocialText(messageText);
+  const detectedCity = firstMatch(clean, CITIES);
+  const detectedProfession = firstMatch(clean, WORKER_WORDS);
+  const detectedInterests = [
+    detectedProfession,
+    firstMatch(clean, DRIVER_WORDS),
+    firstMatch(clean, SUPPLIER_WORDS),
+  ].filter(Boolean) as string[];
 
-  let intent: SocialIntent = 'unknown';
-  let lead_type: SocialLeadType = 'CURIOUS_LEAD';
-  let needs_human = false;
+  let intent: Intent = 'unknown';
+  let leadType: LeadType = 'CURIOUS_LEAD';
+  let needsHuman = false;
+  let shouldSendLink = false;
 
-  if (includesAny(text, UNSAFE_WORDS)) {
-    intent = includesAny(text, ['promo gratis', 'bitcoin', 'cripto']) ? 'spam' : 'unsafe';
-    lead_type = 'UNSAFE_LEAD';
-  } else if (includesAny(text, SUPPORT_WORDS)) {
+  if (includesAny(clean, SEXUAL_WORDS)) {
+    intent = 'sexual';
+    leadType = 'UNSAFE_LEAD';
+    needsHuman = true;
+  } else if (includesAny(clean, AGGRESSIVE_WORDS)) {
+    intent = includesAny(clean, ['spam', 'crypto', 'bitcoin', 'apuestas', 'casino']) ? 'spam' : 'aggressive';
+    leadType = 'UNSAFE_LEAD';
+    needsHuman = true;
+  } else if (includesAny(clean, SUPPORT_WORDS)) {
     intent = 'support';
-    lead_type = 'CURIOUS_LEAD';
-    needs_human = true;
-  } else if (includesAny(text, FLIRTY_WORDS)) {
+    leadType = 'SUPPORT_LEAD';
+    needsHuman = true;
+  } else if (includesAny(clean, FLIRTY_WORDS)) {
     intent = 'flirty';
-    lead_type = 'FLIRTY_LEAD';
-  } else if (includesAny(text, SUPPLIER_WORDS)) {
-    intent = 'supplier_has_business';
-    lead_type = 'SUPPLIER_LEAD';
-  } else if (includesAny(text, USER_NEED_WORDS)) {
-    intent = 'user_needs_service';
-    lead_type = 'USER_LEAD';
-  } else if (profession) {
-    intent = 'worker_has_skill';
-    lead_type = 'WORKER_LEAD';
-  } else if (includesAny(text, ['registr', 'inscrib', 'crear cuenta'])) {
-    intent = 'ask_registration';
-  } else if (includesAny(text, ['precio', 'cuesta', 'costo', 'gratis'])) {
-    intent = 'ask_price';
-  } else if (includesAny(text, ['donde', 'dónde', 'ciudad', 'ubicacion', 'ubicación'])) {
-    intent = 'ask_location';
-  } else if (includesAny(text, ['manosya', 'que es', 'qué es', 'de que trata', 'de qué trata'])) {
+    leadType = 'FLIRTY_LEAD';
+  } else if (includesAny(clean, ['roger', 'fundador', 'dueno', 'creador'])) {
+    intent = 'ask_about_roger';
+    leadType = 'CURIOUS_LEAD';
+  } else if (includesAny(clean, ['manosya', 'manos ya', 'que es', 'de que trata'])) {
     intent = 'ask_about_manosya';
-  } else if (looksLikeGreeting(text)) {
+    leadType = 'CURIOUS_LEAD';
+  } else if (includesAny(clean, ['registrarme', 'registro', 'inscribirme', 'crear cuenta', 'quiero entrar'])) {
+    intent = 'registration_interest';
+    leadType = 'CURIOUS_LEAD';
+  } else if (includesAny(clean, ['trabajo', 'trabajar', 'empleo', 'quiero laburar', 'laburo'])) {
+    intent = 'job_interest';
+    leadType = detectedProfession ? 'WORKER_LEAD' : 'CURIOUS_LEAD';
+  } else if (includesAny(clean, ['cuanto cuesta', 'precio', 'costo', 'comision', 'gratis'])) {
+    intent = 'price_question';
+    leadType = 'CURIOUS_LEAD';
+  } else if (includesAny(clean, ['donde', 'ubicacion', 'ciudad', 'zona'])) {
+    intent = 'location_question';
+    leadType = 'CURIOUS_LEAD';
+  } else if (includesAny(clean, SERVICE_NEED_WORDS)) {
+    intent = 'user_needs_service';
+    leadType = 'USER_LEAD';
+  } else if (includesAny(clean, SUPPLIER_WORDS)) {
+    intent = 'supplier_has_business';
+    leadType = 'SUPPLIER_LEAD';
+  } else if (includesAny(clean, DRIVER_WORDS)) {
+    intent = 'driver_interest';
+    leadType = 'DRIVER_LEAD';
+  } else if (detectedProfession) {
+    intent = 'worker_has_skill';
+    leadType = 'WORKER_LEAD';
+  } else if (looksLikeGreeting(clean)) {
     intent = 'greeting';
+    leadType = 'CURIOUS_LEAD';
+  }
+
+  if (['registration_interest', 'ask_about_manosya'].includes(intent)) {
+    shouldSendLink = false;
   }
 
   return {
     intent,
-    lead_type,
-    city: extractCity(text),
-    profession,
-    interests: profession ? [profession] : [],
-    needs_human,
+    leadType,
+    confidence: getConfidence(intent),
+    needsHuman,
+    shouldSendLink,
+    detectedCity,
+    detectedProfession,
+    detectedInterests,
   };
 }

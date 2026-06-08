@@ -1,68 +1,54 @@
-export type SocialIntent =
-  | 'greeting'
-  | 'ask_about_manosya'
-  | 'user_needs_service'
-  | 'worker_has_skill'
-  | 'supplier_has_business'
-  | 'ask_registration'
-  | 'ask_price'
-  | 'ask_location'
-  | 'support'
-  | 'flirty'
-  | 'unsafe'
-  | 'spam'
-  | 'unknown';
-
-export type SocialLeadType =
+export type LeadType =
   | 'USER_LEAD'
   | 'WORKER_LEAD'
   | 'SUPPLIER_LEAD'
+  | 'DRIVER_LEAD'
   | 'CURIOUS_LEAD'
   | 'FLIRTY_LEAD'
+  | 'SUPPORT_LEAD'
   | 'UNSAFE_LEAD';
 
-export type SocialStatus =
-  | 'received'
-  | 'replied'
-  | 'needs_human'
-  | 'send_failed'
-  | 'ignored';
+export type Intent =
+  | 'greeting'
+  | 'ask_about_manosya'
+  | 'ask_about_roger'
+  | 'user_needs_service'
+  | 'worker_has_skill'
+  | 'supplier_has_business'
+  | 'driver_interest'
+  | 'job_interest'
+  | 'registration_interest'
+  | 'price_question'
+  | 'location_question'
+  | 'flirty'
+  | 'sexual'
+  | 'aggressive'
+  | 'support'
+  | 'spam'
+  | 'unknown';
 
-export type SocialMessageContext = {
-  message_text?: string | null;
-  ai_response?: string | null;
-  intent?: string | null;
-  lead_type?: string | null;
-  city?: string | null;
-  profession?: string | null;
-  interests?: string[] | null;
-  needs_human?: boolean | null;
-  created_at?: string | null;
-};
+export interface ClassificationResult {
+  intent: Intent;
+  leadType: LeadType;
+  confidence: number;
+  needsHuman: boolean;
+  shouldSendLink: boolean;
+  detectedCity?: string | null;
+  detectedProfession?: string | null;
+  detectedInterests?: string[];
+}
 
-export type SocialReplyInput = {
-  senderId: string;
+export type ConversationRole = 'user' | 'assistant';
+
+export interface ConversationMessage {
+  role: ConversationRole;
+  content: string;
+  createdAt: number;
+}
+
+export interface GenerateSocialReplyInput {
   messageText: string;
-  previousMessages?: SocialMessageContext[];
-  currentLeadType?: SocialLeadType | string | null;
-  currentIntent?: SocialIntent | string | null;
-};
-
-export type SocialReply = {
-  reply: string;
-  intent: SocialIntent;
-  lead_type: SocialLeadType;
-  city: string | null;
-  profession: string | null;
-  interests: string[];
-  needs_human: boolean;
-};
-
-export type LocalIntentResult = {
-  intent: SocialIntent;
-  lead_type: SocialLeadType;
-  city: string | null;
-  profession: string | null;
-  interests: string[];
-  needs_human: boolean;
-};
+  recentMessages?: ConversationMessage[];
+  leadType?: LeadType;
+  intent?: Intent;
+}

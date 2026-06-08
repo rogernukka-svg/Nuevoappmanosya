@@ -1,6 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendFacebookMessage } from '@/lib/social/meta';
 import { generateSocialReply } from '@/lib/social/openai';
+import { classifyMessage } from '@/lib/social/intent';
+import { addMessage, getRecentMessages } from '@/lib/social/conversation';
+
+type MetaWebhookGlobal = typeof globalThis & {
+  __processedMessageIds?: Set<string>;
+};
+
+const metaGlobal = globalThis as MetaWebhookGlobal;
+const processedMessageIds = metaGlobal.__processedMessageIds || new Set<string>();
+metaGlobal.__processedMessageIds = processedMessageIds;
+
+function markMessageProcessed(mid: string) {
+  if (!mid) return false;
+
+  if (processedMessageIds.has(mid)) {
+    return true;
+  }
+
+  if (processedMessageIds.size > 1000) {
+    processedMessageIds.clear();
+  }
+
+  processedMessageIds.add(mid);
+  return false;
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -27,7 +52,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    console.log('META WEBHOOK EVENT:', JSON.stringify(body, null, 2));
+    console.log('META WEBHOOK EVENT:', {
+      object: body?.object,
+      entries: Array.isArray(body?.entry) ? body.entry.length : 0,
+    });
 
     const entries = Array.isArray(body?.entry) ? body.entry : [];
 
@@ -36,19 +64,38 @@ export async function POST(req: NextRequest) {
 
       for (const event of messagingEvents) {
         const senderId = event?.sender?.id;
+        const recipientId = event?.recipient?.id;
         const text = String(event?.message?.text || '').trim();
         const mid = event?.message?.mid;
+        const timestamp = event?.timestamp;
 
         if (!senderId) continue;
         if (!event?.message) continue;
+        if (event?.message?.is_echo === true) continue;
         if (!text) continue;
+        if (mid && markMessageProcessed(String(mid))) continue;
 
         console.log('Message received:', text);
         if (mid) console.log('Message mid:', mid);
+        if (recipientId) console.log('Recipient:', recipientId);
+        if (timestamp) console.log('Timestamp:', timestamp);
 
         try {
-          const reply = await generateSocialReply(text);
+          const classification = classifyMessage(text);
+          const recentMessages = getRecentMessages(senderId);
+          const reply = await generateSocialReply({
+            messageText: text,
+            recentMessages,
+            intent: classification.intent,
+            leadType: classification.leadType,
+          });
+
+          addMessage(senderId, 'user', text);
           await sendFacebookMessage(senderId, reply);
+          addMessage(senderId, 'assistant', reply);
+
+          console.log('Intent:', classification.intent);
+          console.log('Lead type:', classification.leadType);
           console.log('Reply sent:', reply);
         } catch (error) {
           console.error('META WEBHOOK MESSAGE ERROR:', error);
