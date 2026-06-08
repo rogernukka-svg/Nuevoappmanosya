@@ -69,6 +69,61 @@ function isServiceGeneric(clean: string) {
   return ['servicio', 'servicios', 'ayuda', 'buscar ayuda', 'necesito ayuda'].includes(clean);
 }
 
+const AMBIGUOUS_SERVICE_AREAS = [
+  'electricidad',
+  'plomeria',
+  'limpieza',
+  'pintura',
+  'jardineria',
+  'albanileria',
+  'mecanica',
+  'refrigeracion',
+  'cerrajeria',
+  'carpinteria',
+  'herreria',
+  'flete',
+  'fletes',
+  'mudanza',
+  'delivery',
+  'chofer',
+  'seguridad',
+  'cocina',
+  'enfermeria',
+  'niñera',
+  'ninera',
+  'tecnico',
+  'reparacion',
+  'fumigacion',
+  'internet',
+  'cctv',
+  'costura',
+  'tapiceria',
+  'vidrieria',
+  'eventos',
+  'fotografia',
+  'veterinaria',
+  'mascotas',
+];
+
+function getAmbiguousServiceArea(clean: string) {
+  return AMBIGUOUS_SERVICE_AREAS.find((area) => clean === normalizeSocialText(area)) || null;
+}
+
+function formatServiceArea(area: string) {
+  return area
+    .replace('plomeria', 'plomería')
+    .replace('jardineria', 'jardinería')
+    .replace('albanileria', 'albañilería')
+    .replace('mecanica', 'mecánica')
+    .replace('refrigeracion', 'refrigeración')
+    .replace('cerrajeria', 'cerrajería')
+    .replace('carpinteria', 'carpintería')
+    .replace('herreria', 'herrería')
+    .replace('reparacion', 'reparación')
+    .replace('fumigacion', 'fumigación')
+    .replace('fotografia', 'fotografía');
+}
+
 function formatPlace(value?: string | null) {
   if (!value) return 'esa zona';
   return value
@@ -134,6 +189,7 @@ export async function generateSocialReply(input: GenerateSocialReplyInput): Prom
   const clean = normalizeSocialText(messageText);
   const classification = classifyMessage(messageText);
   const recentMessages = input.recentMessages || [];
+  const ambiguousServiceArea = getAmbiguousServiceArea(clean);
 
   if (
     classification.detectedCity &&
@@ -145,6 +201,16 @@ export async function generateSocialReply(input: GenerateSocialReplyInput): Prom
 
   const knownAnswer = answerKnownQuestion(clean, messageText);
   if (knownAnswer) return knownAnswer;
+
+  if (ambiguousServiceArea) {
+    const area = formatServiceArea(ambiguousServiceArea);
+
+    if (hasRecent(recentMessages, ['a que te dedicas', 'que haces', 'ofreces algun servicio'])) {
+      return `Buenísimo, ${area}. ¿Vos ofrecés ese servicio o estás buscando a alguien que lo haga?`;
+    }
+
+    return `Te entiendo, ${area}. Para orientarte bien: ¿vos ofrecés ese servicio o lo estás necesitando?`;
+  }
 
   if (classification.intent === 'flirty') {
     return 'Jajaja, gracias por la buena onda 😊 Por ahora estoy bastante concentrado en ManosYA. Contame algo de vos, ¿a qué te dedicás?';
