@@ -69,6 +69,14 @@ function isServiceGeneric(clean: string) {
   return ['servicio', 'servicios', 'ayuda', 'buscar ayuda', 'necesito ayuda'].includes(clean);
 }
 
+function formatPlace(value?: string | null) {
+  if (!value) return 'esa zona';
+  return value
+    .split(' ')
+    .map((part) => (part.length <= 2 ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
+    .join(' ');
+}
+
 function linkReply() {
   return 'Te dejo el enlace para que mires tranquilo: https://www.manosya.app/ Si querés, después te guío según lo que necesites hacer.';
 }
@@ -126,6 +134,14 @@ export async function generateSocialReply(input: GenerateSocialReplyInput): Prom
   const clean = normalizeSocialText(messageText);
   const classification = classifyMessage(messageText);
   const recentMessages = input.recentMessages || [];
+
+  if (
+    classification.detectedCity &&
+    (clean === classification.detectedCity ||
+      hasRecent(recentMessages, ['de que ciudad sos', 'que ciudad', 'desde que ciudad', 'zona']))
+  ) {
+    return `Perfecto, ${formatPlace(classification.detectedCity)}. ¿Qué necesitás hacer ahora: buscar un servicio, ofrecer un trabajo o mostrar un negocio?`;
+  }
 
   const knownAnswer = answerKnownQuestion(clean, messageText);
   if (knownAnswer) return knownAnswer;
