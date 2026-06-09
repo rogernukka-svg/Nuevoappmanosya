@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
   X,
+  ArrowLeft,
   Sparkles,
     MapPin,
   MapPinned,
@@ -188,7 +189,33 @@ const SEARCH_KEYWORDS = {
     'parrillero', 'asado', 'parrilla', 'evento', 'cumple', 'fiesta'
   ],
 };
+function detectServiceSlugFromSearch(query) {
+  const q = normalizeText(query);
+  if (!q) return '';
 
+  const directService = SERVICE_CATALOG.find((service) => {
+    const serviceSlug = normalizeSlug(service.slug);
+    const serviceName = normalizeText(service.name);
+
+    return (
+      q === serviceSlug ||
+      q === serviceName ||
+      serviceName.includes(q) ||
+      serviceSlug.includes(q)
+    );
+  });
+
+  if (directService) return normalizeSlug(directService.slug);
+
+  const keywordService = Object.entries(SEARCH_KEYWORDS).find(([, keywords]) => {
+    return keywords.some((keyword) => {
+      const cleanKeyword = normalizeText(keyword);
+      return q === cleanKeyword || cleanKeyword.includes(q) || fuzzyIncludes(cleanKeyword, q);
+    });
+  });
+
+  return keywordService ? normalizeSlug(keywordService[0]) : '';
+}
 function levenshtein(a, b) {
   const s = normalizeText(a);
   const t = normalizeText(b);
@@ -800,34 +827,49 @@ useEffect(() => {
         </button>
       </div>
 
-      <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+58px)] left-3 right-[54px] z-20 text-white">
+                <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+102px)] left-3 right-[58px] z-20 text-white">
         <div className="mb-1.5 inline-flex items-center gap-2 rounded-full bg-black/30 px-2.5 py-1 text-[11px] font-black backdrop-blur-md">
           <span className={isOnline ? 'h-2 w-2 rounded-full bg-emerald-400' : 'h-2 w-2 rounded-full bg-white/55'} />
           {isOnline ? 'Activo ahora' : 'Disponible'}
         </div>
 
-        <div className="flex items-center gap-3">
-          <button type="button" onClick={onOpen} className="min-w-0 text-left">
+        <div className="flex items-end justify-between gap-2">
+          <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
             <div className="flex min-w-0 items-center gap-1.5">
               <div className="truncate text-[18px] font-black leading-tight">
                 @{worker?.username || workerName}
               </div>
+
               {worker?.is_verified && (
                 <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white shadow-[0_6px_14px_rgba(14,165,233,0.45)]" title="Verificado por ManosYA">
                   <BadgeCheck size={14} strokeWidth={3} />
                 </span>
               )}
             </div>
+
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-white/86">
               <span>{serviceDetailText || serviceBadgeText || primaryService}</span>
               {worker?._distKm != null && <span>• {formatKm(worker._distKm)}</span>}
               <span>• {formatWorkerRatingClean(worker)}</span>
             </div>
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const message = `Hola ${workerName}, vi tu publicación. Consulta por ${primaryService}: ¿estás disponible?`;
+              onMessage?.(worker, message);
+            }}
+            className="mb-0.5 flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-[#62bfb9] px-3.5 text-[12px] font-black text-white shadow-[0_12px_26px_rgba(98,191,185,0.42)] ring-1 ring-white/35 active:scale-95"
+            aria-label={`Enviar mensaje a ${workerName}`}
+          >
+            <SendHorizontal size={15} strokeWidth={2.8} />
+            Mensaje
+          </button>
         </div>
 
-        <div className="mt-1 text-[13px] font-semibold leading-5 text-white/95">
-          <p className={bioOpen ? '' : 'truncate'}>
+        <div className="mt-1 max-w-[92%] text-[13px] font-semibold leading-5 text-white/95">
+          <p className={bioOpen ? '' : 'line-clamp-2'}>
             {bioOpen ? postText : shortBio}
           </p>
 
@@ -843,24 +885,6 @@ useEffect(() => {
         </div>
 
         <SupplierProductStrip products={products} serviceName={primaryService} onContact={onSupplierContact} />
-
-        <div className="mt-2 flex items-center gap-2 rounded-[24px] border border-white/45 bg-black/28 px-3 py-2 shadow-[0_10px_22px_rgba(0,0,0,0.20)] backdrop-blur-md">
-          <input
-            defaultValue={`Hola, necesito ${String(primaryService).toLowerCase()}...`}
-            className="min-w-0 flex-1 bg-transparent px-2 text-[13px] font-semibold text-white/80 placeholder:text-white/55 outline-none"
-          />
-
-          <button
-            type="button"
-            onClick={() => {
-              const message = `Hola ${workerName}, vi tu publicación. Consulta por ${primaryService}: ¿estás disponible?`;
-              onMessage?.(worker, message);
-            }}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_10px_20px_rgba(98,191,185,0.42)] ring-1 ring-white/35 active:scale-95"
-          >
-            <SendHorizontal size={18} strokeWidth={2.6} />
-          </button>
-        </div>
       </div>
     </motion.div>
   );
@@ -976,47 +1000,98 @@ function CommentsSheet({
 function WorkerRow({ worker, selectedService = '', onSelect, onMessage, onRequest }) {
   const online = isOnlineRecent(worker);
   const serviceIntent = workerIntentSummary(worker, selectedService);
+  const workerName = worker?.full_name || 'Trabajador';
+  const serviceText = serviceIntent.detailText || serviceIntent.primaryLabel || 'Servicio general';
+  const distanceText = worker?._distKm != null ? formatKm(worker._distKm) : '';
+  const ratingText = formatWorkerRatingClean(worker);
+
   return (
-    <div className="flex items-center gap-3 rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
-      <img
-        src={worker?.avatar_url || '/avatar-fallback.png'}
-        onError={(e) => {
-          e.currentTarget.src = '/avatar-fallback.png';
-        }}
-        alt={worker?.full_name || 'Avatar'}
-        className="h-16 w-16 rounded-full object-cover"
-      />
-      <div className="min-w-0 flex-1">
-        <button type="button" onClick={onSelect} className="text-left">
-         <div className="truncate text-[17px] font-black text-slate-900">{worker?.full_name || 'Trabajador'}</div>
+    <div className="group rounded-[28px] border border-slate-200 bg-white p-3 shadow-[0_10px_28px_rgba(15,23,42,0.06)] ring-1 ring-slate-950/[0.02] active:scale-[0.99]">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onSelect}
+          className="relative h-[62px] w-[62px] shrink-0 overflow-hidden rounded-[22px] bg-slate-100 ring-1 ring-slate-200"
+          aria-label={`Ver perfil de ${workerName}`}
+        >
+          <img
+            src={worker?.avatar_url || '/avatar-fallback.png'}
+            onError={(e) => {
+              e.currentTarget.src = '/avatar-fallback.png';
+            }}
+            alt={workerName}
+            className="h-full w-full object-cover"
+          />
+
+          <span className={`absolute bottom-1.5 right-1.5 h-3.5 w-3.5 rounded-full border-2 border-white ${online ? 'bg-emerald-500' : 'bg-slate-400'}`} />
         </button>
-        <div className="mt-1 flex flex-wrap gap-2 text-[12px] text-slate-500">
-          <span>{serviceIntent.detailText || serviceIntent.primaryLabel}</span>
-          {worker?._distKm != null && <span>• {formatKm(worker._distKm)}</span>}
-          <span>• {formatWorkerRatingClean(worker)}</span>
-        </div>
-        <div className="mt-2">
-          {online ? (
-            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700">Activo ahora</span>
-          ) : (
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-500">Disponible</span>
-          )}
-        </div>
+
+        <button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="truncate text-[16px] font-black leading-tight text-slate-950">
+              {workerName}
+            </div>
+
+            {worker?.is_verified && (
+              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white">
+                <BadgeCheck size={13} strokeWidth={3} />
+              </span>
+            )}
+          </div>
+
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-extrabold text-slate-500">
+            <span className="truncate">{serviceText}</span>
+            {distanceText && <span>• {distanceText}</span>}
+            <span>• {ratingText}</span>
+          </div>
+
+          <div className="mt-2 flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black ${
+              online
+                ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200'
+            }`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${online ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+              {online ? 'Activo ahora' : 'Disponible'}
+            </span>
+
+            {worker?.is_active !== false && (
+              <span className="hidden rounded-full bg-[#e9fbf9] px-2.5 py-1 text-[10px] font-black text-[#0c6b70] ring-1 ring-[#bdecea] sm:inline-flex">
+                Listo para contactar
+              </span>
+            )}
+          </div>
+        </button>
       </div>
-      <div className="flex flex-col gap-2">
-  <button type="button" onClick={onMessage} className="rounded-full border border-slate-200 bg-slate-50 p-2 text-slate-700">
-    <MessageCircle size={16} />
-  </button>
-  <button type="button" onClick={onSelect} className="rounded-full bg-emerald-500 p-2 text-white">
-    <Sparkles size={16} />
-  </button>
-</div>
+
+      <div className="mt-3 grid grid-cols-[1fr_1.4fr] gap-2">
+        <button
+          type="button"
+          onClick={onMessage}
+          className="flex h-11 items-center justify-center gap-1.5 rounded-[18px] border border-slate-200 bg-slate-50 text-[12px] font-black text-slate-700 active:scale-95"
+        >
+          <MessageCircle size={15} strokeWidth={2.5} />
+          Mensaje
+        </button>
+
+        <button
+          type="button"
+          onClick={onSelect}
+          className="flex h-11 items-center justify-center gap-1.5 rounded-[18px] bg-[#62bfb9] text-[12px] font-black text-white shadow-[0_12px_26px_rgba(98,191,185,0.34)] ring-1 ring-[#9ee5df]/70 active:scale-95"
+        >
+          <Sparkles size={15} strokeWidth={2.8} />
+          Ver perfil
+        </button>
+      </div>
     </div>
   );
 }
 
-function ProfileMediaViewer({ media, onClose }) {
+function ProfileMediaViewer({ mediaList = [], activeIndex = 0, onClose }) {
   const mediaRef = useRef(null);
+  const activeRef = useRef(null);
+  const safeMediaList = Array.isArray(mediaList) ? mediaList.filter((item) => item?.media_url || item?.thumbnail_url) : [];
+  const media = safeMediaList[activeIndex] || safeMediaList[0] || null;
 
   useEffect(() => {
     if (!media) return undefined;
@@ -1040,48 +1115,80 @@ function ProfileMediaViewer({ media, onClose }) {
     };
   }, [media]);
 
+  useEffect(() => {
+    if (!media) return;
+    setTimeout(() => {
+      activeRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    }, 80);
+  }, [media]);
+
   if (!media) return null;
 
-  const mediaUrl = media.media_url || media.thumbnail_url;
-  const isVideo = String(media.media_type || '').toLowerCase() === 'video';
-
   return (
-    <div className="fixed inset-0 z-[70000] flex items-center justify-center bg-black/92 p-3">
+    <div className="fixed inset-0 z-[70000] bg-black/92">
       <button
         type="button"
         onClick={onClose}
-        className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/14 text-white backdrop-blur-md active:scale-95"
+        className="absolute left-4 top-[calc(env(safe-area-inset-top)+14px)] z-20 inline-flex h-11 items-center gap-2 rounded-full bg-white/16 px-4 text-[13px] font-black text-white shadow-[0_14px_34px_rgba(0,0,0,0.24)] backdrop-blur-xl active:scale-95"
         aria-label="Cerrar"
       >
-        <X size={20} />
+        <ArrowLeft size={17} strokeWidth={3} />
+        Perfil
       </button>
-      <div className="flex h-full w-full max-w-3xl items-center justify-center">
-        {isVideo ? (
-          <video
-            ref={mediaRef}
-            src={mediaUrl}
-            controls
-            autoPlay
-            playsInline
-            className="max-h-full w-full rounded-[18px] object-contain"
-          />
-        ) : (
-          <img
-            src={mediaUrl}
-            onError={(e) => {
-              e.currentTarget.src = '/avatar-fallback.png';
-            }}
-            alt={media.caption || 'Trabajo publicado'}
-            className="max-h-full w-full rounded-[18px] object-contain"
-          />
-        )}
+
+      <div className="h-full overflow-y-auto snap-y snap-mandatory px-3 py-[calc(env(safe-area-inset-top)+70px)]">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+          {safeMediaList.map((item, index) => {
+            const mediaUrl = item.media_url || item.thumbnail_url;
+            const isVideo = String(item.media_type || '').toLowerCase() === 'video';
+            const isActive = index === activeIndex;
+
+            return (
+              <section
+                key={`${item.id || mediaUrl}-${index}`}
+                ref={isActive ? activeRef : null}
+                className="flex min-h-[calc(var(--real-vh,100dvh)-92px)] snap-start snap-always items-center justify-center"
+              >
+                <div className="relative w-full overflow-hidden rounded-[28px] bg-black shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/12">
+                  {isVideo ? (
+                    <video
+                      ref={isActive ? mediaRef : null}
+                      src={mediaUrl}
+                      controls
+                      autoPlay={isActive}
+                      playsInline
+                      className="max-h-[calc(var(--real-vh,100dvh)-120px)] w-full object-contain"
+                    />
+                  ) : (
+                    <img
+                      src={mediaUrl}
+                      onError={(e) => {
+                        e.currentTarget.src = '/avatar-fallback.png';
+                      }}
+                      alt={item.caption || 'Trabajo publicado'}
+                      className="max-h-[calc(var(--real-vh,100dvh)-120px)] w-full object-contain"
+                    />
+                  )}
+
+                  {item.caption && (
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/76 to-transparent px-4 pb-4 pt-12">
+                      <p className="line-clamp-3 text-[14px] font-bold leading-5 text-white">
+                        {item.caption}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
 
-function WorkerProfileSheet({ worker, selectedService = '', onClose, onRequest, onMessage }) {
-  const [selectedMedia, setSelectedMedia] = useState(null);
+function WorkerProfileSheet({ worker, selectedService = '', onClose, onMessage }) {
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState(null);
 
   if (!worker) return null;
 
@@ -1097,150 +1204,279 @@ function WorkerProfileSheet({ worker, selectedService = '', onClose, onRequest, 
         media_type: worker?.media_type || 'image',
         caption: worker?.post_description || worker?.caption || '',
       }].filter((item) => item.media_url);
+
   const followersCount = Number(worker?.followers_count || worker?.followers || worker?.total_followers || 0);
   const likesCount = Number(worker?.likes_count || worker?.like_count || 0);
   const reviewsCount = Number(worker?.total_reviews || worker?.rating_count || 0);
+  const rating = workerRatingValue(worker);
+  const workerName = worker?.full_name || 'Trabajador';
+  const mainService = serviceIntent.detailText || serviceIntent.badgeText || serviceIntent.primaryLabel || 'Servicio general';
+  const coverUrl = worker?.cover_url || worker?.video_thumb_url || worker?.media_url || worker?.avatar_url || '/avatar-fallback.png';
+  const avatarUrl = worker?.avatar_url || '/avatar-fallback.png';
+  const distanceText = worker?._distKm != null ? formatKm(worker._distKm) : '';
+  const radiusText = `${Number(worker?.radius_km || 5)} km`;
+  const aboutText =
+    worker?.bio ||
+    worker?.post_description ||
+    'Perfil listo para mostrar trabajos, fotos, videos y recibir solicitudes directas dentro de ManosYA.';
 
   return (
-    <div className="absolute inset-0 z-[65000] bg-slate-950/58 p-3 backdrop-blur-sm sm:p-5">
-      <ProfileMediaViewer media={selectedMedia} onClose={() => setSelectedMedia(null)} />
+    <div className="absolute inset-0 z-[65000] bg-slate-950/70 p-3 backdrop-blur-md sm:p-5">
+      {selectedMediaIndex != null && (
+        <ProfileMediaViewer
+          mediaList={profileMedia}
+          activeIndex={selectedMediaIndex}
+          onClose={() => setSelectedMediaIndex(null)}
+        />
+      )}
+
       <motion.div
-        initial={{ opacity: 0, y: 32, scale: 0.98 }}
+        initial={{ opacity: 0, y: 34, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 24, scale: 0.98 }}
-        className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-hidden rounded-[34px] border border-white/18 bg-[linear-gradient(180deg,#eff6f7_0%,#ffffff_40%,#f8fbfc_100%)] shadow-[0_30px_90px_rgba(15,23,42,0.24)]"
+        transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+        className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-hidden rounded-[36px] border border-white/20 bg-[#f7fafc] shadow-[0_34px_100px_rgba(0,0,0,0.38)]"
       >
-        <div className="relative h-[270px] overflow-hidden bg-slate-900">
+        <div className="relative h-[310px] shrink-0 overflow-hidden bg-slate-950">
           <img
-            src={worker?.cover_url || worker?.video_thumb_url || worker?.avatar_url || '/avatar-fallback.png'}
+            src={coverUrl}
             onError={(e) => {
               e.currentTarget.src = '/avatar-fallback.png';
             }}
-            alt={worker?.full_name || 'Trabajador'}
+            alt={workerName}
             className="h-full w-full object-cover"
           />
-          <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(2,6,23,0.88),rgba(2,6,23,0.12))]" />
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/16 text-white backdrop-blur-md"
-          >
-            <X size={18} />
-          </button>
 
-          <div className="absolute bottom-5 left-5 right-5">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(98,191,185,0.35),transparent_34%),linear-gradient(to_top,rgba(2,6,23,0.94)_0%,rgba(2,6,23,0.58)_44%,rgba(2,6,23,0.18)_100%)]" />
+
+          <div className="absolute left-5 right-5 top-5 flex items-center justify-end">
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-black backdrop-blur-xl ${
+              online
+                ? 'bg-emerald-400/18 text-emerald-100 ring-1 ring-emerald-300/35'
+                : 'bg-white/14 text-white ring-1 ring-white/18'
+            }`}>
+              <span className={`h-2 w-2 rounded-full ${online ? 'bg-emerald-300' : 'bg-white/60'}`} />
+              {online ? 'Activo ahora' : 'Disponible'}
+            </span>
+          </div>
+
+          <div className="absolute bottom-0 left-0 right-0 px-5 pb-5">
             <div className="flex items-end gap-4">
-              <img
-                src={worker?.avatar_url || '/avatar-fallback.png'}
-                onError={(e) => {
-                  e.currentTarget.src = '/avatar-fallback.png';
-                }}
-                alt={worker?.full_name || 'Avatar'}
-                className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-[0_14px_30px_rgba(15,23,42,0.24)]"
-              />
-              <div className="pb-2 text-white">
-               <div className="text-[28px] font-black leading-none">{worker?.full_name || 'Trabajador'}</div>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-white/85">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 backdrop-blur-md">
-                    <Sparkles size={14} />
-                    {serviceIntent.badgeText || serviceIntent.primaryLabel}
+              <div className="relative shrink-0">
+                <img
+                  src={avatarUrl}
+                  onError={(e) => {
+                    e.currentTarget.src = '/avatar-fallback.png';
+                  }}
+                  alt={workerName}
+                  className="h-[94px] w-[94px] rounded-[30px] border-4 border-white object-cover shadow-[0_20px_44px_rgba(0,0,0,0.35)]"
+                />
+                {worker?.is_verified && (
+                  <span className="absolute -right-1 -top-1 flex h-8 w-8 items-center justify-center rounded-full bg-sky-500 text-white shadow-[0_10px_24px_rgba(14,165,233,0.45)] ring-4 ring-white">
+                    <BadgeCheck size={17} strokeWidth={3} />
                   </span>
-                  {online && (
-                    <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[11px] font-black text-emerald-200">
-                      Activo ahora
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1 pb-1 text-white">
+                <div className="truncate text-[30px] font-black leading-none">
+                  {workerName}
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-white/14 px-3 py-1.5 text-[12px] font-black text-white backdrop-blur-xl">
+                    <Sparkles size={14} strokeWidth={2.8} />
+                    <span className="truncate">{mainService}</span>
+                  </span>
+
+                  {distanceText && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/14 px-3 py-1.5 text-[12px] font-black text-white backdrop-blur-xl">
+                      <MapPin size={14} strokeWidth={2.8} />
+                      {distanceText}
                     </span>
                   )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <div className="rounded-[22px] border border-white/14 bg-white/12 px-3 py-3 text-white backdrop-blur-xl">
+                <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white/62">
+                  <Star size={13} />
+                  Rating
+                </div>
+                <div className="mt-1 text-[20px] font-black">
+                  {rating == null ? 'Nuevo' : rating.toFixed(1)}
+                </div>
+              </div>
+
+              <div className="rounded-[22px] border border-white/14 bg-white/12 px-3 py-3 text-white backdrop-blur-xl">
+                <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white/62">
+                  <MessageCircle size={13} />
+                  Reseñas
+                </div>
+                <div className="mt-1 text-[20px] font-black">
+                  {reviewsCount}
+                </div>
+              </div>
+
+              <div className="rounded-[22px] border border-white/14 bg-white/12 px-3 py-3 text-white backdrop-blur-xl">
+                <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white/62">
+                  <MapPin size={13} />
+                  Radio
+                </div>
+                <div className="mt-1 text-[20px] font-black">
+                  {radiusText}
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 sm:p-6">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Rating</div>
-              <div className="mt-2 text-2xl font-black text-slate-900">{workerRatingValue(worker) == null ? 'Nuevo' : workerRatingValue(worker).toFixed(1)}</div>
+        <div className="flex-1 overflow-y-auto px-5 pb-28 pt-5">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-[24px] border border-slate-200 bg-white p-4 text-center shadow-sm">
+              <div className="text-[21px] font-black text-slate-950">{profileMedia.length}</div>
+              <div className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Trabajos</div>
             </div>
-            <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Reseñas</div>
-              <div className="mt-2 text-2xl font-black text-slate-900">{Number(worker?.total_reviews || 0)}</div>
-            </div>
-            <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Radio</div>
-              <div className="mt-2 text-2xl font-black text-slate-900">{Number(worker?.radius_km || 5)} km</div>
-            </div>
-          </div>
 
-          <div className="mt-5 grid grid-cols-4 gap-2 rounded-[26px] border border-slate-200 bg-white p-3 text-center shadow-sm">
-            <div><div className="text-[18px] font-black text-slate-950">{profileMedia.length}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">Posts</div></div>
-            <div><div className="text-[18px] font-black text-slate-950">{followersCount}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">Seguidores</div></div>
-            <div><div className="text-[18px] font-black text-slate-950">{likesCount}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">Me encanta</div></div>
-            <div><div className="text-[18px] font-black text-slate-950">{workerRatingValue(worker) == null ? '-' : workerRatingValue(worker).toFixed(1)}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">{reviewsCount ? 'Rating' : 'Nuevo'}</div></div>
-          </div>
+            <div className="rounded-[24px] border border-slate-200 bg-white p-4 text-center shadow-sm">
+              <div className="text-[21px] font-black text-slate-950">{followersCount}</div>
+              <div className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Seguidores</div>
+            </div>
 
-          <div className="mt-5">
-            <div className="mb-3 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Trabajos publicados</div>
-            <div className="grid grid-cols-3 gap-1 overflow-hidden rounded-[18px] bg-slate-100">
-              {profileMedia.slice(0, 9).map((item, idx) => (
-                <button
-                  type="button"
-                  key={`${item.id || item.media_url}-${idx}`}
-                  onClick={() => setSelectedMedia(item)}
-                  className="relative aspect-[3/4] overflow-hidden bg-slate-200 text-left active:scale-[0.99]"
-                >
-                  {item.media_type === 'video' ? (
-                    <video src={item.media_url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
-                  ) : (
-                    <img src={item.thumbnail_url || item.media_url} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={item.caption || 'Trabajo'} className="h-full w-full object-cover" />
-                  )}
-                  {item.media_type === 'video' && <span className="absolute right-2 top-2 rounded-full bg-black/45 px-2 py-1 text-[10px] font-black text-white">VIDEO</span>}
-                </button>
-              ))}
+            <div className="rounded-[24px] border border-slate-200 bg-white p-4 text-center shadow-sm">
+              <div className="text-[21px] font-black text-slate-950">{likesCount}</div>
+              <div className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Me encanta</div>
             </div>
           </div>
 
           <div className="mt-5 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-           <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Sobre este trabajador</div>
-            <p className="mt-3 text-[15px] leading-7 text-slate-600">
-            {worker?.bio || 'Perfil listo para mostrar trabajos, fotos, videos y recibir solicitudes directas como trabajador dentro de ManosYA.'}
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                  Sobre este trabajador
+                </div>
+                <div className="mt-1 text-[20px] font-black text-slate-950">
+                  Lo que ofrece
+                </div>
+              </div>
+
+              <span className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-black ${
+                online
+                  ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                  : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200'
+              }`}>
+                {online ? 'En línea' : 'Disponible'}
+              </span>
+            </div>
+
+            <p className="mt-4 text-[14px] font-semibold leading-7 text-slate-600">
+              {aboutText}
             </p>
           </div>
 
           <div className="mt-5 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Servicios</div>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                  Servicios
+                </div>
+                <div className="mt-1 text-[20px] font-black text-slate-950">
+                  Especialidades
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
               {(services.length ? services : [selectedService || 'servicio-general']).map((item, idx) => (
                 <span
                   key={`${item}-${idx}`}
-                  className={`rounded-full border px-3 py-2 text-sm font-bold ${
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[12px] font-black ${
                     selectedService && normalizeSlug(item) === normalizeSlug(selectedService)
                       ? 'border-[#0c6b70] bg-[#dff7f5] text-[#0c6b70]'
-                      : 'border-emerald-100 bg-emerald-50 text-[#0c6b70]'
+                      : 'border-slate-200 bg-slate-50 text-slate-700'
                   }`}
                 >
+                  <Sparkles size={13} strokeWidth={2.8} />
                   {getServiceLabel(item, item)}
                 </span>
               ))}
             </div>
           </div>
+
+          <div className="mt-5">
+            <div className="mb-3 flex items-end justify-between">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                  Trabajos publicados
+                </div>
+                <div className="mt-1 text-[20px] font-black text-slate-950">
+                  Galería real
+                </div>
+              </div>
+
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black text-slate-500">
+                {profileMedia.length}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 overflow-hidden rounded-[24px] bg-slate-100 p-2">
+              {profileMedia.slice(0, 9).map((item, idx) => (
+                <button
+                  type="button"
+                  key={`${item.id || item.media_url}-${idx}`}
+                  onClick={() => setSelectedMediaIndex(idx)}
+                  className="relative aspect-[3/4] overflow-hidden rounded-[18px] bg-slate-200 text-left shadow-sm active:scale-[0.99]"
+                >
+                  {item.media_type === 'video' ? (
+                    <video
+                      src={item.media_url}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <img
+                      src={item.thumbnail_url || item.media_url}
+                      onError={(e) => {
+                        e.currentTarget.src = '/avatar-fallback.png';
+                      }}
+                      alt={item.caption || 'Trabajo'}
+                      className="h-full w-full object-cover"
+                    />
+                  )}
+
+                  {item.media_type === 'video' && (
+                    <span className="absolute right-2 top-2 rounded-full bg-black/55 px-2 py-1 text-[9px] font-black text-white backdrop-blur-md">
+                      VIDEO
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className="border-t border-slate-200 bg-white p-4 sm:p-5">
-          <div className="flex gap-3">
+        <div className="absolute bottom-3 left-3 right-3 z-20 rounded-[30px] border border-slate-200 bg-white/96 p-2 shadow-[0_24px_60px_rgba(15,23,42,0.24)] backdrop-blur-xl">
+          <div className="grid grid-cols-[1fr_1.45fr] gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-14 items-center justify-center gap-2 rounded-[24px] border border-slate-200 bg-slate-50 text-[14px] font-black text-slate-800 active:scale-95"
+            >
+              <ArrowLeft size={18} strokeWidth={2.8} />
+              Volver
+            </button>
+
             <button
               type="button"
               onClick={onMessage}
-              className="flex-1 rounded-[22px] border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-black text-slate-700"
+              className="flex h-14 items-center justify-center gap-2 rounded-[24px] bg-gradient-to-r from-[#0c6b70] via-[#31aaa5] to-[#9ee5df] text-[14px] font-black text-white shadow-[0_16px_34px_rgba(98,191,185,0.38)] active:scale-95"
             >
+              <MessageCircle size={18} strokeWidth={2.8} />
               Mensaje
-            </button>
-            <button
-              type="button"
-              onClick={onRequest}
-              className="flex-1 rounded-[22px] bg-gradient-to-r from-[#0c6b70] via-[#62bfb9] to-[#9ee5df] px-5 py-4 text-sm font-black text-white shadow-[0_16px_34px_rgba(98,191,185,0.34)]"
-            >
-              {selectedService ? `Solicitar ${getServiceLabel(selectedService).toLowerCase()}` : 'Solicitar ahora'}
             </button>
           </div>
         </div>
@@ -1474,43 +1710,90 @@ function goNextWorker() {
 function AllWorkersSheet({ open, workers, workersSheetTitle, selectedService = '', onClose, onSelect, onMessage, onRequest }) {
   if (!open) return null;
 
+  const totalWorkers = Array.isArray(workers) ? workers.length : 0;
+  const onlineWorkers = (workers || []).filter((worker) => isOnlineRecent(worker)).length;
+
   return (
-    <div className="absolute inset-0 z-[64000] bg-slate-950/48 p-3 backdrop-blur-sm sm:p-5">
+    <div className="absolute inset-0 z-[64000] bg-slate-950/56 p-3 backdrop-blur-md sm:p-5">
       <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 20 }}
-        className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[34px] border border-white/20 bg-[linear-gradient(180deg,#eff6f7_0%,#ffffff_40%,#f8fbfc_100%)] shadow-[0_30px_90px_rgba(15,23,42,0.22)]"
+        initial={{ opacity: 0, y: 34, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 24, scale: 0.98 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+        className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[36px] border border-white/75 bg-[#f7fafc] shadow-[0_32px_90px_rgba(15,23,42,0.34)]"
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <div>
-            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Explorar</div>
-           <div className="mt-1 text-2xl font-black text-slate-900">
-  {workersSheetTitle || 'Todos los trabajadores'}
-</div>
+        <div className="relative border-b border-slate-200/80 bg-white px-5 pb-4 pt-5">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#0c6b70] via-[#62bfb9] to-[#9ee5df]" />
+
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#0c6b70]">
+                Comparar trabajadores
+              </div>
+
+              <div className="mt-1 truncate text-[24px] font-black leading-tight text-slate-950">
+                {workersSheetTitle || 'Todos los trabajadores'}
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black text-slate-600 ring-1 ring-slate-200">
+                  {totalWorkers} disponibles
+                </span>
+
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-100">
+                  {onlineWorkers} activos ahora
+                </span>
+
+                {selectedService && (
+                  <span className="rounded-full bg-[#e9fbf9] px-3 py-1 text-[11px] font-black text-[#0c6b70] ring-1 ring-[#bdecea]">
+                    {getServiceLabel(selectedService)}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm active:scale-95"
+              aria-label="Cerrar lista de trabajadores"
+            >
+              <X size={18} strokeWidth={2.7} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-slate-200 bg-white p-2 text-slate-700"
-          >
-            <X size={18} />
-          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
-          <div className="space-y-3">
-            {(workers || []).map((worker) => (
-              <WorkerRow
-                key={String(worker.user_id)}
-                worker={worker}
-                selectedService={selectedService}
-                onSelect={() => onSelect(worker)}
-                onMessage={() => onMessage(worker)}
-                onRequest={() => onRequest(worker)}
-              />
-            ))}
-          </div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+          {!totalWorkers ? (
+            <div className="flex h-full items-center justify-center text-center">
+              <div className="max-w-[280px]">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                  <Users size={28} />
+                </div>
+
+                <div className="mt-4 text-[18px] font-black text-slate-950">
+                  No encontramos trabajadores
+                </div>
+
+                <p className="mt-2 text-[13px] font-semibold leading-5 text-slate-500">
+                  Probá otro oficio o cambiá el filtro para ver más opciones.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 pb-3">
+              {(workers || []).map((worker) => (
+                <WorkerRow
+                  key={String(worker.user_id || worker.worker_id || worker.id)}
+                  worker={worker}
+                  selectedService={selectedService}
+                  onSelect={() => onSelect(worker)}
+                  onMessage={() => onMessage(worker)}
+                  onRequest={() => onRequest(worker)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </motion.div>
     </div>
@@ -1672,6 +1955,7 @@ const mapRef = useRef(null);
 const feedRef = useRef(null);
 const feedSnapTimerRef = useRef(null);
 const sharedWorkerOpenedRef = useRef('');
+const userEditedServiceQueryRef = useRef(false);
 const [mounted, setMounted] = useState(false);
 
   const initialIntentFromUrl = serviceIntentFromSearchParams(searchParams);
@@ -1770,6 +2054,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (!mounted) return;
+    if (userEditedServiceQueryRef.current) return;
 
     const urlIntent = serviceIntentFromSearchParams(searchParams);
     const storedIntent = readServiceIntent();
@@ -2241,33 +2526,56 @@ useEffect(() => {
 const feedWorkers = useMemo(() => {
   const base = Array.isArray(workers) ? workers : [];
   const selectedSlug = normalizeSlug(selectedService);
-  const q = selectedSlug && normalizeSlug(serviceQuery) === selectedSlug ? '' : normalizeText(serviceQuery);
+  const detectedSlug = detectServiceSlugFromSearch(serviceQuery);
+  const activeServiceSlug = selectedSlug || detectedSlug;
+  const q = activeServiceSlug && normalizeSlug(serviceQuery) === activeServiceSlug ? '' : normalizeText(serviceQuery);
+
+  const strictServiceWorkers = activeServiceSlug
+    ? base.filter((worker) => workerMatchesService(worker, activeServiceSlug))
+    : base;
+
+  const relatedServiceWorkers =
+    activeServiceSlug && !strictServiceWorkers.length
+      ? base.filter((worker) => workerRelatedToService(worker, activeServiceSlug))
+      : [];
+
+  const searchableBase = strictServiceWorkers.length
+    ? strictServiceWorkers
+    : relatedServiceWorkers.length
+      ? relatedServiceWorkers
+      : base;
+
   const rankBySelectedService = (list) => {
-    if (!selectedSlug) return list;
+    if (!activeServiceSlug) return list;
 
     return [...list].sort((a, b) => {
-      const aExact = workerMatchesService(a, selectedSlug);
-      const bExact = workerMatchesService(b, selectedSlug);
+      const aExact = workerMatchesService(a, activeServiceSlug);
+      const bExact = workerMatchesService(b, activeServiceSlug);
       if (aExact !== bExact) return aExact ? -1 : 1;
 
-      const aRelated = workerRelatedToService(a, selectedSlug);
-      const bRelated = workerRelatedToService(b, selectedSlug);
+      const aRelated = workerRelatedToService(a, activeServiceSlug);
+      const bRelated = workerRelatedToService(b, activeServiceSlug);
       if (aRelated !== bRelated) return aRelated ? -1 : 1;
 
-      return 0;
+      if (a._distKm != null && b._distKm != null) return Number(a._distKm) - Number(b._distKm);
+
+      return Number(b?.avg_rating || 0) - Number(a?.avg_rating || 0);
     });
   };
 
   if (q) {
-    const matches = base
+    const matches = searchableBase
       .map((worker) => ({
         ...worker,
-        _searchScore: workerSearchScore(worker, q) + (selectedSlug && workerMatchesService(worker, selectedSlug) ? 180 : 0),
+        _searchScore:
+          workerSearchScore(worker, q) +
+          (activeServiceSlug && workerMatchesService(worker, activeServiceSlug) ? 220 : 0) +
+          (activeServiceSlug && workerRelatedToService(worker, activeServiceSlug) ? 80 : 0),
       }))
-      .filter((worker) => worker._searchScore > 0)
+      .filter((worker) => worker._searchScore > 0 || (activeServiceSlug && workerMatchesService(worker, activeServiceSlug)))
       .sort((a, b) => {
         if (b._searchScore !== a._searchScore) return b._searchScore - a._searchScore;
-        if (a._distKm != null && b._distKm != null) return a._distKm - b._distKm;
+        if (a._distKm != null && b._distKm != null) return Number(a._distKm) - Number(b._distKm);
         return Number(b?.avg_rating || 0) - Number(a?.avg_rating || 0);
       });
 
@@ -2275,7 +2583,7 @@ const feedWorkers = useMemo(() => {
   }
 
   if (feedMode === 'near') {
-    const nearby = base
+    const nearby = searchableBase
       .filter((worker) => Number.isFinite(Number(worker?._distKm)))
       .filter((worker) => Number(worker._distKm) <= 15)
       .sort((a, b) => Number(a._distKm) - Number(b._distKm));
@@ -2283,9 +2591,8 @@ const feedWorkers = useMemo(() => {
     return prioritizeVideoWorkers(rankBySelectedService(nearby), feedSeed).slice(0, 24);
   }
 
-  return prioritizeVideoWorkers(rankBySelectedService(base), feedSeed).slice(0, 60);
+  return prioritizeVideoWorkers(rankBySelectedService(searchableBase), feedSeed).slice(0, 60);
 }, [workers, feedMode, feedSeed, serviceQuery, selectedService]);
-
 const loopedFeedWorkers = useMemo(() => {
   if (feedWorkers.length <= 1) return feedWorkers;
   return Array.from({ length: 5 }, () => feedWorkers).flat();
@@ -2789,6 +3096,64 @@ trackWorkerClientEvent('contact_worker', target, {
       return;
     }
 
+    if (presetMessage !== undefined) {
+      const { data: chatOnlyExisting, error: chatOnlyExistingError } = await supabase
+        .from('chats')
+        .select('id')
+        .eq('client_id', me.id)
+        .eq('worker_id', workerId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (chatOnlyExistingError) throw chatOnlyExistingError;
+
+      let chatOnlyId = chatOnlyExisting?.id || null;
+
+      if (!chatOnlyId) {
+        const { data: chatOnlyNew, error: chatOnlyCreateError } = await supabase
+          .from('chats')
+          .insert([
+            {
+              client_id: me.id,
+              worker_id: workerId,
+            },
+          ])
+          .select('id')
+          .single();
+
+        if (chatOnlyCreateError) throw chatOnlyCreateError;
+        chatOnlyId = chatOnlyNew?.id || null;
+      }
+
+      if (!chatOnlyId) throw new Error('No pudimos abrir el chat creado');
+
+      const { error: chatOnlyMessageError } = await supabase.from('messages').insert([
+        {
+          chat_id: chatOnlyId,
+          sender_id: me.id,
+          text: messageSafety.text,
+          content: messageSafety.text,
+        },
+      ]);
+
+      if (chatOnlyMessageError) throw chatOnlyMessageError;
+
+      setChatId(chatOnlyId);
+
+      saveServiceIntent({
+        role: 'client',
+        serviceSlug: chosenService,
+        serviceName: serviceLabel,
+        timing: null,
+        source: 'client_open_message',
+      });
+
+      toast.success('Mensaje enviado al trabajador');
+      router.push(`/client/chat/${chatOnlyId}`);
+      return;
+    }
+
     const { data: activeJob, error: activeJobError } = await supabase
       .from('jobs')
       .select('id, status, service_type')
@@ -3073,22 +3438,23 @@ async function cancelActiveJob() {
   <div className="relative h-full">
     <div className="relative z-10 h-full">
           <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white">
-  <div className="flex items-center gap-2">
+  <div className="mx-auto flex h-12 max-w-[520px] items-center gap-2 rounded-[28px] border border-white/18 bg-black/36 p-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.28)] backdrop-blur-2xl">
     <button
       type="button"
       onClick={() => {
-        setFeedMode('all');
-        setSelectedService('');
-        setServiceQuery('');
-        clearServiceIntent();
-        router.replace('/client');
+        router.push('/role-selector');
       }}
-      className="flex shrink-0 items-center text-[18px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]"
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] active:scale-95"
+      aria-label="Volver al selector de rol"
     >
-      ManosYA
+      <ArrowLeft size={18} strokeWidth={3} />
     </button>
 
-    <div className="relative min-w-0 flex-1 rounded-full border border-white/25 bg-black/18 shadow-[0_10px_24px_rgba(0,0,0,0.20)] backdrop-blur-xl">
+    <div className="shrink-0 text-[17px] font-black tracking-[-0.02em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
+      ManosYA
+    </div>
+
+    <div className="relative h-9 min-w-0 flex-1 rounded-full border border-white/16 bg-white/12 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
       <Search
         className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60"
         size={15}
@@ -3098,9 +3464,16 @@ async function cancelActiveJob() {
         value={serviceQuery}
         onChange={(e) => {
           const value = e.target.value;
+          userEditedServiceQueryRef.current = true;
           setServiceQuery(value);
 
           const normalizedValue = normalizeSlug(value);
+          if (!normalizedValue) {
+            setSelectedService('');
+            clearServiceIntent();
+            return;
+          }
+
           const matchedService = SERVICE_CATALOG.find((service) => {
             const slug = normalizeSlug(service.slug);
             const name = normalizeSlug(service.name);
@@ -3120,22 +3493,25 @@ async function cancelActiveJob() {
               timing: bookingTime || null,
               source: 'client_search',
             });
+          } else {
+            clearServiceIntent();
           }
         }}
         placeholder="Buscar..."
-        className="h-9 w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/60 outline-none"
+        className="h-full w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/62 outline-none"
       />
 
       {serviceQuery && (
         <button
           type="button"
           onClick={() => {
+            userEditedServiceQueryRef.current = true;
             setServiceQuery('');
             setSelectedService('');
             clearServiceIntent();
             router.replace('/client');
           }}
-          className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/14 text-white/80 active:scale-95"
+          className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/16 text-white/82 active:scale-95"
         >
           <X size={14} />
         </button>
@@ -3145,7 +3521,7 @@ async function cancelActiveJob() {
     <button
       type="button"
       onClick={openCommentNotifications}
-      className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/28 text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur-xl active:scale-95"
+      className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] active:scale-95"
     >
       <Bell size={18} />
 
@@ -3157,44 +3533,55 @@ async function cancelActiveJob() {
     </button>
   </div>
 
-  {selectedServiceLabel && (
-    <div className="mt-2 flex justify-center">
-      <div className="flex max-w-full items-center gap-2 rounded-full border border-white/20 bg-black/28 px-3 py-1.5 text-[11px] font-black text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur-xl">
-        <span className="truncate">
-          Estás viendo trabajadores para {selectedServiceLabel}
-          {exactServiceMatches === 0 ? ' · te mostramos relacionados' : ''}
+    {selectedServiceLabel && (
+    <div className="mt-2 flex justify-center px-1">
+      <div className="flex max-w-full items-center gap-2 rounded-full border border-white/18 bg-black/34 px-3 py-1.5 text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+        <span className="min-w-0 truncate text-[11px] font-black">
+          Filtro activo: {selectedServiceLabel}
+          {exactServiceMatches === 0 ? ' · mostrando similares' : ''}
         </span>
+
         <button
           type="button"
           onClick={() => {
+            userEditedServiceQueryRef.current = true;
+            setFeedMode('all');
             setSelectedService('');
             setServiceQuery('');
+            setFeedSeed(Date.now() + Math.random());
+            setFeedIndex(0);
+            setFeedSlotIndex(0);
+            setSelected(null);
+            setNearbyMapWorker(null);
             clearServiceIntent();
             router.replace('/client');
             fetchWorkers('');
+            feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
           }}
-          className="shrink-0 rounded-full bg-white/18 px-2 py-1 text-[10px] text-white active:scale-95"
+          className="shrink-0 rounded-full bg-white px-3 py-1 text-[10px] font-black text-black shadow-[0_6px_14px_rgba(0,0,0,0.18)] active:scale-95"
+          aria-label={`Ver otros servicios, salir del filtro ${selectedServiceLabel}`}
         >
-          Cambiar
+          Ver otros servicios
         </button>
       </div>
     </div>
   )}
 
   <div className="mt-2 flex justify-center">
-    <div className="relative inline-flex items-center rounded-full bg-white/20 p-1 shadow-lg backdrop-blur-md">
+    <div className="relative grid h-10 w-[214px] grid-cols-2 items-center rounded-full border border-white/16 bg-black/32 p-1 shadow-[0_14px_34px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
       <motion.div
         layout
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="absolute bottom-1 top-1 w-1/2 rounded-full bg-white"
+        className="absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-white shadow-[0_8px_20px_rgba(0,0,0,0.20)]"
         style={{
-          left: feedMode === 'all' ? '4px' : 'calc(50% + 2px)',
+          left: feedMode === 'all' ? '4px' : '50%',
         }}
       />
 
       <button
         type="button"
         onClick={() => {
+          userEditedServiceQueryRef.current = true;
           setFeedMode('all');
           setSelectedService('');
           setServiceQuery('');
@@ -3208,7 +3595,7 @@ async function cancelActiveJob() {
           fetchWorkers('');
           feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
         }}
-        className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${
+        className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${
           feedMode === 'all' ? 'text-black' : 'text-white'
         }`}
       >
@@ -3226,7 +3613,7 @@ async function cancelActiveJob() {
           setNearbyMapWorker(null);
           feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
         }}
-        className={`relative z-10 rounded-full px-4 py-1.5 text-[11px] font-black transition ${
+        className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${
           feedMode === 'near' ? 'text-black' : 'text-white'
         }`}
       >
@@ -3533,39 +3920,61 @@ async function cancelActiveJob() {
           </div>
         </div>
       </div>
-<div className="pointer-events-auto absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+8px)] z-50 flex justify-center px-3 text-white">
-  <div className="grid h-12 w-[260px] grid-cols-4 items-center rounded-full border border-white/12 bg-black/46 p-1 text-center text-[9px] font-bold shadow-[0_16px_38px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
-    <button
-      type="button"
-      onClick={() => router.push('/role-selector')}
-      className="flex h-full flex-col items-center justify-center gap-0.5 rounded-full active:scale-95"
-    >
-      <PanelTop size={19} strokeWidth={2.4} />
-      Modos
-    </button>
-
+<div className="pointer-events-auto fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-[70000] flex justify-center px-4">
+  <div className="grid h-[66px] w-full max-w-[374px] grid-cols-4 items-center rounded-[999px] border border-white bg-white p-1.5 text-center text-[10px] font-black text-[#071827] shadow-[0_18px_44px_rgba(0,0,0,0.30)] ring-1 ring-black/5">
     <button
       type="button"
       onClick={() => router.push('/client/jobs')}
-      className="flex h-full flex-col items-center justify-center gap-0.5 rounded-full active:scale-95"
+      className="relative flex h-full flex-col items-center justify-center gap-1 rounded-full text-[#071827] active:scale-95"
     >
-      <Briefcase size={19} />
-      Pedidos
+      <Briefcase size={20} strokeWidth={2.5} />
+      <span>Pedidos</span>
+
+      {jobId && (
+        <span className="absolute right-4 top-2 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+      )}
     </button>
+
+    <button
+  type="button"
+  onClick={() => {
+    const currentService = selectedService || detectServiceSlugFromSearch(serviceQuery);
+    const title = currentService
+      ? `Trabajadores de ${getServiceLabel(currentService)}`
+      : serviceQuery?.trim()
+        ? `Resultados para "${serviceQuery.trim()}"`
+        : 'Todos los trabajadores';
+
+    setWorkersSheetTitle(title);
+    setWorkersSheetList(Array.isArray(feedWorkers) && feedWorkers.length ? feedWorkers : workers);
+    setShowAllWorkers(true);
+  }}
+  className="flex h-full flex-col items-center justify-center gap-1 rounded-full bg-[#62bfb9] text-white shadow-[0_12px_26px_rgba(98,191,185,0.45)] ring-1 ring-[#9ee5df]/70 active:scale-95"
+  aria-label="Ver trabajadores en lista"
+>
+  <Users size={21} strokeWidth={2.8} />
+  <span>Ver lista</span>
+</button>
 
     <button
       type="button"
       onClick={openClientMessages}
-      className="relative flex h-full flex-col items-center justify-center gap-0.5 rounded-full active:scale-95"
+      className="relative flex h-full flex-col items-center justify-center gap-1 rounded-full text-[#071827] active:scale-95"
     >
-      <MessageCircle size={19} />
-      Mensajes
+      <MessageCircle size={21} strokeWidth={2.5} />
+      <span>Mensajes</span>
+
+      {unreadMessagesCount > 0 && (
+        <span className="absolute right-4 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white ring-2 ring-white">
+          {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+        </span>
+      )}
     </button>
 
     <button
       type="button"
       onClick={() => router.push('/client/profile')}
-      className="flex h-full flex-col items-center justify-center gap-0.5 rounded-full active:scale-95"
+      className="relative flex h-full flex-col items-center justify-center gap-1 rounded-full text-[#071827] active:scale-95"
     >
       <img
         src={clientProfile?.avatar_url || '/avatar-fallback.png'}
@@ -3573,9 +3982,15 @@ async function cancelActiveJob() {
           e.currentTarget.src = '/avatar-fallback.png';
         }}
         alt={clientProfile?.full_name || 'Mi perfil'}
-        className="h-6 w-6 rounded-full border border-white object-cover"
+        className="h-7 w-7 rounded-full border-2 border-slate-300 bg-white object-cover shadow-sm"
       />
-      Tú
+      <span>Perfil</span>
+
+      {unreadCommentsCount > 0 && (
+        <span className="absolute right-4 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white ring-2 ring-white">
+          {unreadCommentsCount > 9 ? '9+' : unreadCommentsCount}
+        </span>
+      )}
     </button>
   </div>
 </div>
@@ -3636,7 +4051,6 @@ async function cancelActiveJob() {
                 selectedService={selectedService}
                 onClose={() => setShowProfile(false)}
                 onMessage={() => openMessage(selected)}
-                onRequest={() => requestWorker(selected)}
               />
             )}
           </AnimatePresence>,

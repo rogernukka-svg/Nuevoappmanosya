@@ -1144,15 +1144,15 @@ function EyeIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
-      className="h-7 w-7 rotate-[8deg]"
+      className="h-7 w-7"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2.45"
+      strokeWidth="2.8"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M22 2L11 13" />
-      <path d="M22 2L15 22L11 13L2 9L22 2Z" />
+      <path d="M5 12h14" />
+      <path d="m13 6 6 6-6 6" />
     </svg>
   );
 }
@@ -1637,11 +1637,13 @@ function startSupplierFlow() {
     return;
   }
 
-    setDraftStage('timing');
-  appendPrompt(
-    `Perfecto. Necesitás ${top.name}.`,
-    '¿Lo necesitás hoy o para otro día?'
-  );
+    setSelectedTiming('');
+    setDraftStage('email');
+    appendPrompt(
+      `Jaha, necesitás ${top.name}.`,
+      'Te llevo a ver trabajadores disponibles. Pasame tu correo para continuar.'
+    );
+    return;
 }
 
   function handleTimingSelect(timing) {
@@ -1916,10 +1918,7 @@ ctx.clearRect(0, 0, width, height);
       return;
     }
 
-    if (flow === 'client' && !selectedTiming) {
-      toast.error('Elegí cuándo lo necesitás');
-      return;
-    }
+    const finalTiming = flow === 'client' ? selectedTiming || 'hoy' : null;
 
     if (!cleanEmail || !password || password.length < 6) {
   toast.error('Revisá correo y contraseña');
@@ -1993,7 +1992,7 @@ const roleToSave = finalFlow === 'worker' ? 'worker' : finalFlow === 'supplier' 
         role: finalFlow,
         serviceSlug: selectedNeed.slug,
         serviceName: selectedNeed.name,
-        timing: finalFlow === 'client' ? selectedTiming : null,
+       timing: finalFlow === 'client' ? finalTiming : null,
       });
 
       toast.success('Cuenta creada correctamente');
@@ -2385,11 +2384,13 @@ function handleMainContinue(latestValue = '') {
                 return;
               }
 
-              setDraftStage('timing');
+              setSelectedTiming('');
+              setDraftStage('email');
               appendPrompt(
-  `Perfecto. Necesitás ${service.name}.`,
-  '¿Lo necesitás hoy o para otro día?'
-);
+                `Jaha, necesitás ${service.name}.`,
+                'Te llevo a ver trabajadores disponibles. Pasame tu correo para continuar.'
+              );
+              return;
             }}
             className="rounded-full bg-white/90 px-5 py-3 text-sm font-black text-[#08233a] shadow-[0_10px_24px_rgba(8,15,52,0.08)]"
           >
