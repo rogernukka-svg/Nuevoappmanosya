@@ -27,6 +27,10 @@ import {
   Music2,
   Type,
   ImagePlus,
+  Briefcase,
+  User2,
+  Power,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
@@ -1412,6 +1416,252 @@ function AllWorkersSheet({ open, workers, onClose, onSelect }) {
   return <div className="absolute inset-0 z-[64000] bg-slate-950/48 p-3 backdrop-blur-sm sm:p-5"><motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[34px] border border-white/20 bg-[linear-gradient(180deg,#eff6f7_0%,#ffffff_40%,#f8fbfc_100%)] shadow-[0_30px_90px_rgba(15,23,42,0.22)]"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Explorar</div><div className="mt-1 text-2xl font-black text-slate-900">Todos los trabajadores</div></div><button type="button" onClick={onClose} className="rounded-full border border-slate-200 bg-white p-2 text-slate-700"><X size={18} /></button></div><div className="flex-1 overflow-y-auto p-4 sm:p-5"><div className="space-y-3">{(workers || []).map((worker) => <div key={String(worker.user_id)} className="flex items-center gap-3 rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm"><img src={worker?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={worker?.full_name || 'Avatar'} className="h-16 w-16 rounded-full object-cover" /><div className="min-w-0 flex-1"><button type="button" onClick={() => onSelect(worker)} className="text-left"><div className="truncate text-[17px] font-black text-slate-900">{worker?.full_name || 'Trabajador'}</div></button><div className="mt-1 flex flex-wrap gap-2 text-[12px] text-slate-500"><span>{serviceLabelForWorker(worker)}</span>{worker?._distKm != null && <span>â€¢ {formatKm(worker._distKm)}</span>}<span>• {formatWorkerRatingClean(worker)}</span></div></div><button type="button" onClick={() => onSelect(worker)} className="rounded-full bg-[#62bfb9] p-2 text-white"><Sparkles size={16} /></button></div>)}</div></div></motion.div></div>;
 }
 
+function WorkerFeedNavButton({ icon, active, badge = 0, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex h-10 w-10 items-center justify-center rounded-full transition active:scale-95 ${
+        active ? 'bg-white text-slate-950' : 'bg-white/10 text-white'
+      }`}
+      aria-label={label}
+      title={label}
+    >
+      {icon}
+      {badge > 0 && (
+        <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white">
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function WorkerHubSheet({
+  open,
+  tab,
+  setTab,
+  onClose,
+  profile,
+  status,
+  stats,
+  jobs,
+  postsCount,
+  loadingJobs,
+  onToggleStatus,
+  onRefreshJobs,
+  onOpenProfile,
+  onOpenPosts,
+}) {
+  if (!open) return null;
+
+  const isAvailable = status === 'available';
+  const visibleJobs = (jobs || []).slice(0, 4);
+
+  return (
+    <div className="absolute inset-0 z-[65000] flex items-end bg-black/35 px-3 pb-[calc(env(safe-area-inset-bottom)+12px)] backdrop-blur-[2px]">
+      <motion.div
+        initial={{ y: 420, opacity: 0.9 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 420, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 360, damping: 34 }}
+        className="mx-auto flex max-h-[82dvh] w-full max-w-md flex-col overflow-hidden rounded-[30px] border border-white/18 bg-white text-slate-950 shadow-[0_28px_90px_rgba(0,0,0,0.38)]"
+      >
+        <div className="flex items-center justify-between px-4 pb-3 pt-4">
+          <div className="flex items-center gap-3">
+            <img
+              src={profile?.avatar_url || '/avatar-fallback.png'}
+              onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }}
+              alt={profile?.full_name || 'Trabajador'}
+              className="h-11 w-11 rounded-full object-cover"
+            />
+            <div className="min-w-0">
+              <div className="truncate text-[18px] font-black">{profile?.full_name || 'Mi trabajo'}</div>
+              <div className="text-[12px] font-bold text-slate-500">{isAvailable ? 'Visible para pedidos' : 'En pausa'}</div>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mx-4 grid grid-cols-2 rounded-full bg-slate-100 p-1">
+          <button type="button" onClick={() => setTab('jobs')} className={`rounded-full py-2 text-[13px] font-black ${tab === 'jobs' ? 'bg-white shadow-sm' : 'text-slate-500'}`}>Pedidos</button>
+          <button type="button" onClick={() => setTab('profile')} className={`rounded-full py-2 text-[13px] font-black ${tab === 'profile' ? 'bg-white shadow-sm' : 'text-slate-500'}`}>Perfil</button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4">
+          {tab === 'jobs' ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-[20px] bg-[#62bfb9]/10 p-3 text-center">
+                  <div className="text-[20px] font-black">{stats.open}</div>
+                  <div className="text-[10px] font-black uppercase text-slate-400">Nuevos</div>
+                </div>
+                <div className="rounded-[20px] bg-[#62bfb9]/10 p-3 text-center">
+                  <div className="text-[20px] font-black">{stats.active}</div>
+                  <div className="text-[10px] font-black uppercase text-slate-400">Activos</div>
+                </div>
+                <div className="rounded-[20px] bg-[#62bfb9]/10 p-3 text-center">
+                  <div className="text-[20px] font-black">{stats.done}</div>
+                  <div className="text-[10px] font-black uppercase text-slate-400">Hechos</div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={onToggleStatus}
+                className={`flex w-full items-center justify-center gap-2 rounded-full px-5 py-4 text-[15px] font-black text-white active:scale-[0.98] ${
+                  isAvailable ? 'bg-[#18b8aa]' : 'bg-slate-900'
+                }`}
+              >
+                <Power size={17} />
+                {isAvailable ? 'Estoy disponible' : 'Volver a estar disponible'}
+              </button>
+
+              <div className="flex items-center justify-between pt-1">
+                <div className="text-[15px] font-black">Pedidos recientes</div>
+                <button type="button" onClick={onRefreshJobs} className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                  <RefreshCw size={15} className={loadingJobs ? 'animate-spin' : ''} />
+                </button>
+              </div>
+
+              {loadingJobs ? (
+                <div className="rounded-[22px] bg-slate-50 p-5 text-center text-[13px] font-bold text-slate-500">Cargando pedidos...</div>
+              ) : visibleJobs.length === 0 ? (
+                <div className="rounded-[22px] border border-dashed border-[#62bfb9]/35 bg-[#62bfb9]/8 p-5 text-center">
+                  <Briefcase className="mx-auto text-[#18b8aa]" size={26} />
+                  <div className="mt-2 text-[15px] font-black">Sin pedidos por ahora</div>
+                  <div className="mt-1 text-[12px] font-semibold text-slate-500">Cuando entre algo compatible, aparece acá.</div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {visibleJobs.map((job) => (
+                    <div key={job.id} className="rounded-[22px] border border-slate-100 bg-slate-50 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-[14px] font-black">{job.title || job.service_type || 'Pedido'}</div>
+                          <div className="mt-1 line-clamp-2 text-[12px] font-semibold leading-5 text-slate-500">{job.description || 'Solicitud de cliente'}</div>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase text-slate-500">{job.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <button type="button" onClick={onOpenProfile} className="flex w-full items-center justify-between rounded-[22px] bg-slate-50 p-4 text-left active:scale-[0.99]">
+                <div>
+                  <div className="text-[15px] font-black">Editar perfil</div>
+                  <div className="mt-1 text-[12px] font-semibold text-slate-500">Datos, oficio, foto y verificación.</div>
+                </div>
+                <User2 size={19} className="text-slate-500" />
+              </button>
+              <button type="button" onClick={onOpenPosts} className="flex w-full items-center justify-between rounded-[22px] bg-slate-50 p-4 text-left active:scale-[0.99]">
+                <div>
+                  <div className="text-[15px] font-black">Mis publicaciones</div>
+                  <div className="mt-1 text-[12px] font-semibold text-slate-500">{postsCount} trabajos publicados.</div>
+                </div>
+                <ImagePlus size={19} className="text-slate-500" />
+              </button>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function WorkerIdentityEditor({
+  open,
+  profile,
+  worker,
+  saving,
+  onClose,
+  onNameSave,
+  onAvatarChange,
+  onCoverChange,
+}) {
+  const [name, setName] = useState(profile?.full_name || '');
+  const avatarInputRef = useRef(null);
+  const coverInputRef = useRef(null);
+
+  useEffect(() => {
+    if (open) setName(profile?.full_name || '');
+  }, [open, profile?.full_name]);
+
+  if (!open) return null;
+
+  return (
+    <div className="absolute inset-0 z-[66000] flex items-end bg-black/45 px-3 pb-[calc(env(safe-area-inset-bottom)+12px)] backdrop-blur-[3px]">
+      <motion.div
+        initial={{ y: 440, opacity: 0.9 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 440, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 360, damping: 34 }}
+        className="mx-auto w-full max-w-md overflow-hidden rounded-[30px] bg-white text-slate-950 shadow-[0_28px_90px_rgba(0,0,0,0.40)]"
+      >
+        <div className="relative h-40 bg-slate-900">
+          <img
+            src={worker?.cover_url || profile?.cover_url || profile?.avatar_url || '/avatar-fallback.png'}
+            onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }}
+            alt="Portada"
+            className="h-full w-full object-cover opacity-90"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-black/10" />
+          <button type="button" onClick={onClose} className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/18 text-white backdrop-blur-md">
+            <X size={18} />
+          </button>
+          <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) onCoverChange(file); event.target.value = ''; }} />
+          <button type="button" onClick={() => coverInputRef.current?.click()} className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-white/18 px-3 py-2 text-[12px] font-black text-white backdrop-blur-md active:scale-95">
+            <ImagePlus size={15} />
+            Portada
+          </button>
+          <div className="absolute -bottom-10 left-5">
+            <div className="relative h-20 w-20">
+              <img
+                src={profile?.avatar_url || '/avatar-fallback.png'}
+                onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }}
+                alt="Foto de perfil"
+                className="h-20 w-20 rounded-full border-4 border-white object-cover shadow-lg"
+              />
+              <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) onAvatarChange(file); event.target.value = ''; }} />
+              <button type="button" onClick={() => avatarInputRef.current?.click()} className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[#62bfb9] text-white shadow-lg active:scale-95" aria-label="Cambiar foto">
+                <ImagePlus size={15} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 pb-5 pt-14">
+          <label className="block text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Nombre visible</label>
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Tu nombre o marca profesional"
+            className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-[15px] font-black text-slate-950 outline-none focus:border-[#62bfb9] focus:bg-white"
+          />
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 px-4 py-3 text-[13px] font-black text-slate-700">
+              Volver
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => onNameSave(name)}
+              className="rounded-2xl bg-[#18b8aa] px-4 py-3 text-[13px] font-black text-white disabled:opacity-60"
+            >
+              {saving ? 'Guardando...' : 'Guardar'}
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function WorkerFeedPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1427,6 +1677,15 @@ const [workerPosts, setWorkerPosts] = useState([]);
 const [workerPostsLoaded, setWorkerPostsLoaded] = useState(false);
 const [profilePosts, setProfilePosts] = useState([]);
 const [showMyPosts, setShowMyPosts] = useState(false);
+const [workerHubOpen, setWorkerHubOpen] = useState(false);
+const [workerHubTab, setWorkerHubTab] = useState('jobs');
+const [workerStatus, setWorkerStatus] = useState('available');
+const [workerJobs, setWorkerJobs] = useState([]);
+const [workerJobsLoading, setWorkerJobsLoading] = useState(false);
+const [workerSkills, setWorkerSkills] = useState([]);
+const [workerProfileMeta, setWorkerProfileMeta] = useState(null);
+const [identityEditorOpen, setIdentityEditorOpen] = useState(false);
+const [identitySaving, setIdentitySaving] = useState(false);
 const [showFriendRequests, setShowFriendRequests] = useState(false);
 const [friendRequests, setFriendRequests] = useState([]);
 const [messageNotifications, setMessageNotifications] = useState([]);
@@ -1474,6 +1733,92 @@ const draftPreviewUrlRef = useRef('');
 
   useEffect(() => { setMounted(true); if (typeof window === 'undefined') return; const setRealVH = () => { const h = window.visualViewport?.height ?? window.innerHeight; document.documentElement.style.setProperty('--real-vh', `${Math.round(h)}px`); }; setRealVH(); window.addEventListener('resize', setRealVH); window.visualViewport?.addEventListener('resize', setRealVH); return () => { window.removeEventListener('resize', setRealVH); window.visualViewport?.removeEventListener('resize', setRealVH); }; }, []);
   useEffect(() => { let alive = true; (async () => { try { const { user, profile: profileData } = await requireRole({ supabase, router, allowedRoles: ['worker'], fallbackPath: '/role-selector' }); if (!user) return; if (alive) { setMe((prev) => ({ ...prev, id: user.id })); setViewerProfile(profileData || null); } } catch (error) { console.warn('No se pudo validar la sesiÃ³n del trabajador', error); router.replace('/auth/login'); } })(); return () => { alive = false; }; }, [router]);
+
+  async function loadWorkerHub() {
+    if (!me?.id) return;
+
+    try {
+      setWorkerJobsLoading(true);
+
+      const { data: workerProfile } = await supabase
+        .from('worker_profiles')
+        .select('status, skills, cover_url, bio, radius_km')
+        .eq('user_id', me.id)
+        .maybeSingle();
+
+      const nextSkills = Array.isArray(workerProfile?.skills) ? workerProfile.skills : [];
+      setWorkerSkills(nextSkills);
+      setWorkerProfileMeta(workerProfile || null);
+      if (workerProfile?.status) setWorkerStatus(workerProfile.status);
+
+      const { data: jobsData, error: jobsError } = await supabase
+        .from('jobs')
+        .select('id, title, description, status, client_id, worker_id, created_at, service_type')
+        .or(`status.eq.open,worker_id.eq.${me.id}`)
+        .order('created_at', { ascending: false })
+        .limit(24);
+
+      if (jobsError) throw jobsError;
+
+      const filtered = (jobsData || []).filter((job) => {
+        const assignedToMe = String(job.worker_id || '') === String(me.id);
+        if (assignedToMe) return true;
+        const jobService = normalizeSlug(job.service_type || job.title || job.description || '');
+        if (!jobService) return false;
+        return nextSkills.some((skill) => {
+          const cleanSkill = normalizeSlug(skill);
+          return cleanSkill && (cleanSkill.includes(jobService) || jobService.includes(cleanSkill));
+        });
+      });
+
+      setWorkerJobs(filtered);
+    } catch (error) {
+      console.error('worker hub load error', error);
+      toast.error('No se pudo cargar tu panel');
+    } finally {
+      setWorkerJobsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!me?.id) return;
+    loadWorkerHub();
+  }, [me?.id]);
+
+  useEffect(() => {
+    if (!me?.id) return;
+    if (searchParams?.get('edit') === 'profile') {
+      setIdentityEditorOpen(true);
+      setWorkerHubOpen(false);
+    }
+  }, [me?.id, searchParams]);
+
+  async function toggleWorkerStatusFromFeed() {
+    if (!me?.id) return;
+    const nextStatus = workerStatus === 'available' ? 'paused' : 'available';
+
+    setWorkerStatus(nextStatus);
+    try {
+      const { error } = await supabase
+        .from('worker_profiles')
+        .upsert(
+          {
+            user_id: me.id,
+            status: nextStatus,
+            is_active: nextStatus === 'available',
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' }
+        );
+
+      if (error) throw error;
+      toast.success(nextStatus === 'available' ? 'Estás disponible' : 'Pausaste tu disponibilidad');
+    } catch (error) {
+      console.error('worker status update error', error);
+      setWorkerStatus(workerStatus);
+      toast.error('No se pudo cambiar tu estado');
+    }
+  }
   async function loadSupplierProducts() {
     const { data, error } = await supabase
       .from('supplier_products')
@@ -2168,6 +2513,28 @@ async function fetchWorkers(serviceFilter = '') {
     };
     return friendRequests.filter(isUnreadFollower).length + messageNotifications.filter(isUnreadMessage).length;
   }, [friendRequests, messageNotifications, notificationsSeenAt, chatSeenMapVersion]);
+  const workerHubStats = useMemo(() => {
+    const open = workerJobs.filter((job) => String(job.status || '').toLowerCase() === 'open').length;
+    const active = workerJobs.filter((job) => ['accepted', 'assigned', 'scheduled'].includes(String(job.status || '').toLowerCase())).length;
+    const done = workerJobs.filter((job) => String(job.status || '').toLowerCase() === 'completed').length;
+    return { open, active, done };
+  }, [workerJobs]);
+  const selfWorkerCard = useMemo(() => ({
+    ...(workerProfileMeta || {}),
+    ...(viewerProfile || {}),
+    user_id: me?.id,
+    worker_id: me?.id,
+    full_name: viewerProfile?.full_name || 'Mi trabajo',
+    avatar_url: viewerProfile?.avatar_url || '',
+    cover_url: workerProfileMeta?.cover_url || viewerProfile?.cover_url || viewerProfile?.avatar_url || '',
+    profile_media: workerPosts.map((post) => ({
+      id: post.id,
+      media_url: post.media_url,
+      thumbnail_url: post.thumbnail_url || post.media_url,
+      media_type: post.media_type || 'image',
+      caption: post.caption || '',
+    })),
+  }), [me?.id, viewerProfile, workerProfileMeta, workerPosts]);
   const nearbyWorkers = useMemo(() => (workers || []).filter((worker) => Number.isFinite(Number(worker?._distKm))).sort((a, b) => Number(a._distKm) - Number(b._distKm)), [workers]);
   useEffect(() => { if (currentWorker) setSelected(currentWorker); }, [currentWorker]);
   useEffect(() => {
@@ -2784,10 +3151,46 @@ async function changeWorkerCover(file, worker) {
       prev.map((item) => (sameWorker(item) ? { ...item, cover_url: publicUrl } : item))
     );
     setSelected((prev) => (prev && sameWorker(prev) ? { ...prev, cover_url: publicUrl } : prev));
+    setWorkerProfileMeta((prev) => ({ ...(prev || {}), cover_url: publicUrl }));
     toast.success('Portada actualizada', { id: toastId });
   } catch (error) {
     console.error('cover upload error', error);
     toast.error(error.message || 'No se pudo cambiar la portada', { id: 'worker-cover' });
+  }
+}
+
+async function changeWorkerName(nextName) {
+  if (!me?.id) return;
+  const cleanName = String(nextName || '').trim();
+  if (cleanName.length < 2) {
+    toast.error('Escribí un nombre visible');
+    return;
+  }
+
+  try {
+    setIdentitySaving(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        full_name: cleanName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', me.id);
+
+    if (error) throw error;
+
+    const sameWorker = (item) =>
+      String(item?.user_id || item?.worker_id || '') === String(me.id);
+
+    setViewerProfile((prev) => ({ ...(prev || {}), full_name: cleanName }));
+    setWorkers((prev) => prev.map((item) => (sameWorker(item) ? { ...item, full_name: cleanName } : item)));
+    setSelected((prev) => (prev && sameWorker(prev) ? { ...prev, full_name: cleanName } : prev));
+    toast.success('Nombre actualizado');
+  } catch (error) {
+    console.error('worker name update error', error);
+    toast.error(error.message || 'No se pudo guardar el nombre');
+  } finally {
+    setIdentitySaving(false);
   }
 }
 
@@ -2813,7 +3216,6 @@ async function changeWorkerAvatar(file, worker) {
       .from('profiles')
       .update({
         avatar_url: publicUrl,
-        photo_url: publicUrl,
         updated_at: new Date().toISOString(),
       })
       .eq('id', me.id);
@@ -2823,7 +3225,7 @@ async function changeWorkerAvatar(file, worker) {
     const sameWorker = (item) =>
       String(item?.user_id || item?.worker_id || '') === String(worker?.user_id || worker?.worker_id || me.id);
 
-    setViewerProfile((prev) => (prev ? { ...prev, avatar_url: publicUrl, photo_url: publicUrl } : prev));
+    setViewerProfile((prev) => (prev ? { ...prev, avatar_url: publicUrl } : prev));
     setWorkers((prev) =>
       prev.map((item) => (sameWorker(item) ? { ...item, avatar_url: publicUrl } : item))
     );
@@ -2893,17 +3295,60 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
   )}
 </AnimatePresence>
     <AnimatePresence>{showAllWorkers && <AllWorkersSheet open={showAllWorkers} workers={feedWorkers} onClose={() => setShowAllWorkers(false)} onSelect={(worker) => { setSelected(worker); setShowAllWorkers(false); setShowProfile(true); }} />}</AnimatePresence><AnimatePresence>{nearbyMapOpen && <WorkerNearbyMapSheet open={nearbyMapOpen} workers={nearbyWorkers} center={mapCenter} hasMeCoords={hasMeCoords} me={me} selectedWorker={nearbyMapWorker} onSelectWorker={(worker) => { setNearbyMapWorker(worker); setSelected(worker); }} onClose={() => setNearbyMapOpen(false)} onOpenProfile={(worker) => { setSelected(worker); setNearbyMapOpen(false); setShowProfile(true); }} onHire={(worker) => { setNearbyMapOpen(false); hireWorker(worker); }} />}</AnimatePresence><AnimatePresence>{commentsOpen && <CommentsSheet open={commentsOpen} worker={commentsWorker} comments={workerComments} commentText={commentText} setCommentText={setCommentText} onClose={() => { setCommentsOpen(false); setCommentsWorker(null); setWorkerComments([]); setCommentText(''); }} onSend={sendPublicComment} />}</AnimatePresence>
+  <AnimatePresence>
+    {workerHubOpen && (
+      <WorkerHubSheet
+        open={workerHubOpen}
+        tab={workerHubTab}
+        setTab={setWorkerHubTab}
+        onClose={() => setWorkerHubOpen(false)}
+        profile={viewerProfile}
+        status={workerStatus}
+        stats={workerHubStats}
+        jobs={workerJobs}
+        postsCount={workerPosts.length}
+        loadingJobs={workerJobsLoading}
+        onToggleStatus={toggleWorkerStatusFromFeed}
+        onRefreshJobs={loadWorkerHub}
+        onOpenProfile={() => {
+          setWorkerHubOpen(false);
+          setIdentityEditorOpen(true);
+        }}
+        onOpenPosts={() => {
+          setWorkerHubOpen(false);
+          setShowMyPosts(true);
+        }}
+      />
+    )}
+  </AnimatePresence>
+  <AnimatePresence>
+    {identityEditorOpen && (
+      <WorkerIdentityEditor
+        open={identityEditorOpen}
+        profile={viewerProfile}
+        worker={selfWorkerCard}
+        saving={identitySaving}
+        onClose={() => setIdentityEditorOpen(false)}
+        onNameSave={changeWorkerName}
+        onAvatarChange={(file) => changeWorkerAvatar(file, selfWorkerCard)}
+        onCoverChange={(file) => changeWorkerCover(file, selfWorkerCard)}
+      />
+    )}
+  </AnimatePresence>
   <div className="pointer-events-none absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+8px)] z-50 flex items-center justify-center">
-  <div className="pointer-events-auto flex w-[228px] items-center justify-between rounded-full border border-white/15 bg-black/42 px-2.5 py-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
+  <div className="pointer-events-auto flex w-[286px] items-center justify-between rounded-full border border-white/15 bg-black/42 px-2.5 py-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
 
-    <button
-      type="button"
-      onClick={() => setShowMyPosts(true)}
-      className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition active:scale-95"
-      aria-label="Ver publicados"
-    >
-      <ImagePlus size={18} />
-    </button>
+    <WorkerFeedNavButton
+      icon={<Briefcase size={18} />}
+      active={workerHubOpen && workerHubTab === 'jobs'}
+      badge={workerHubStats.open}
+      label="Pedidos"
+      onClick={() => {
+        setWorkerHubTab('jobs');
+        setWorkerHubOpen(true);
+        loadWorkerHub();
+      }}
+    />
 
     <label className="flex h-[50px] w-[50px] cursor-pointer items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_14px_30px_rgba(98,191,185,0.44)] transition active:scale-95">
       <Upload size={20} />
@@ -2921,8 +3366,11 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
       />
     </label>
 
-    <button
-      type="button"
+    <WorkerFeedNavButton
+      icon={<Bell size={18} />}
+      active={showFriendRequests}
+      badge={notificationCount}
+      label="Notificaciones"
       onClick={async () => {
         await requestBrowserNotificationPermission();
         loadFriendRequests();
@@ -2930,16 +3378,17 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
         markNotificationsRead();
         setShowFriendRequests(true);
       }}
-      className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-800 transition active:scale-95"
-      aria-label="Ver notificaciones"
-    >
-      <Bell size={18} />
-      {notificationCount > 0 && (
-        <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white">
-          {notificationCount}
-        </span>
-      )}
-    </button>
+    />
+
+    <WorkerFeedNavButton
+      icon={<User2 size={18} />}
+      active={workerHubOpen && workerHubTab === 'profile'}
+      label="Perfil"
+      onClick={() => {
+        setWorkerHubTab('profile');
+        setWorkerHubOpen(true);
+      }}
+    />
 
   </div>
 </div>

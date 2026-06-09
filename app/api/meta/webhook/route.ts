@@ -27,6 +27,25 @@ function markMessageProcessed(mid: string) {
   return false;
 }
 
+function readableIncomingText(event: any) {
+  const text = String(event?.message?.text || '').trim();
+  if (text) return text;
+
+  const attachments = Array.isArray(event?.message?.attachments) ? event.message.attachments : [];
+  const firstType = String(attachments[0]?.type || '').toLowerCase();
+
+  if (firstType === 'image') return 'Te mandé una imagen.';
+  if (firstType === 'video') return 'Te mandé un video.';
+  if (firstType === 'audio') return 'Te mandé un audio.';
+  if (firstType === 'file') return 'Te mandé un archivo.';
+  if (firstType) return `Te mandé un ${firstType}.`;
+
+  const stickerId = event?.message?.sticker_id;
+  if (stickerId) return 'Te mandé un sticker.';
+
+  return '';
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
 
@@ -65,14 +84,24 @@ export async function POST(req: NextRequest) {
       for (const event of messagingEvents) {
         const senderId = event?.sender?.id;
         const recipientId = event?.recipient?.id;
-        const text = String(event?.message?.text || '').trim();
+        const text = readableIncomingText(event);
         const mid = event?.message?.mid;
         const timestamp = event?.timestamp;
 
         if (!senderId) continue;
-        if (!event?.message) continue;
+        if (!event?.message) {
+          console.log('META WEBHOOK SKIPPED: event without message');
+          continue;
+        }
         if (event?.message?.is_echo === true) continue;
-        if (!text) continue;
+        if (!text) {
+          console.log('META WEBHOOK SKIPPED: message without text or supported attachment', {
+            senderId,
+            mid,
+            keys: Object.keys(event?.message || {}),
+          });
+          continue;
+        }
         if (mid && markMessageProcessed(String(mid))) continue;
 
         console.log('Message received:', text);

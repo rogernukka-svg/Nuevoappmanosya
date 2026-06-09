@@ -1035,7 +1035,7 @@ function guessFlowFromMessage(text) {
 
 function getRedirectPathFromRole(role) {
   const normalizedRole = String(role || '').trim().toLowerCase();
-  if (normalizedRole === 'worker') return '/worker';
+  if (normalizedRole === 'worker') return '/worker/feed';
   if (normalizedRole === 'client') return '/client';
   if (normalizedRole === 'supplier') return '/supplier';
   return '/role-selector';

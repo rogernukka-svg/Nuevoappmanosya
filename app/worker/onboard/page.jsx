@@ -131,7 +131,7 @@ export default function WorkerOnboardPage() {
         <div className="mb-5 flex items-center justify-between gap-3">
           <button
             type="button"
-            onClick={() => router.push('/worker')}
+            onClick={() => router.push('/worker/feed')}
             className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-5 py-3 text-[15px] font-black text-slate-700 shadow-[0_12px_30px_rgba(15,23,42,0.08)] backdrop-blur transition active:scale-[0.98]"
           >
             <span>←</span>
@@ -1329,9 +1329,6 @@ function getCurrentTrackFacingMode() {
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[#62bfb9] text-4xl font-black text-white shadow-[0_20px_44px_rgba(98,191,185,0.35)]">
             ✓
           </div>
-          <div className="mt-6 inline-flex rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-[#94fff5]">
-            Perfil verificado
-          </div>
           <h1 className="mt-5 text-4xl font-black tracking-[-0.055em] sm:text-6xl">
             ¡Perfil aprobado!
           </h1>
@@ -1340,14 +1337,18 @@ function getCurrentTrackFacingMode() {
           </p>
           <button
             type="button"
-            onClick={() => router.push('/worker')}
+            onClick={() => router.push('/worker/feed')}
             className="mt-8 w-full rounded-3xl bg-white px-6 py-5 text-lg font-black text-[#06182a] shadow-[0_18px_44px_rgba(255,255,255,0.20)] sm:w-auto"
           >
             Ir a mi panel
           </button>
-          <p className="mt-5 text-sm font-semibold text-white/60">
-            Bienvenido al lado profesional de ManosYA.
-          </p>
+          <button
+            type="button"
+            onClick={() => router.push('/worker/feed?edit=profile')}
+            className="mt-3 w-full rounded-3xl border border-white/45 bg-white/12 px-6 py-4 text-sm font-black text-white backdrop-blur active:scale-[0.98] sm:w-auto"
+          >
+            Editar nombre y fotos
+          </button>
         </motion.div>
       </div>
     );
@@ -1362,9 +1363,6 @@ function getCurrentTrackFacingMode() {
           transition={{ duration: 0.35 }}
           className="mx-auto max-w-3xl text-center"
         >
-          <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-amber-700">
-            En revisión
-          </div>
           <h1 className="mt-6 text-4xl font-black leading-[1.02] tracking-[-0.055em] text-slate-950 sm:text-6xl">
             Tu perfil ya está en la mesa de verificación
           </h1>
@@ -1372,9 +1370,6 @@ function getCurrentTrackFacingMode() {
             El equipo ManosYA está revisando tus datos para activar tu perfil con confianza.
             Estás a un paso de aparecer frente a clientes reales.
           </p>
-          <div className="mt-6 rounded-[28px] bg-[#62bfb9]/10 p-5 text-sm font-black text-[#137d78]">
-            Estamos preparando tu entrada al mapa. Cuando te aprobemos, se prende la máquina.
-          </div>
           <button
             type="button"
             onClick={() => {
