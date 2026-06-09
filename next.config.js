@@ -136,6 +136,15 @@ const nextConfig = {
     ];
   },
 
+  async rewrites() {
+    return [
+      {
+        source: "/api/ors/route",
+        destination: "/api/ors",
+      },
+    ];
+  },
+
   // ✅ headers útiles (manifest + cache control)
   async headers() {
     return [

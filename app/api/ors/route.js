@@ -1,37 +1,28 @@
-// ✅ /app/api/ors/route/route.js
 import { NextResponse } from "next/server";
 
-/**
- * ===========================================================
- *  OPENROUTESERVICE API ENDPOINT
- *  - Soporta GET (start/end)
- *  - Soporta POST (múltiples waypoints)
- * ===========================================================
- */
 const ORS_BASE_URL = "https://api.openrouteservice.org/v2/directions/driving-car";
 
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const start = searchParams.get("start"); // Ej: "-54.61,-25.52"
-    const end = searchParams.get("end");     // Ej: "-54.63,-25.55"
+    const start = searchParams.get("start");
+    const end = searchParams.get("end");
     const key = process.env.NEXT_PUBLIC_ORS_API_KEY;
 
     if (!start || !end) {
       return NextResponse.json(
-        { error: "Faltan parámetros obligatorios: 'start' y/o 'end'." },
+        { error: "Faltan parametros obligatorios: 'start' y/o 'end'." },
         { status: 400 }
       );
     }
 
     if (!key) {
       return NextResponse.json(
-        { error: "Falta la variable NEXT_PUBLIC_ORS_API_KEY en .env.local" },
+        { error: "Falta la variable NEXT_PUBLIC_ORS_API_KEY en el entorno" },
         { status: 500 }
       );
     }
 
-    // 🔹 Construcción de la URL ORS
     const url = `${ORS_BASE_URL}?api_key=${key}&start=${start}&end=${end}`;
     const res = await fetch(url, {
       headers: { Accept: "application/json" },
@@ -40,7 +31,7 @@ export async function GET(req) {
 
     if (!res.ok) {
       const text = await res.text();
-      console.error("❌ Error ORS (GET):", res.status, text);
+      console.error("Error ORS (GET):", res.status, text);
       return NextResponse.json(
         { error: "Error en OpenRouteService (GET)", details: text },
         { status: res.status }
@@ -51,7 +42,7 @@ export async function GET(req) {
 
     if (!data?.features?.length) {
       return NextResponse.json(
-        { error: "Respuesta inválida o sin datos de ruta" },
+        { error: "Respuesta invalida o sin datos de ruta" },
         { status: 422 }
       );
     }
@@ -65,7 +56,7 @@ export async function GET(req) {
       },
     });
   } catch (error) {
-    console.error("❌ Error interno en /api/ors/route (GET):", error);
+    console.error("Error interno en /api/ors (GET):", error);
     return NextResponse.json(
       { error: "Error interno del servidor", details: error.message },
       { status: 500 }
@@ -73,19 +64,6 @@ export async function GET(req) {
   }
 }
 
-/**
- * ===========================================================
- *  POST → Permite múltiples waypoints
- *  Body JSON esperado:
- *  {
- *    "coordinates": [
- *      [-54.6201, -25.5163],
- *      [-54.6232, -25.5191],
- *      [-54.6288, -25.5234]
- *    ]
- *  }
- * ===========================================================
- */
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -93,14 +71,14 @@ export async function POST(req) {
 
     if (!body?.coordinates || !Array.isArray(body.coordinates)) {
       return NextResponse.json(
-        { error: "Debe incluir un array válido de 'coordinates'." },
+        { error: "Debe incluir un array valido de 'coordinates'." },
         { status: 400 }
       );
     }
 
     if (!key) {
       return NextResponse.json(
-        { error: "Falta la variable NEXT_PUBLIC_ORS_API_KEY en .env.local" },
+        { error: "Falta la variable NEXT_PUBLIC_ORS_API_KEY en el entorno" },
         { status: 500 }
       );
     }
@@ -108,7 +86,7 @@ export async function POST(req) {
     const res = await fetch(ORS_BASE_URL, {
       method: "POST",
       headers: {
-        "Authorization": key,
+        Authorization: key,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -120,7 +98,7 @@ export async function POST(req) {
 
     if (!res.ok) {
       const text = await res.text();
-      console.error("❌ Error ORS (POST):", res.status, text);
+      console.error("Error ORS (POST):", res.status, text);
       return NextResponse.json(
         { error: "Error en OpenRouteService (POST)", details: text },
         { status: res.status }
@@ -131,7 +109,7 @@ export async function POST(req) {
 
     if (!data?.features?.length) {
       return NextResponse.json(
-        { error: "Respuesta inválida o sin coordenadas" },
+        { error: "Respuesta invalida o sin coordenadas" },
         { status: 422 }
       );
     }
@@ -145,11 +123,10 @@ export async function POST(req) {
       },
     });
   } catch (error) {
-    console.error("❌ Error interno en /api/ors/route (POST):", error);
+    console.error("Error interno en /api/ors (POST):", error);
     return NextResponse.json(
       { error: "Error interno del servidor", details: error.message },
       { status: 500 }
     );
   }
 }
-
