@@ -35,6 +35,7 @@ Bell,
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
+import ProfileOnlyFeedVisual, { isProfileOnlyMedia } from '@/components/ProfileOnlyFeedVisual';
 import {
   FEED_VIDEO_ATTR,
   pauseFeedVideo,
@@ -575,6 +576,7 @@ function FeedCard({ worker, selectedService = '', isActive, isFollowed, isLiked,
   const serviceDetailText = serviceIntent.detailText;
   const mediaUrl = worker?.media_url || worker?.cover_url || worker?.video_thumb_url || worker?.avatar_url || '/avatar-fallback.png';
   const isVideo = worker?.media_type === 'video';
+  const isProfileOnlyCard = isProfileOnlyMedia(worker);
   const likes = worker?.likes_count || worker?.like_count || 0;
   const reviews = worker?.comments_count || worker?.total_reviews || 0;
   const isOnline = isOnlineRecent(worker);
@@ -754,6 +756,14 @@ useEffect(() => {
       </div>
     )}
   </div>
+) : isProfileOnlyCard ? (
+  <ProfileOnlyFeedVisual
+    entity={worker}
+    entityName={workerName}
+    primaryService={primaryService}
+    isOnline={isOnline}
+    entityType="worker"
+  />
 ) : (
   <img
     src={mediaUrl || '/avatar-fallback.png'}

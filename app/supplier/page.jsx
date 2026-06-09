@@ -23,6 +23,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { getSupabase } from '@/lib/supabase';
 import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
+import ProfileOnlyFeedVisual, { isProfileOnlyMedia } from '@/components/ProfileOnlyFeedVisual';
 import {
   FEED_VIDEO_ATTR,
   pauseFeedVideo,
@@ -77,6 +78,7 @@ function SupplierFeedCard({ worker, selectedService = '', isActive, onPublishFor
   const playbackTokenRef = useRef(0);
   const mediaUrl = worker?.media_url || worker?.thumbnail_url || worker?.avatar_url || '/avatar-fallback.png';
   const isVideo = String(worker?.media_type || '').toLowerCase() === 'video';
+  const isProfileOnlyCard = isProfileOnlyMedia(worker);
   const serviceSlug = normalizeSlug(selectedService) || primaryServiceSlug(worker);
   const serviceLabel = serviceName(serviceSlug);
   const serviceIntent = workerIntentSummary(worker, selectedService);
@@ -121,6 +123,14 @@ function SupplierFeedCard({ worker, selectedService = '', isActive, onPublishFor
     >
       {isVideo ? (
         <video ref={videoRef} {...{ [FEED_VIDEO_ATTR]: 'true' }} src={mediaUrl} muted loop playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover" />
+      ) : isProfileOnlyCard ? (
+        <ProfileOnlyFeedVisual
+          entity={worker}
+          entityName={name}
+          primaryService={serviceLabel}
+          isOnline={false}
+          entityType="worker"
+        />
       ) : (
         <img src={mediaUrl} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={name} className="absolute inset-0 h-full w-full object-cover" />
       )}
