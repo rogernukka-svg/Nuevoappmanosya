@@ -1058,7 +1058,26 @@ function ArrowDownIcon() {
   );
 }
 
+function ArrowLeftIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-6 w-6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M19 12H5" />
+      <path d="M11 6L5 12L11 18" />
+    </svg>
+  );
+}
+
 function PromptBubble({ title, subtitle }) {
+  const hasSubtitle = Boolean(subtitle);
+
   return (
     <motion.div
       key={`${title}-${subtitle}`}
@@ -1066,14 +1085,21 @@ function PromptBubble({ title, subtitle }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -12 }}
       transition={{ duration: 0.25 }}
-      className="mx-auto w-full max-w-[760px] text-center"
+      className="mx-auto w-full max-w-[560px] text-center"
     >
-      <h1 className="text-[35px] sm:text-[58px] font-extrabold leading-[1.12] tracking-[-0.035em] text-white drop-shadow-[0_8px_18px_rgba(0,0,0,0.12)]">
+      <h1
+        className={[
+          'mx-auto max-w-[12ch] font-extrabold leading-[1.02] tracking-normal text-white drop-shadow-[0_8px_18px_rgba(0,0,0,0.12)] [text-wrap:balance]',
+          hasSubtitle
+            ? 'text-[clamp(1.55rem,4.2dvh,2.55rem)]'
+            : 'text-[clamp(1.85rem,5.2dvh,3rem)]',
+        ].join(' ')}
+      >
         {title}
       </h1>
 
       {subtitle ? (
-        <h2 className="mt-5 text-[35px] sm:text-[58px] font-extrabold leading-[1.12] tracking-[-0.035em] text-white drop-shadow-[0_8px_18px_rgba(0,0,0,0.12)]">
+        <h2 className="mx-auto mt-[clamp(0.25rem,0.9dvh,0.8rem)] max-w-[13ch] text-[clamp(1.45rem,3.8dvh,2.35rem)] font-extrabold leading-[1.08] tracking-normal text-white/96 drop-shadow-[0_8px_18px_rgba(0,0,0,0.12)] [text-wrap:balance]">
           {subtitle}
         </h2>
       ) : null}
@@ -1098,16 +1124,16 @@ function ChoicePill({ active, label, onClick }) {
         },
       }}
       className={[
-        'relative flex h-[118px] w-[118px] items-center justify-center overflow-hidden rounded-full px-4 text-center transition-all duration-300 sm:h-[158px] sm:w-[158px] sm:px-5',
+        'relative flex h-[clamp(78px,13dvh,118px)] w-[clamp(78px,13dvh,118px)] items-center justify-center overflow-hidden rounded-full px-3 text-center transition-all duration-300 sm:px-4',
         active
           ? 'scale-[1.03] bg-[#06182a] text-white shadow-[0_20px_48px_rgba(6,24,42,0.26)]'
           : 'bg-white/96 text-[#071a27] shadow-[0_20px_46px_rgba(8,15,52,0.14)] hover:bg-white',
       ].join(' ')}
     >
-      <span className="pointer-events-none absolute inset-[10px] rounded-full border border-white/70" />
+      <span className="pointer-events-none absolute inset-[8px] rounded-full border border-white/70" />
       <span className="pointer-events-none absolute left-6 top-5 h-10 w-16 rounded-full bg-white/45 blur-xl" />
 
-      <span className="relative whitespace-pre-line text-[14px] font-black leading-[1.18] tracking-[-0.03em] sm:text-[17px]">
+      <span className="relative whitespace-pre-line text-[clamp(11px,1.8dvh,15px)] font-black leading-[1.12] tracking-normal">
         {label}
       </span>
     </motion.button>
@@ -1115,7 +1141,7 @@ function ChoicePill({ active, label, onClick }) {
 }
 function MailIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-9 w-9" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.95" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 6h16v12H4z" />
       <path d="M4 7l8 6 8-6" />
     </svg>
@@ -1124,7 +1150,7 @@ function MailIcon() {
 
 function LockIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-9 w-9" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.95" strokeLinecap="round" strokeLinejoin="round">
       <rect x="5" y="10" width="14" height="10" rx="2" />
       <path d="M8 10V7a4 4 0 0 1 8 0v3" />
       <path d="M12 14v3" />
@@ -1134,7 +1160,7 @@ function LockIcon() {
 
 function EyeIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-9 w-9" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.95" strokeLinecap="round" strokeLinejoin="round">
       <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
@@ -1144,10 +1170,10 @@ function EyeIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
-      className="h-7 w-7"
+      className="h-6 w-6"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2.8"
+      strokeWidth="2.2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -1174,8 +1200,8 @@ function MainInput({
     type === 'password' ? 'new-password' : type === 'email' ? 'off' : 'off';
 
   return (
-    <div className="flex min-h-[88px] w-full items-center rounded-full border-2 border-white/45 bg-[#111111]/14 px-6 text-white shadow-[0_24px_55px_rgba(0,0,0,0.15)] backdrop-blur-xl">
-      {icon ? <div className="mr-5 flex shrink-0 text-white">{icon}</div> : null}
+    <div className="flex min-h-[clamp(56px,8.4dvh,74px)] w-full items-center rounded-full border border-white/55 bg-white/10 px-4 text-white shadow-[0_18px_42px_rgba(6,24,42,0.11)] backdrop-blur-2xl sm:px-6">
+      {icon ? <div className="mr-3 flex shrink-0 text-white sm:mr-5">{icon}</div> : null}
 
       <input
   ref={inputRef}
@@ -1198,16 +1224,16 @@ function MainInput({
           appearance-none
           border-0
           bg-transparent
-          text-[25px] font-black
-          tracking-[-0.035em]
+          text-[clamp(15px,2.25dvh,21px)] font-extrabold
+          tracking-normal
           text-white
           outline-none
-          placeholder:text-white/48
+          placeholder:text-slate-500/45
           disabled:opacity-70
         "
       />
 
-      {rightIcon ? <div className="ml-4 flex shrink-0 text-white">{rightIcon}</div> : null}
+      {rightIcon ? <div className="ml-3 flex shrink-0 text-white sm:ml-4">{rightIcon}</div> : null}
 
       {showSend ? (
   <button
@@ -1218,11 +1244,11 @@ function MainInput({
       onSubmit?.(latestValue);
     }}
     className="
-      ml-4 flex h-[60px] w-[60px] shrink-0
+      ml-3 flex h-[clamp(42px,6.5dvh,54px)] w-[clamp(42px,6.5dvh,54px)] shrink-0
       items-center justify-center rounded-full
-      bg-[#62bfb9]
+      bg-white/12
       text-white
-      shadow-[0_12px_26px_rgba(98,191,185,0.38)]
+      shadow-[inset_0_0_0_1px_rgba(255,255,255,0.26),0_12px_26px_rgba(6,24,42,0.08)]
       transition-all duration-200
       hover:scale-[1.03]
       active:scale-95
@@ -1244,7 +1270,7 @@ function DownActionButton({ onClick, disabled, busy }) {
       disabled={disabled || busy}
       className="
         mx-auto
-        flex h-[86px] w-[86px]
+        flex h-[clamp(54px,8dvh,76px)] w-[clamp(54px,8dvh,76px)]
         items-center justify-center
         rounded-full
         bg-[#62bfb9]
@@ -1542,6 +1568,103 @@ function handleAlreadyHaveAccount() {
 
   setTimeout(() => inputRef.current?.focus(), 120);
 }
+
+function handleBack() {
+  if (busy) return;
+
+  if (cameraOpen) {
+    closeCamera();
+    return;
+  }
+
+  if (showRecognizedCard) {
+    handleNotMe();
+    return;
+  }
+
+  if (draftStage === 'real-name') {
+    resetConversationForSignup();
+    return;
+  }
+
+  if (draftStage === 'flow') {
+    setDraftStage('real-name');
+    appendPrompt('Buenisimo', 'Primero decime tu nombre completo.');
+    setTimeout(() => inputRef.current?.focus(), 120);
+    return;
+  }
+
+  if (draftStage === 'need') {
+    setSelectedNeed(null);
+    setServiceSuggestions([]);
+    setAssistantInput('');
+    setDraftStage('flow');
+    appendPrompt(
+      fullName ? `Un gusto, ${firstNameOf(fullName)}` : 'Buenisimo',
+      '¿Venis a pedir ayuda, ofrecer tu trabajo o vender insumos?'
+    );
+    return;
+  }
+
+  if (draftStage === 'email') {
+    setEmail('');
+    setSelectedNeed(null);
+    setServiceSuggestions([]);
+    setDraftStage('need');
+    appendPrompt(
+      getLockedFlow() === 'supplier'
+        ? '¿QUE INSUMOS VENDES?'
+        : getLockedFlow() === 'worker'
+          ? '¿QUE SERVICIO HACES?'
+          : '¿QUE NECESITAS HOY?',
+      ''
+    );
+    setTimeout(() => inputRef.current?.focus(), 120);
+    return;
+  }
+
+  if (draftStage === 'password') {
+    setPassword('');
+    setDraftStage('email');
+    appendPrompt('Pasame tu correo.', 'Asi seguimos con tu cuenta.');
+    setTimeout(() => inputRef.current?.focus(), 120);
+    return;
+  }
+
+  if (draftStage === 'photo') {
+    setPhotoFile(null);
+    setCapturedPreview('');
+    setCameraError('');
+    setDraftStage('password');
+    appendPrompt('Ahora crea tu contraseña.', 'Minimo 6 caracteres.');
+    setTimeout(() => inputRef.current?.focus(), 120);
+    return;
+  }
+
+  if (draftStage === 'login-password') {
+    setPassword('');
+
+    if (authMode === 'recognized-login' && savedSessionEmail) {
+      setShowRecognizedCard(true);
+      appendPrompt(
+        recognizedName ? `Hola ${recognizedName}` : 'Te reconoci.',
+        '¿Sos vos?'
+      );
+      return;
+    }
+
+    setAuthMode('signup');
+    setDraftStage('email');
+    appendPrompt('Pasame tu correo.', 'Asi reviso tu cuenta.');
+    setTimeout(() => inputRef.current?.focus(), 120);
+    return;
+  }
+
+  if (draftStage === 'login-direct') {
+    resetConversationForSignup();
+  }
+}
+
 function getLockedFlow() {
   if (flowRef.current === 'client' || flowRef.current === 'worker' || flowRef.current === 'supplier') {
     return flowRef.current;
@@ -2217,10 +2340,24 @@ function handleMainContinue(latestValue = '') {
     );
   }
 
+  const canGoBack = showRecognizedCard || draftStage !== 'name';
+
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#69c4c0] px-6 pb-10 pt-8">
-      <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-[980px] flex-col items-center justify-between">
-        <div className="w-full">
+    <main className="h-full max-h-full overflow-hidden bg-[#69c4c0] px-3 py-2 sm:px-6 sm:py-4">
+      <div className="relative mx-auto flex h-full min-h-0 max-w-[980px] flex-col items-center justify-between overflow-hidden">
+        {canGoBack ? (
+          <button
+            type="button"
+            onClick={handleBack}
+            disabled={busy}
+            className="absolute left-0 top-0 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white/18 text-white shadow-[0_12px_26px_rgba(8,15,52,0.12)] ring-1 ring-white/50 backdrop-blur-xl transition hover:bg-white/28 active:scale-95 disabled:opacity-45"
+            aria-label="Volver atras"
+          >
+            <ArrowLeftIcon />
+          </button>
+        ) : null}
+
+        <div className="flex w-full min-h-0 flex-1 flex-col justify-center">
           <motion.img
             key={displayAvatar}
             initial={{ opacity: 0, y: 16, scale: 0.98 }}
@@ -2228,10 +2365,10 @@ function handleMainContinue(latestValue = '') {
             transition={{ duration: 0.28 }}
             src={displayAvatar}
             alt="Roger ManosYA"
-            className="mx-auto h-[360px] w-auto object-contain sm:h-[500px]"
+            className="mx-auto h-[clamp(104px,24dvh,270px)] w-auto max-w-full object-contain"
           />
 
-          <div className="mt-3 sm:mt-5">
+          <div className="mt-[clamp(0.15rem,0.8dvh,0.65rem)]">
             <AnimatePresence mode="wait">
              <PromptBubble
   key={`${currentPrompt.id}-${draftStage}-${getLockedFlow()}`}
@@ -2247,7 +2384,7 @@ function handleMainContinue(latestValue = '') {
             </AnimatePresence>
           </div>
 
-          <div className="mt-10">
+          <div className="mt-[clamp(0.55rem,1.8dvh,1.5rem)]">
             {showRecognizedCard ? (
               <RecognizedCard
                 name={recognizedName}
@@ -2260,7 +2397,7 @@ function handleMainContinue(latestValue = '') {
             ) : (
               <>
                {draftStage === 'name' && (
-  <div className="mx-auto flex w-full max-w-[820px] flex-wrap items-center justify-center gap-5 sm:gap-8">
+  <div className="mx-auto flex w-full max-w-[820px] flex-wrap items-center justify-center gap-[clamp(0.7rem,2dvh,1.6rem)]">
    <ChoicePill
   active={false}
   label={'Sí, ya\ntengo cuenta'}
@@ -2320,7 +2457,7 @@ function handleMainContinue(latestValue = '') {
 )}
 
               {draftStage === 'flow' && (
-  <div className="mx-auto flex w-full max-w-[760px] flex-wrap items-center justify-center gap-3 sm:gap-8">
+  <div className="mx-auto flex w-full max-w-[760px] flex-wrap items-center justify-center gap-[clamp(0.45rem,1.5dvh,1.5rem)]">
     <ChoicePill
       active={false}
       label={'Necesito\nayuda'}
@@ -2357,7 +2494,7 @@ function handleMainContinue(latestValue = '') {
     />
 
     {!!serviceSuggestions.length && (
-      <div className="mt-5 flex flex-wrap justify-center gap-3">
+      <div className="mt-2 flex max-h-[16dvh] flex-wrap justify-center gap-2 overflow-hidden sm:mt-4 sm:gap-3">
         {serviceSuggestions.slice(0, 6).map((service) => (
           <button
             key={service.slug}
@@ -2422,7 +2559,7 @@ function handleMainContinue(latestValue = '') {
   </div>
 )}
 {draftStage === 'login-direct' && (
-  <div className="mx-auto mt-8 w-full max-w-[760px] space-y-5">
+  <div className="mx-auto mt-0 w-full max-w-[760px] space-y-2 sm:space-y-4">
     <MainInput
       inputRef={inputRef}
       value={email}
@@ -2459,10 +2596,10 @@ function handleMainContinue(latestValue = '') {
       onClick={handleLoginWithPassword}
       disabled={busy}
       className="
-        mx-auto flex h-[70px] w-[220px]
+        mx-auto flex h-[clamp(52px,8dvh,64px)] w-[190px]
         items-center justify-center rounded-full
         bg-[#06182a]
-        text-[22px] font-black text-white
+        text-[clamp(17px,2.8dvh,21px)] font-black text-white
         shadow-[0_18px_38px_rgba(6,24,42,0.24)]
         transition-all duration-200
         hover:scale-[1.02]
@@ -2476,7 +2613,7 @@ function handleMainContinue(latestValue = '') {
 )}
 
 {['email', 'password', 'login-password'].includes(draftStage) && (
-  <div className="mx-auto mt-8 w-full max-w-[760px]">
+  <div className="mx-auto mt-0 w-full max-w-[760px]">
     <MainInput
       inputRef={inputRef}
       value={draftStage === 'email' ? email : password}
@@ -2507,15 +2644,16 @@ function handleMainContinue(latestValue = '') {
 )}
 
 {draftStage === 'photo' && (
-  <div className="mx-auto mt-8 flex w-full max-w-[760px] flex-col items-center">
+  <div className="mx-auto mt-0 flex w-full max-w-[760px] flex-col items-center">
     {!capturedPreview ? (
       <button
         type="button"
         onClick={openCamera}
         className="
-          rounded-full bg-[#06182a] px-10 py-5
-          text-[22px] font-black text-white
-          shadow-[0_16px_34px_rgba(6,24,42,0.28)]
+          rounded-full border border-white/12 bg-[#06182a] px-10 py-5
+          text-[clamp(18px,3dvh,22px)] font-black text-white
+          shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_18px_38px_rgba(6,24,42,0.28)]
+          transition hover:scale-[1.01] active:scale-95
         "
       >
         Abrir cámara
@@ -2525,14 +2663,14 @@ function handleMainContinue(latestValue = '') {
         <img
           src={capturedPreview}
           alt="preview"
-          className="h-[170px] w-[170px] rounded-full border-4 border-white object-cover shadow-xl"
+          className="h-[clamp(118px,18dvh,170px)] w-[clamp(118px,18dvh,170px)] rounded-full border-4 border-white object-cover shadow-xl"
         />
 
         <button
           type="button"
           onClick={handleMainContinue}
           className="
-            mt-6 rounded-full bg-[#06182a] px-10 py-5
+            mt-4 rounded-full bg-[#06182a] px-10 py-5
             text-[22px] font-black text-white
             shadow-[0_16px_34px_rgba(6,24,42,0.28)]
           "
@@ -2556,37 +2694,39 @@ function handleMainContinue(latestValue = '') {
           </div>
         </div>
 
-        <div className="mt-8 w-full text-center">
+        <div className="mt-1 w-full shrink-0 text-center">
           <img
             src="/logo-manosya.png"
             alt="ManosYA"
-            className="mx-auto h-[56px] w-auto object-contain"
+            className="mx-auto h-[clamp(26px,5dvh,46px)] w-auto object-contain"
           />
-          <p className="mt-4 text-[14px] font-medium text-white/95 sm:text-[18px]">
+          <p className="mt-1 text-[clamp(9px,1.5dvh,13px)] font-medium leading-tight text-white/95">
             Al continuar, aceptás nuestras condiciones de uso y política de privacidad.
           </p>
         </div>
       </div>
       <AnimatePresence>
   {cameraOpen && (
-  <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#06182a]/72 px-5 backdrop-blur-md">
-    <div className="w-full max-w-[430px] overflow-hidden rounded-[34px] bg-white p-5 shadow-[0_30px_90px_rgba(0,0,0,0.35)]">
-      <div className="mb-4 text-center">
-        <div className="text-[24px] font-black tracking-[-0.04em] text-[#08233a]">
+  <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#06252c]/78 px-4 py-4 backdrop-blur-xl">
+    <div className="relative flex max-h-full w-full max-w-[430px] flex-col overflow-hidden rounded-[30px] border border-white/18 bg-[#f8fffd] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.36)]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_50%_0%,rgba(98,191,185,0.22),transparent_70%)]" />
+      <div className="relative mb-3 text-center">
+        <div className="mx-auto mb-3 h-1.5 w-14 rounded-full bg-[#62bfb9]/45" />
+        <div className="text-[22px] font-black leading-none tracking-normal text-[#06182a]">
           Sacar foto
         </div>
-        <div className="mt-1 text-sm font-bold text-[#6b7f8d]">
+        <div className="mt-2 text-sm font-bold text-[#6b7f8d]">
           Centrá tu rostro y mirá a la cámara
         </div>
       </div>
 
-      <div className="relative overflow-hidden rounded-[28px] bg-[#06182a] shadow-inner">
+      <div className="relative min-h-0 overflow-hidden rounded-[28px] bg-[#06182a] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.10),0_18px_40px_rgba(6,24,42,0.18)]">
         <video
   ref={videoRef}
   autoPlay
   playsInline
   muted
-  className="h-[430px] w-full scale-x-[-1] object-cover"
+  className="h-[clamp(270px,54dvh,430px)] w-full scale-x-[-1] object-cover"
 />
 
 <canvas ref={canvasRef} className="hidden" />
@@ -2600,7 +2740,11 @@ function handleMainContinue(latestValue = '') {
           </div>
         )}
 
-        <div className="pointer-events-none absolute inset-5 rounded-[24px] border-2 border-white/65" />
+        <div className="pointer-events-none absolute inset-5 rounded-[24px] border border-white/70 shadow-[inset_0_0_0_1px_rgba(98,191,185,0.28)]" />
+        <div className="pointer-events-none absolute left-1/2 top-5 h-8 w-px -translate-x-1/2 bg-white/30" />
+        <div className="pointer-events-none absolute bottom-5 left-1/2 h-8 w-px -translate-x-1/2 bg-white/30" />
+        <div className="pointer-events-none absolute left-5 top-1/2 h-px w-8 -translate-y-1/2 bg-white/30" />
+        <div className="pointer-events-none absolute right-5 top-1/2 h-px w-8 -translate-y-1/2 bg-white/30" />
       </div>
 
     {cameraError && !cameraReady ? (
@@ -2609,11 +2753,11 @@ function handleMainContinue(latestValue = '') {
   </div>
 ) : null}
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      <div className="relative mt-4 grid grid-cols-2 gap-3">
         <button
           type="button"
           onClick={closeCamera}
-          className="rounded-[20px] bg-[#eef3f5] px-5 py-4 text-base font-black text-[#405766]"
+          className="rounded-[22px] bg-[#edf5f4] px-5 py-4 text-base font-black text-[#405766] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition active:scale-95"
         >
           Cancelar
         </button>
@@ -2629,7 +2773,8 @@ function handleMainContinue(latestValue = '') {
     bg-[#06182a]
     px-8 py-4
     text-[18px] font-black text-white
-    shadow-[0_14px_30px_rgba(6,24,42,0.24)]
+    shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_14px_30px_rgba(6,24,42,0.24)]
+    transition active:scale-95
   "
 >
   Sacar foto
