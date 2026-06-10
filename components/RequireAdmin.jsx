@@ -1,11 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 
 export default function RequireAdmin({ children }) {
   const [ok, setOk] = useState(null); // null=loading, true=admin, false=no
   useEffect(() => {
     (async () => {
+      const supabase = getSupabase();
       const { data: u } = await supabase.auth.getUser();
       const uid = u?.user?.id;
       if (!uid) return setOk(false);

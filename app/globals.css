@@ -1,6 +1,3 @@
-/* === MapLibre Styles === */
-@import "maplibre-gl/dist/maplibre-gl.css";
-
 /* === Tailwind: siempre primero === */
 @tailwind base;
 @tailwind components;

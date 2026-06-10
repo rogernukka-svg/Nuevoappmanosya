@@ -19,8 +19,6 @@ import type {
   SocialAssistantResponse,
 } from '@/lib/social-assistant/types';
 
-const supabase = getSupabase();
-
 const CONTEXT_OPTIONS: Array<{
   value: SocialAssistantContext;
   label: string;
@@ -138,6 +136,7 @@ function SocialAssistantPageContent() {
     setLoading(true);
 
     try {
+      const supabase = getSupabase();
       const {
         data: { session },
       } = await supabase.auth.getSession();

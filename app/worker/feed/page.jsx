@@ -18,14 +18,9 @@ import {
   Check,
   Heart,
   Share2,
-  Plus,
   UserPlus,
-  Store,
-  ShoppingCart,
    ArrowLeft,
     Upload,
-  Music2,
-  Type,
   ImagePlus,
   Briefcase,
   User2,
@@ -43,7 +38,7 @@ import {
   playFeedVideo,
 } from '@/lib/feedVideoPlayback';
 import { requireRole } from '@/lib/roleRedirect';
-import { canAttemptAction, inspectTextSafety, safeExternalUrl, validateMediaFile } from '@/lib/security';
+import { canAttemptAction, inspectTextSafety, validateMediaFile } from '@/lib/security';
 
 const supabase = getSupabase();
 const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
@@ -373,41 +368,7 @@ function meLocationIcon() {
   return L.divIcon({ html, className: '', iconSize: [24, 24], iconAnchor: [12, 12] });
 }
 
-function SupplierProductStrip({ products, serviceName, onContact }) {
-  if (!Array.isArray(products) || !products.length) return null;
-
-  return (
-    <div className="mt-2 hidden rounded-[18px] border border-white/14 bg-black/30 p-1.5 backdrop-blur-xl sm:block">
-      <div className="mb-1 flex items-center gap-1.5 px-1 text-[10px] font-black uppercase tracking-[0.1em] text-[#9ee5df]">
-        <Store size={13} />
-        Insumos
-      </div>
-      <div className="flex gap-1.5 overflow-x-auto pb-1">
-        {products.slice(0, 2).map((product) => (
-          <button
-            key={product.id}
-            type="button"
-            onClick={() => {
-              onContact?.(product);
-            }}
-            className="flex min-w-[145px] items-center gap-2 rounded-[15px] bg-white/94 p-1.5 text-left text-slate-950 shadow-[0_10px_20px_rgba(0,0,0,0.18)] active:scale-[0.98]"
-          >
-            <img src={product.image_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={product.title} className="h-10 w-10 rounded-xl object-cover" />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[12px] font-black">{product.title}</div>
-              <div className="truncate text-[11px] font-bold text-slate-500">{product.price_text || 'Pedir en ManosYA'}</div>
-            </div>
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white">
-              <ShoppingCart size={14} />
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], onOpen, onAddFriend, onComments, onLike, onNearbyMap, onSupplierContact }) {
+function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, onComments, onLike, onNearbyMap }) {
   const [bioOpen, setBioOpen] = useState(false);
   const videoRef = useRef(null);
   const playbackTokenRef = useRef(0);
@@ -708,8 +669,6 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, products = [], 
             </button>
           )}
         </div>
-
-        <SupplierProductStrip products={products} serviceName={primaryService} onContact={onSupplierContact} />
       </div>
     </motion.div>
   );
@@ -869,73 +828,302 @@ function CommentsSheet({ open, worker, comments, commentText, setCommentText, on
   );
 }
 
-function ProfileMediaViewer({ media, onClose }) {
-  const mediaRef = useRef(null);
+function ProductCommentsSheet({ open, worker, comments, commentText, setCommentText, onClose, onSend, onOpenDm }) {
+  if (!open || !worker) return null;
+
+  return (
+    <div className="fixed inset-0 z-[67000] flex items-end bg-black/55 backdrop-blur-sm">
+      <motion.div
+        initial={{ y: 420, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 420, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+        className="mx-auto flex max-h-[76vh] w-full max-w-xl flex-col overflow-hidden rounded-t-[34px] bg-white shadow-[0_-24px_80px_rgba(0,0,0,0.35)]"
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0c6b70]">Comentarios</div>
+            <div className="mt-1 truncate text-[20px] font-black text-slate-900">{worker?.full_name || 'Trabajador'}</div>
+          </div>
+          <button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-700 active:scale-95">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {!comments?.length ? (
+            <div className="flex min-h-[180px] items-center justify-center text-center">
+              <div>
+                <MessageCircle className="mx-auto mb-3 text-slate-300" size={34} />
+                <div className="text-[17px] font-black text-slate-900">Todavía no hay comentarios</div>
+                <div className="mt-1 text-sm font-semibold text-slate-500">Sé el primero en comentar este perfil.</div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {comments.map((item) => {
+                const hasProduct = Boolean(item.product_title || item.product_image_url || item.product_price_text);
+                const isSupplier = item.commenter_role === 'supplier' || hasProduct;
+
+                return (
+                  <div key={item.id} className="flex gap-3">
+                    <img
+                      src={item.client_avatar || '/avatar-fallback.png'}
+                      onError={(event) => { event.currentTarget.src = '/avatar-fallback.png'; }}
+                      alt={item.client_name || 'Usuario'}
+                      className="h-10 w-10 rounded-full object-cover"
+                    />
+                    <div className="min-w-0 flex-1 rounded-[22px] bg-slate-50 px-4 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-[14px] font-black text-slate-900">{item.client_name || 'Usuario'}</div>
+                          {isSupplier && <div className="mt-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-[#0c6b70]">Proveedor</div>}
+                        </div>
+                        {isSupplier && item.client_id && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenDm?.(item.client_id)}
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_8px_18px_rgba(98,191,185,0.28)] active:scale-95"
+                            aria-label="Mensaje privado"
+                          >
+                            <MessageCircle size={16} strokeWidth={3} />
+                          </button>
+                        )}
+                      </div>
+
+                      <p className="mt-1 text-[14px] font-semibold leading-5 text-slate-600">{item.comment}</p>
+
+                      {hasProduct && (
+                        <div className="mt-3 overflow-hidden rounded-[20px] border border-[#d6f4f1] bg-white shadow-sm">
+                          <div className="flex gap-3 p-2.5">
+                            <img
+                              src={item.product_image_url || '/avatar-fallback.png'}
+                              onError={(event) => { event.currentTarget.src = '/avatar-fallback.png'; }}
+                              alt={item.product_title || 'Producto'}
+                              className="h-20 w-20 shrink-0 rounded-2xl object-cover"
+                            />
+                            <div className="min-w-0 flex-1 py-1">
+                              <div className="line-clamp-2 text-[14px] font-black text-slate-950">{item.product_title || 'Producto del proveedor'}</div>
+                              {item.product_price_text && <div className="mt-1 text-[13px] font-black text-[#0c6b70]">{item.product_price_text}</div>}
+                              <div className="mt-1 text-[11px] font-bold text-slate-400">Tocá mensaje para coordinar en privado</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-slate-100 bg-white px-4 pb-[calc(env(safe-area-inset-bottom)+14px)] pt-3">
+          <div className="flex items-center gap-2 rounded-[28px] border border-slate-200 bg-slate-50 px-3 py-2">
+            <input
+              value={commentText}
+              onChange={(event) => setCommentText(event.target.value)}
+              placeholder="Escribí un comentario público..."
+              className="h-11 min-w-0 flex-1 bg-transparent px-2 text-[14px] font-semibold text-slate-700 placeholder:text-slate-400 outline-none"
+            />
+            <button type="button" onClick={onSend} disabled={!commentText.trim()} className="flex h-11 w-11 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_10px_22px_rgba(98,191,185,0.35)] disabled:opacity-45 active:scale-95">
+              <SendHorizontal size={17} strokeWidth={2.8} />
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function ProfileMediaViewer({ mediaList = [], activeIndex = 0, onClose }) {
+  const scrollerRef = useRef(null);
+  const itemRefs = useRef([]);
+  const videoRefs = useRef({});
+  const [currentIndex, setCurrentIndex] = useState(activeIndex);
+  const safeMediaList = useMemo(
+    () => (Array.isArray(mediaList) ? mediaList.filter((item) => item?.media_url || item?.thumbnail_url) : []),
+    [mediaList]
+  );
+  const endIndex = safeMediaList.length;
+
+  function pauseInactiveVideos(nextIndex = endIndex) {
+    Object.entries(videoRefs.current).forEach(([key, video]) => {
+      if (!video || Number(key) === nextIndex) return;
+      video.pause();
+    });
+  }
 
   useEffect(() => {
-    if (!media) return undefined;
-
-    const viewerVideo = mediaRef.current;
-    const pausedVideos = [];
+    if (!safeMediaList.length) return undefined;
 
     document.querySelectorAll('video').forEach((video) => {
-      if (video === viewerVideo) return;
-      if (!video.paused) {
-        video.pause();
-        pausedVideos.push(video);
+      if (Object.values(videoRefs.current).includes(video)) return;
+      video.pause();
+    });
+  }, [safeMediaList.length]);
+
+  useEffect(() => {
+    if (!safeMediaList.length) return undefined;
+    const safeIndex = Math.max(0, Math.min(activeIndex, safeMediaList.length - 1));
+    setCurrentIndex(safeIndex);
+
+    const timer = setTimeout(() => {
+      itemRefs.current[safeIndex]?.scrollIntoView?.({ block: 'center', behavior: 'auto' });
+    }, 70);
+
+    return () => clearTimeout(timer);
+  }, [activeIndex, safeMediaList.length]);
+
+  useEffect(() => {
+    pauseInactiveVideos(currentIndex);
+    if (currentIndex >= endIndex) return;
+
+    const video = videoRefs.current[currentIndex];
+    const isVideo = String(safeMediaList[currentIndex]?.media_type || '').toLowerCase() === 'video';
+    if (video && isVideo) {
+      video.play().catch(() => {});
+    }
+  }, [currentIndex, safeMediaList, endIndex]);
+
+  if (!safeMediaList.length) return null;
+
+  function handleScroll() {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    const scrollerRect = scroller.getBoundingClientRect();
+    const centerY = scrollerRect.top + scrollerRect.height / 2;
+    let nextIndex = currentIndex;
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    itemRefs.current.forEach((item, index) => {
+      if (!item) return;
+      const rect = item.getBoundingClientRect();
+      const itemCenter = rect.top + rect.height / 2;
+      const distance = Math.abs(itemCenter - centerY);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        nextIndex = index;
       }
     });
 
-    return () => {
-      pausedVideos.forEach((video) => {
-        if (!video.isConnected) return;
-        video.play().catch(() => {});
-      });
-    };
-  }, [media]);
-
-  if (!media) return null;
-
-  const mediaUrl = media.media_url || media.thumbnail_url;
-  const isVideo = String(media.media_type || '').toLowerCase() === 'video';
+    if (nextIndex !== currentIndex) {
+      setCurrentIndex(nextIndex);
+      pauseInactiveVideos(nextIndex);
+    }
+  }
 
   return (
-    <div className="fixed inset-0 z-[70000] flex items-center justify-center bg-black/92 p-3">
+    <div className="fixed inset-0 z-[70000] isolate bg-black">
       <button
         type="button"
         onClick={onClose}
-        className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/14 text-white backdrop-blur-md active:scale-95"
+        className="absolute left-4 top-[calc(env(safe-area-inset-top)+14px)] z-20 inline-flex h-11 items-center gap-2 rounded-full bg-white/16 px-4 text-[13px] font-black text-white shadow-[0_14px_34px_rgba(0,0,0,0.24)] backdrop-blur-xl active:scale-95"
         aria-label="Cerrar"
       >
-        <X size={20} />
+        <ArrowLeft size={17} strokeWidth={3} />
+        Perfil
       </button>
-      <div className="flex h-full w-full max-w-3xl items-center justify-center">
-        {isVideo ? (
-          <video
-            ref={mediaRef}
-            src={mediaUrl}
-            controls
-            autoPlay
-            playsInline
-            className="max-h-full w-full rounded-[18px] object-contain"
-          />
-        ) : (
-          <img
-            src={mediaUrl}
-            onError={(e) => {
-              e.currentTarget.src = '/avatar-fallback.png';
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-[calc(env(safe-area-inset-top)+14px)] z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white/12 text-white shadow-[0_14px_34px_rgba(0,0,0,0.24)] backdrop-blur-xl active:scale-95"
+        aria-label="Cerrar"
+      >
+        <X size={19} />
+      </button>
+
+      <div
+        ref={scrollerRef}
+        onScroll={handleScroll}
+        className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black"
+      >
+        <div className="mx-auto flex w-full max-w-3xl flex-col">
+          {safeMediaList.map((item, index) => {
+            const mediaUrl = item.media_url || item.thumbnail_url;
+            const isVideo = String(item.media_type || '').toLowerCase() === 'video';
+            const isActive = index === currentIndex;
+
+            return (
+              <section
+                key={`${item.id || mediaUrl}-${index}`}
+                ref={(node) => {
+                  itemRefs.current[index] = node;
+                }}
+                className="flex h-[var(--real-vh,100dvh)] snap-start snap-always items-center justify-center px-3 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-[calc(env(safe-area-inset-top)+70px)]"
+              >
+                <div className="relative w-full overflow-hidden rounded-[28px] bg-black shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-[#62bfb9]/30">
+                  {isVideo ? (
+                    <video
+                      ref={(node) => {
+                        if (node) videoRefs.current[index] = node;
+                        else delete videoRefs.current[index];
+                      }}
+                      src={mediaUrl}
+                      controls
+                      autoPlay={isActive}
+                      playsInline
+                      preload="metadata"
+                      className="max-h-[calc(var(--real-vh,100dvh)-120px)] w-full object-contain"
+                      onPlay={() => {
+                        setCurrentIndex(index);
+                        pauseInactiveVideos(index);
+                      }}
+                    />
+                  ) : (
+                    <img
+                      src={mediaUrl}
+                      onError={(e) => {
+                        e.currentTarget.src = '/avatar-fallback.png';
+                      }}
+                      alt={item.caption || 'Trabajo publicado'}
+                      className="max-h-[calc(var(--real-vh,100dvh)-120px)] w-full object-contain"
+                    />
+                  )}
+
+                  {item.caption && (
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/76 to-transparent px-4 pb-4 pt-12">
+                      <p className="line-clamp-3 text-[14px] font-bold leading-5 text-white">
+                        {item.caption}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            );
+          })}
+          <section
+            ref={(node) => {
+              itemRefs.current[endIndex] = node;
             }}
-            alt={media.caption || 'Trabajo publicado'}
-            className="max-h-full w-full rounded-[18px] object-contain"
-          />
-        )}
+            className="flex h-[var(--real-vh,100dvh)] snap-start snap-always items-center justify-center px-6 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-[calc(env(safe-area-inset-top)+70px)] text-center"
+          >
+            <div className="w-full max-w-sm rounded-[30px] border border-white/14 bg-white/8 p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#62bfb9] text-white shadow-[0_14px_34px_rgba(98,191,185,0.32)]">
+                <Check size={25} strokeWidth={3} />
+              </div>
+              <div className="mt-4 text-[22px] font-black">Fin del perfil</div>
+              <p className="mt-2 text-[14px] font-semibold leading-5 text-white/70">
+                Estos son todos los trabajos publicados por este trabajador.
+              </p>
+              <button
+                type="button"
+                onClick={onClose}
+                className="mt-5 w-full rounded-full bg-white px-5 py-3 text-[14px] font-black text-slate-950 active:scale-[0.98]"
+              >
+                Volver al perfil
+              </button>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );
 }
 
 function WorkerProfileSheet({ worker, onClose, onHire, viewerId, onCoverChange, onAvatarChange }) {
-  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState(null);
   const coverInputRef = useRef(null);
   const avatarInputRef = useRef(null);
 
@@ -947,29 +1135,35 @@ function WorkerProfileSheet({ worker, onClose, onHire, viewerId, onCoverChange, 
   const followersCount = Number(worker?.followers_count || worker?.followers || worker?.total_followers || 0);
   const likesCount = Number(worker?.likes_count || worker?.like_count || 0);
   const reviewsCount = Number(worker?.total_reviews || worker?.rating_count || 0);
+  const setSelectedMedia = (media) => {
+    const exactIndex = profileMedia.indexOf(media);
+    if (exactIndex >= 0) {
+      setSelectedMediaIndex(exactIndex);
+      return;
+    }
+
+    const nextIndex = profileMedia.findIndex((item) => (
+      String(item?.id || item?.media_url || item?.thumbnail_url || '') ===
+      String(media?.id || media?.media_url || media?.thumbnail_url || '')
+    ));
+    setSelectedMediaIndex(nextIndex >= 0 ? nextIndex : 0);
+  };
+
   return (
     <div className="absolute inset-0 z-[65000] bg-slate-950/58 p-3 backdrop-blur-sm sm:p-5">
-      <ProfileMediaViewer media={selectedMedia} onClose={() => setSelectedMedia(null)} />
+      {selectedMediaIndex != null && (
+        <ProfileMediaViewer
+          mediaList={profileMedia}
+          activeIndex={selectedMediaIndex}
+          onClose={() => setSelectedMediaIndex(null)}
+        />
+      )}
       <motion.div initial={{ opacity: 0, y: 32, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 24, scale: 0.98 }} className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-hidden rounded-[34px] border border-white/18 bg-[linear-gradient(180deg,#eff6f7_0%,#ffffff_40%,#f8fbfc_100%)] shadow-[0_30px_90px_rgba(15,23,42,0.24)]">
         <div className="relative h-[270px] overflow-hidden bg-slate-900"><img src={worker?.cover_url || worker?.video_thumb_url || worker?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={worker?.full_name || 'Trabajador'} className="h-full w-full object-cover" /><div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(2,6,23,0.88),rgba(2,6,23,0.12))]" /><button type="button" onClick={onClose} className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/16 text-white backdrop-blur-md"><X size={18} /></button>{canEditCover && <><input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) onCoverChange?.(file, worker); event.target.value = ''; }} /><button type="button" onClick={() => coverInputRef.current?.click()} className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-white/18 px-3 py-2 text-[12px] font-black text-white backdrop-blur-md active:scale-95"><ImagePlus size={15} />Cambiar portada</button></>}<div className="absolute bottom-5 left-5 right-5"><div className="flex items-end gap-4"><div className="relative h-24 w-24 shrink-0"><img src={worker?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={worker?.full_name || 'Avatar'} className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-[0_14px_30px_rgba(15,23,42,0.24)]" />{canEditCover && <><input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) onAvatarChange?.(file, worker); event.target.value = ''; }} /><button type="button" onClick={() => avatarInputRef.current?.click()} className="absolute -bottom-1 -right-1 flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-[#62bfb9] text-white shadow-lg active:scale-95" aria-label="Cambiar foto de perfil"><ImagePlus size={16} /></button></>}</div><div className="pb-2 text-white"><div className="text-[28px] font-black leading-none">{worker?.full_name || 'Trabajador'}</div><div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-white/85"><span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 backdrop-blur-md"><Sparkles size={14} />{serviceLabelForWorker(worker)}</span>{online && <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[11px] font-black text-emerald-200">Activo ahora</span>}</div></div></div></div></div>
         <div className="flex-1 overflow-y-auto p-5 sm:p-6"><div className="mb-5 grid grid-cols-4 gap-2 rounded-[26px] border border-slate-200 bg-white p-3 text-center shadow-sm"><div><div className="text-[18px] font-black text-slate-950">{profileMedia.length}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">Posts</div></div><div><div className="text-[18px] font-black text-slate-950">{followersCount}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">Seguidores</div></div><div><div className="text-[18px] font-black text-slate-950">{likesCount}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">Me encanta</div></div><div><div className="text-[18px] font-black text-slate-950">{workerRatingValue(worker) == null ? '-' : workerRatingValue(worker).toFixed(1)}</div><div className="text-[10px] font-black uppercase tracking-[0.08em] text-slate-500">{reviewsCount ? 'Rating' : 'Nuevo'}</div></div></div><div className="mb-5"><div className="mb-3 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Trabajos publicados</div><div className="grid grid-cols-3 gap-1 overflow-hidden rounded-[18px] bg-slate-100">{profileMedia.slice(0, 9).map((item, idx) => <button type="button" onClick={() => setSelectedMedia(item)} key={`${item.id || item.media_url}-${idx}`} className="relative aspect-[3/4] overflow-hidden bg-slate-200 text-left active:scale-[0.99]">{item.media_type === 'video' ? <video src={item.media_url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <img src={item.thumbnail_url || item.media_url} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={item.caption || 'Trabajo'} className="h-full w-full object-cover" />}{item.media_type === 'video' && <span className="absolute right-2 top-2 rounded-full bg-black/45 px-2 py-1 text-[10px] font-black text-white">VIDEO</span>}</button>)}</div></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Rating</div><div className="mt-2 text-2xl font-black text-slate-900">{workerRatingValue(worker) == null ? 'Nuevo' : workerRatingValue(worker).toFixed(1)}</div></div><div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">ReseÃ±as</div><div className="mt-2 text-2xl font-black text-slate-900">{Number(worker?.total_reviews || 0)}</div></div><div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Radio</div><div className="mt-2 text-2xl font-black text-slate-900">{Number(worker?.radius_km || 5)} km</div></div></div><div className="mt-5 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"><div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Sobre este trabajador</div><p className="mt-3 text-[15px] leading-7 text-slate-600">{worker?.bio || 'Perfil listo para mostrar trabajos, fotos, videos y fortalecer comunidad profesional dentro de ManosYA.'}</p></div><div className="mt-5 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"><div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Servicios</div><div className="mt-4 flex flex-wrap gap-2">{(services.length ? services : ['Servicio general']).map((item, idx) => <span key={`${item}-${idx}`} className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-bold text-[#0c6b70]">{serviceMetaBySlug(item)?.name || item}</span>)}</div></div></div>
         <div className="grid grid-cols-2 gap-3 border-t border-slate-200 bg-white p-4 sm:p-5"><button type="button" onClick={onClose} className="rounded-[22px] border border-slate-200 bg-white px-5 py-4 text-sm font-black text-slate-800 shadow-sm">Volver</button><button type="button" onClick={onHire} className="rounded-[22px] bg-gradient-to-r from-[#0c6b70] via-[#62bfb9] to-[#9ee5df] px-5 py-4 text-sm font-black text-white shadow-[0_16px_34px_rgba(98,191,185,0.34)]">Contratar servicio</button></div>
       </motion.div>
     </div>
-  );
-}
-
-function NearbyMapSheet({ open, workers, center, hasMeCoords, me, selectedWorker, onSelectWorker, onClose, onOpenProfile }) {
-  const [activeIndex, setActiveIndex] = useState(0);
-
-  if (!open) return null;
-  const validWorkers = (workers || []).filter((worker) => Number.isFinite(Number(worker?.lat)) && Number.isFinite(Number(worker?.lng)));
-  const active = selectedWorker || validWorkers[activeIndex] || validWorkers[0] || null;
-  const mapWorkers = validWorkers.slice(0, 14);
-  function goPrevWorker() { if (!validWorkers.length) return; const next = activeIndex <= 0 ? validWorkers.length - 1 : activeIndex - 1; setActiveIndex(next); onSelectWorker(validWorkers[next]); }
-  function goNextWorker() { if (!validWorkers.length) return; const next = activeIndex >= validWorkers.length - 1 ? 0 : activeIndex + 1; setActiveIndex(next); onSelectWorker(validWorkers[next]); }
-  return (
-    <div className="fixed inset-0 z-[66000] bg-slate-950/70 p-3 backdrop-blur-sm"><motion.div initial={{ opacity: 0, y: 28, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 22, scale: 0.98 }} className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[34px] border border-white/18 bg-[#eef8f7] shadow-[0_30px_90px_rgba(0,0,0,0.32)]"><div className="flex items-center justify-between border-b border-white/50 bg-white/70 px-4 py-3 backdrop-blur-xl"><div><div className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0c6b70]">Cerca tuyo</div><div className="text-[20px] font-black text-slate-900">Trabajadores cerca</div></div><button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900/8 text-slate-700 active:scale-95"><X size={18} /></button></div><div className="relative flex-1 overflow-hidden bg-white"><MapContainer center={center} zoom={hasMeCoords ? 12 : 11} className="h-full w-full"><TileLayer attribution="&copy; CartoDB" url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />{hasMeCoords && <><Marker position={[Number(me.lat), Number(me.lon)]} icon={meLocationIcon() || undefined} /><Circle center={[Number(me.lat), Number(me.lon)]} radius={2500} pathOptions={{ color: '#62bfb9', fillColor: '#62bfb9', fillOpacity: 0.12 }} /></>}{mapWorkers.map((worker) => <Marker key={String(worker.user_id)} position={[Number(worker.lat), Number(worker.lng)]} icon={avatarIcon(worker.avatar_url, worker) || undefined} eventHandlers={{ click: () => { onSelectWorker(worker); const idx = validWorkers.findIndex((w) => String(w.user_id) === String(worker.user_id)); if (idx >= 0) setActiveIndex(idx); } }} />)}</MapContainer>{active && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[999] bg-gradient-to-t from-white/82 via-white/20 to-transparent p-4"><div className="pointer-events-auto rounded-[30px] border border-white/80 bg-white/96 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur-xl"><div className="flex items-center gap-2"><button type="button" onClick={goPrevWorker} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 active:scale-95">â†</button><img src={active?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={active?.full_name || 'Trabajador'} className="h-14 w-14 rounded-2xl object-cover" /><div className="min-w-0 flex-1"><div className="truncate text-[15px] font-black text-slate-900">{active?.full_name || 'Trabajador'}</div><div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] font-bold text-slate-500"><span>{serviceLabelForWorker(active)}</span>{active?._distKm != null && <span>â€¢ {formatKm(active._distKm)}</span>}<span>• {formatWorkerRatingClean(active)}</span></div><div className="mt-1 text-[10px] font-black text-[#0c6b70]">{isOnlineRecent(active) ? 'En lÃ­nea ahora' : 'Disponible'}</div></div><button type="button" onClick={goNextWorker} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 active:scale-95">â†’</button></div><button type="button" onClick={() => onOpenProfile(active)} className="mt-3 w-full rounded-[18px] bg-[#62bfb9] px-4 py-3 text-[13px] font-black text-white shadow-[0_12px_28px_rgba(98,191,185,0.35)]">Ver perfil</button></div></div>}</div></motion.div></div>
   );
 }
 
@@ -1687,17 +1881,14 @@ export default function WorkerFeedPage() {
   const [me, setMe] = useState({ id: null, lat: null, lon: null });
   const [viewerProfile, setViewerProfile] = useState(null);
 const [workers, setWorkers] = useState([]);
-const [supplierProducts, setSupplierProducts] = useState([]);
 const [workerPosts, setWorkerPosts] = useState([]);
 const [workerPostsLoaded, setWorkerPostsLoaded] = useState(false);
-const [profilePosts, setProfilePosts] = useState([]);
 const [showMyPosts, setShowMyPosts] = useState(false);
 const [workerHubOpen, setWorkerHubOpen] = useState(false);
 const [workerHubTab, setWorkerHubTab] = useState('jobs');
 const [workerStatus, setWorkerStatus] = useState('available');
 const [workerJobs, setWorkerJobs] = useState([]);
 const [workerJobsLoading, setWorkerJobsLoading] = useState(false);
-const [workerSkills, setWorkerSkills] = useState([]);
 const [workerProfileMeta, setWorkerProfileMeta] = useState(null);
 const [identityEditorOpen, setIdentityEditorOpen] = useState(false);
 const [identitySaving, setIdentitySaving] = useState(false);
@@ -1735,7 +1926,6 @@ const [draftCaption, setDraftCaption] = useState('');
 const [draftTextOverlay, setDraftTextOverlay] = useState('');
 const [draftServiceType, setDraftServiceType] = useState('');
 const [draftMusic, setDraftMusic] = useState(MUSIC_LIBRARY[0]);
-const fileInputRef = useRef(null);
 const draftPreviewUrlRef = useRef('');
   const hasMeCoords = Number.isFinite(Number(me?.lat)) && Number.isFinite(Number(me?.lon));
 
@@ -1762,7 +1952,6 @@ const draftPreviewUrlRef = useRef('');
         .maybeSingle();
 
       const nextSkills = Array.isArray(workerProfile?.skills) ? workerProfile.skills : [];
-      setWorkerSkills(nextSkills);
       setWorkerProfileMeta(workerProfile || null);
       if (workerProfile?.status) setWorkerStatus(workerProfile.status);
 
@@ -1834,25 +2023,6 @@ const draftPreviewUrlRef = useRef('');
       toast.error('No se pudo cambiar tu estado');
     }
   }
-  async function loadSupplierProducts() {
-    const { data, error } = await supabase
-      .from('supplier_products')
-      .select('*')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(80);
-
-    if (error) {
-      if (error.code !== 'PGRST205' && error.code !== '42P01') {
-        console.warn('supplier products worker error:', error);
-      }
-      setSupplierProducts([]);
-      return;
-    }
-
-    setSupplierProducts(data || []);
-  }
-  useEffect(() => { if (mounted) loadSupplierProducts(); }, [mounted]);
   useEffect(() => { if (!navigator.geolocation) return; const cached = (() => { try { const raw = localStorage.getItem(LAST_GPS_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; } })(); if (cached?.lat && cached?.lon) setMe((prev) => ({ ...prev, lat: Number(cached.lat), lon: Number(cached.lon) })); const watcher = navigator.geolocation.watchPosition((pos) => { const lat = pos.coords.latitude; const lon = pos.coords.longitude; setMe((prev) => ({ ...prev, lat, lon })); try { localStorage.setItem(LAST_GPS_KEY, JSON.stringify({ lat, lon, t: Date.now() })); } catch {} }, (err) => console.warn('GPS worker feed error', err), { enableHighAccuracy: false, maximumAge: 15000, timeout: 12000 }); return () => navigator.geolocation.clearWatch(watcher); }, []);
 async function fetchWorkerPosts() {
   if (!me?.id) return;
@@ -1874,24 +2044,6 @@ async function fetchWorkerPosts() {
 
   setWorkerPosts(data || []);
   setWorkerPostsLoaded(true);
-}
-
-async function fetchProfilePosts(workerId) {
-  if (!workerId) return;
-
-  const { data, error } = await supabase
-    .from('worker_posts')
-    .select('*')
-    .eq('worker_id', workerId)
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    console.error('profile worker posts error', error);
-    setProfilePosts([]);
-    return;
-  }
-
-  setProfilePosts(data || []);
 }
 
 async function loadFriendRequests() {
@@ -2453,70 +2605,6 @@ async function fetchWorkers(serviceFilter = '') {
     pauseOtherFeedVideos(activeVideo);
   }, [feedSlotIndex, loopedFeedWorkers.length]);
 
-  const productsForWorker = (worker) => {
-    const tokens = worker?._serviceTokens?.length
-      ? worker._serviceTokens
-      : splitWorkerServices(worker).map((item) => normalizeSlug(item));
-    return (supplierProducts || []).filter((product) => {
-      const slug = normalizeSlug(product.service_slug || '');
-      if (!slug) return false;
-      return tokens.some((token) => token === slug || token.includes(slug) || slug.includes(token));
-    });
-  };
-
-  async function contactSupplierProduct(product, worker = null) {
-    if (!product?.id || !me?.id) return;
-
-    try {
-      const attempt = canAttemptAction(`worker-supplier-contact:${product.id}:${me.id}`, { limit: 4, windowMs: 60_000 });
-      if (!attempt.allowed) {
-        toast.warning('Ya hiciste varias consultas seguidas. Esperá un momento.');
-        return;
-      }
-
-      const contactUrl = safeExternalUrl(product.contact_url || '', { httpsOnly: true });
-      const messageSafety = inspectTextSafety(
-        `Interes profesional por ${product.title || 'producto'}${worker?.full_name ? ` visto desde ${worker.full_name}` : ''}`,
-        { maxLength: 300 }
-      );
-      if (!messageSafety.ok) throw new Error(messageSafety.error);
-
-      const { error } = await supabase.from('supplier_contacts').insert([
-        {
-          supplier_id: product.supplier_id,
-          requester_id: me.id,
-          product_id: product.id,
-          source_role: 'worker',
-          source_context: worker?.user_id ? 'worker_feed_product_strip' : 'worker_feed',
-          message: messageSafety.text,
-          contact_url: contactUrl,
-        },
-      ]);
-
-      if (error && error.code !== 'PGRST205' && error.code !== '42P01') {
-        throw error;
-      }
-
-      if (contactUrl) {
-        window.open(contactUrl, '_blank', 'noopener,noreferrer');
-        toast.success('Contacto registrado. Te abrimos el canal del proveedor.');
-        return;
-      }
-
-      toast.success('Consulta enviada al proveedor dentro de ManosYA');
-    } catch (error) {
-      console.warn('supplier contact worker error:', error);
-      const fallbackUrl = safeExternalUrl(product.contact_url || '', { httpsOnly: true });
-      if (fallbackUrl) {
-        window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
-        toast.info('Abrimos el contacto del proveedor. Revisamos el registro interno luego.');
-        return;
-      }
-
-      toast.error('No pudimos contactar al proveedor todavia');
-    }
-  }
-
   const notificationCount = useMemo(() => {
     const seenAt = Number(notificationsSeenAt || 0);
     const chatSeenMap = getWorkerChatSeenMap();
@@ -2591,7 +2679,6 @@ async function fetchWorkers(serviceFilter = '') {
   }
   async function openProfile(worker) {
   setSelected(worker);
-  await fetchProfilePosts(worker.user_id || worker.worker_id);
   setShowProfile(true);
 }
   async function openComments(worker) { setCommentsWorker(worker); setCommentsOpen(true); const { data } = await supabase.from('worker_comments').select('*').eq('worker_id', worker.user_id).order('created_at', { ascending: false }); setWorkerComments(data || []); }
@@ -3256,12 +3343,11 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
   
   return (
     
-    <div className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-slate-900"><div className="pointer-events-none absolute inset-0 bg-black" /><div className="relative z-10 mx-auto h-[var(--real-vh,100dvh)] w-full max-w-6xl overflow-hidden px-0"><div className="relative h-full"><div className="relative z-10 h-full"><div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white"><div className="flex items-center gap-2"><button type="button" onClick={() => router.push('/role-selector')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] active:scale-95" aria-label="Volver"><ArrowLeft size={18} strokeWidth={3} /></button><button type="button" onClick={() => { setSelectedService(''); setServiceQuery(''); setFeedMode('all'); setFeedSeed(Date.now() + Math.random()); fetchWorkers(''); }} className="flex shrink-0 items-center text-[17px] font-black tracking-[-0.02em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">ManosYA</button><div className="relative h-9 min-w-0 flex-1 rounded-full border border-white/16 bg-white/12 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={15} /><input value={serviceQuery} onChange={(e) => { const value = e.target.value; setServiceQuery(value); const normalizedValue = normalizeSlug(value); const matchedService = SERVICE_CATALOG.find((service) => { const slug = normalizeSlug(service.slug); const name = normalizeSlug(service.name); return slug.includes(normalizedValue) || name.includes(normalizedValue) || normalizedValue.includes(slug); }); setSelectedService(matchedService ? matchedService.slug : ''); }} placeholder="Buscar..." className="h-full w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/62 outline-none" />{serviceQuery && <button type="button" onClick={() => { setServiceQuery(''); setSelectedService(''); }} className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/16 text-white/82 active:scale-95"><X size={14} /></button>}</div></div><div className="mt-2 flex justify-center"><div className="relative grid h-10 w-[214px] grid-cols-2 items-center rounded-full border border-white/16 bg-black/32 p-1 shadow-[0_14px_34px_rgba(0,0,0,0.24)] backdrop-blur-2xl"><motion.div layout transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-white shadow-[0_8px_20px_rgba(0,0,0,0.20)]" style={{ left: feedMode === 'all' ? '4px' : '50%' }} /><button type="button" onClick={() => { setFeedMode('all'); setSelectedService(''); setServiceQuery(''); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); fetchWorkers(''); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${feedMode === 'all' ? 'text-black' : 'text-white'}`}>Todos</button><button type="button" onClick={() => { setFeedMode('near'); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${feedMode === 'near' ? 'text-black' : 'text-white'}`}>Cerca tuyo</button></div></div></div>{busy ? <div className="flex h-full items-center justify-center bg-[#081924] text-white"><div className="text-center"><div className="text-xl font-black">Cargando trabajadores</div><div className="mt-2 text-sm text-white/70">Estamos ordenando lo mejor para vos.</div></div></div> : !feedWorkers.length ? <div className="flex h-full items-center justify-center bg-[#081924] px-8 text-center text-white"><div><Compass className="mx-auto mb-3 text-white/70" size={34} /><div className="text-xl font-black">No encontramos trabajadores</div><div className="mt-2 text-sm text-white/70">ProbÃ¡ cambiar el filtro o revisar tu zona.</div><button type="button" onClick={() => fetchWorkers('')} className="mt-6 rounded-full bg-[#62bfb9] px-6 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(98,191,185,0.35)]">Actualizar</button></div></div> : <div key={`${feedMode}-${feedSeed}-${selectedService || 'todos'}`} ref={feedRef} onScroll={(e) => { const el = e.currentTarget; const cardHeight = Math.max(1, el.clientHeight); const rawIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); const nextIndex = feedWorkers.length ? rawIndex % feedWorkers.length : 0; if (nextIndex !== feedIndex && feedWorkers[nextIndex]) { setFeedIndex(nextIndex); setSelected(feedWorkers[nextIndex]); } if (rawIndex !== feedSlotIndex) setFeedSlotIndex(rawIndex); if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current); feedSnapTimerRef.current = setTimeout(() => { const snapIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); const realIndex = feedWorkers.length ? snapIndex % feedWorkers.length : 0; const shouldRecenter = feedWorkers.length > 1 && (snapIndex < feedWorkers.length || snapIndex >= feedWorkers.length * 4); const targetIndex = shouldRecenter ? feedWorkers.length * 2 + realIndex : snapIndex; setFeedSlotIndex(targetIndex); setFeedIndex(realIndex); if (feedWorkers[realIndex]) setSelected(feedWorkers[realIndex]); el.scrollTo({ top: targetIndex * cardHeight, behavior: 'auto' }); }, 120); }} style={{ scrollSnapType: 'y mandatory', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch' }} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black">
+    <div className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-slate-900"><div className="pointer-events-none absolute inset-0 bg-black" /><div className="relative z-10 mx-auto h-[var(--real-vh,100dvh)] w-full max-w-6xl overflow-hidden px-0"><div className="relative h-full"><div className="relative z-10 h-full"><div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white"><div className="flex items-center gap-2"><button type="button" onClick={() => setIdentityEditorOpen(true)} className="flex h-9 max-w-[132px] shrink-0 items-center gap-2 rounded-full bg-white/14 px-1.5 pr-3 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-xl active:scale-95" aria-label="Abrir perfil"><img src={viewerProfile?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt="Perfil" className="h-7 w-7 rounded-full object-cover" /><span className="min-w-0 truncate text-[12px] font-black">{viewerProfile?.full_name || 'Perfil'}</span></button><div className="relative h-9 min-w-0 flex-1 rounded-full border border-white/16 bg-white/12 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={15} /><input value={serviceQuery} onChange={(e) => { const value = e.target.value; setServiceQuery(value); const normalizedValue = normalizeSlug(value); const matchedService = SERVICE_CATALOG.find((service) => { const slug = normalizeSlug(service.slug); const name = normalizeSlug(service.name); return slug.includes(normalizedValue) || name.includes(normalizedValue) || normalizedValue.includes(slug); }); setSelectedService(matchedService ? matchedService.slug : ''); }} placeholder="Buscar..." className="h-full w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/62 outline-none" />{serviceQuery && <button type="button" onClick={() => { setServiceQuery(''); setSelectedService(''); }} className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/16 text-white/82 active:scale-95"><X size={14} /></button>}</div></div><div className="mt-2 flex justify-center"><div className="relative grid h-10 w-[214px] grid-cols-2 items-center rounded-full border border-white/16 bg-black/32 p-1 shadow-[0_14px_34px_rgba(0,0,0,0.24)] backdrop-blur-2xl"><motion.div layout transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-white shadow-[0_8px_20px_rgba(0,0,0,0.20)]" style={{ left: feedMode === 'all' ? '4px' : '50%' }} /><button type="button" onClick={() => { setFeedMode('all'); setSelectedService(''); setServiceQuery(''); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); fetchWorkers(''); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${feedMode === 'all' ? 'text-black' : 'text-white'}`}>Todos</button><button type="button" onClick={() => { setFeedMode('near'); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${feedMode === 'near' ? 'text-black' : 'text-white'}`}>Cerca tuyo</button></div></div></div>{busy ? <div className="flex h-full items-center justify-center bg-[#081924] text-white"><div className="text-center"><div className="text-xl font-black">Cargando trabajadores</div><div className="mt-2 text-sm text-white/70">Estamos ordenando lo mejor para vos.</div></div></div> : !feedWorkers.length ? <div className="flex h-full items-center justify-center bg-[#081924] px-8 text-center text-white"><div><Compass className="mx-auto mb-3 text-white/70" size={34} /><div className="text-xl font-black">No encontramos trabajadores</div><div className="mt-2 text-sm text-white/70">ProbÃ¡ cambiar el filtro o revisar tu zona.</div><button type="button" onClick={() => fetchWorkers('')} className="mt-6 rounded-full bg-[#62bfb9] px-6 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(98,191,185,0.35)]">Actualizar</button></div></div> : <div key={`${feedMode}-${feedSeed}-${selectedService || 'todos'}`} ref={feedRef} onScroll={(e) => { const el = e.currentTarget; const cardHeight = Math.max(1, el.clientHeight); const rawIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); const nextIndex = feedWorkers.length ? rawIndex % feedWorkers.length : 0; if (nextIndex !== feedIndex && feedWorkers[nextIndex]) { setFeedIndex(nextIndex); setSelected(feedWorkers[nextIndex]); } if (rawIndex !== feedSlotIndex) setFeedSlotIndex(rawIndex); if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current); feedSnapTimerRef.current = setTimeout(() => { const snapIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); const realIndex = feedWorkers.length ? snapIndex % feedWorkers.length : 0; const shouldRecenter = feedWorkers.length > 1 && (snapIndex < feedWorkers.length || snapIndex >= feedWorkers.length * 4); const targetIndex = shouldRecenter ? feedWorkers.length * 2 + realIndex : snapIndex; setFeedSlotIndex(targetIndex); setFeedIndex(realIndex); if (feedWorkers[realIndex]) setSelected(feedWorkers[realIndex]); el.scrollTo({ top: targetIndex * cardHeight, behavior: 'auto' }); }, 120); }} style={{ scrollSnapType: 'y mandatory', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch' }} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black">
       {loopedFeedWorkers.map((worker, index) => (
   <WorkerFeedCard
     key={String(worker.post_id || worker.user_id || 'worker') + '-' + index}
     worker={worker}
-    products={productsForWorker(worker)}
     isActive={index === feedSlotIndex}
     isFollowed={followedUserIds.includes(String(worker.user_id || worker.worker_id))}
     isLiked={likedWorkerIds.includes(String(worker.user_id || worker.worker_id))}
@@ -3269,7 +3355,6 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
     onAddFriend={() => addFriend(worker)}
     onComments={() => openComments(worker)}
     onLike={() => toggleWorkerLike(worker)}
-    onSupplierContact={(product) => contactSupplierProduct(product, worker)}
     onNearbyMap={() => {
       setNearbyMapWorker(worker);
       setNearbyMapOpen(true);
@@ -3309,7 +3394,7 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
     />
   )}
 </AnimatePresence>
-    <AnimatePresence>{showAllWorkers && <AllWorkersSheet open={showAllWorkers} workers={feedWorkers} onClose={() => setShowAllWorkers(false)} onSelect={(worker) => { setSelected(worker); setShowAllWorkers(false); setShowProfile(true); }} />}</AnimatePresence><AnimatePresence>{nearbyMapOpen && <WorkerNearbyMapSheet open={nearbyMapOpen} workers={nearbyWorkers} center={mapCenter} hasMeCoords={hasMeCoords} me={me} selectedWorker={nearbyMapWorker} onSelectWorker={(worker) => { setNearbyMapWorker(worker); setSelected(worker); }} onClose={() => setNearbyMapOpen(false)} onOpenProfile={(worker) => { setSelected(worker); setNearbyMapOpen(false); setShowProfile(true); }} onHire={(worker) => { setNearbyMapOpen(false); hireWorker(worker); }} />}</AnimatePresence><AnimatePresence>{commentsOpen && <CommentsSheet open={commentsOpen} worker={commentsWorker} comments={workerComments} commentText={commentText} setCommentText={setCommentText} onClose={() => { setCommentsOpen(false); setCommentsWorker(null); setWorkerComments([]); setCommentText(''); }} onSend={sendPublicComment} />}</AnimatePresence>
+    <AnimatePresence>{showAllWorkers && <AllWorkersSheet open={showAllWorkers} workers={feedWorkers} onClose={() => setShowAllWorkers(false)} onSelect={(worker) => { setSelected(worker); setShowAllWorkers(false); setShowProfile(true); }} />}</AnimatePresence><AnimatePresence>{nearbyMapOpen && <WorkerNearbyMapSheet open={nearbyMapOpen} workers={nearbyWorkers} center={mapCenter} hasMeCoords={hasMeCoords} me={me} selectedWorker={nearbyMapWorker} onSelectWorker={(worker) => { setNearbyMapWorker(worker); setSelected(worker); }} onClose={() => setNearbyMapOpen(false)} onOpenProfile={(worker) => { setSelected(worker); setNearbyMapOpen(false); setShowProfile(true); }} onHire={(worker) => { setNearbyMapOpen(false); hireWorker(worker); }} />}</AnimatePresence><AnimatePresence>{commentsOpen && <ProductCommentsSheet open={commentsOpen} worker={commentsWorker} comments={workerComments} commentText={commentText} setCommentText={setCommentText} onClose={() => { setCommentsOpen(false); setCommentsWorker(null); setWorkerComments([]); setCommentText(''); }} onSend={sendPublicComment} onOpenDm={(userId) => router.push(`/dm/${userId}`)} />}</AnimatePresence>
   <AnimatePresence>
     {workerHubOpen && (
       <WorkerHubSheet

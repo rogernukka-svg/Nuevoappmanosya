@@ -13,6 +13,21 @@ const withPWA = require("next-pwa")({
   skipWaiting: true,
   disable: isPwaDisabled,
 
+  // Keep heavy public media out of the install-time precache. They are still
+  // served normally and cached by runtime rules when a page actually uses them.
+  publicExcludes: [
+    "!noprecache/**/*",
+    "!*.mp3",
+    "!audios/**/*",
+    "!ROGER*.png",
+    "!alex-gonzalez-vicepresidente.png",
+    "!founder-roger-nunez.png",
+    "!avatar-fallback.png",
+    "!asistente.png",
+    "!gestion.png",
+    "!og-manosya-v2.png",
+  ],
+
   // ✅ evita errores de build PWA (algunos entornos fallan con este manifest)
   buildExcludes: [/app-build-manifest\.json$/],
 

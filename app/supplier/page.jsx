@@ -3,19 +3,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  ArrowLeft,
   BadgeCheck,
   BriefcaseBusiness,
+  Check,
   Clapperboard,
+  Heart,
   ImagePlus,
   Loader2,
+  MessageCircle,
   MessageSquareText,
   PackagePlus,
   Save,
   SendHorizontal,
+  Share2,
   Sparkles,
   Store,
   Trash2,
+  UserPlus,
   UploadCloud,
   X,
 } from 'lucide-react';
@@ -73,9 +77,11 @@ function primaryServiceSlug(worker) {
   return matched?.slug || normalized || 'servicio-general';
 }
 
-function SupplierFeedCard({ worker, selectedService = '', isActive, onPublishForService, onOpenWorker }) {
+function SupplierFeedCard({ worker, selectedService = '', isActive, onOpenWorker, onOfferProduct, onMessageWorker }) {
   const videoRef = useRef(null);
   const playbackTokenRef = useRef(0);
+  const [followed, setFollowed] = useState(false);
+  const [liked, setLiked] = useState(false);
   const mediaUrl = worker?.media_url || worker?.thumbnail_url || worker?.avatar_url || '/avatar-fallback.png';
   const isVideo = String(worker?.media_type || '').toLowerCase() === 'video';
   const isProfileOnlyCard = isProfileOnlyMedia(worker);
@@ -83,6 +89,25 @@ function SupplierFeedCard({ worker, selectedService = '', isActive, onPublishFor
   const serviceLabel = serviceName(serviceSlug);
   const serviceIntent = workerIntentSummary(worker, selectedService);
   const name = worker?.full_name || worker?.username || 'Trabajador ManosYA';
+  const likes = Number(worker?.likes_count || worker?.like_count || 0) + (liked ? 1 : 0);
+  const comments = Number(worker?.comments_count || worker?.total_reviews || 0);
+
+  const shareWorker = async () => {
+    const text = `Demanda real en ManosYA: ${name} - ${serviceLabel}`;
+    const url = `${window.location.origin}/worker/feed?worker=${encodeURIComponent(worker?.user_id || worker?.worker_id || worker?.id || '')}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: text, text, url });
+        return;
+      }
+
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      toast.success('Link copiado');
+    } catch (error) {
+      if (error?.name !== 'AbortError') toast.error('No pudimos compartir ahora');
+    }
+  };
 
   useEffect(() => {
     if (!isVideo || !videoRef.current) return;
@@ -135,17 +160,84 @@ function SupplierFeedCard({ worker, selectedService = '', isActive, onPublishFor
         <img src={mediaUrl} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={name} className="absolute inset-0 h-full w-full object-cover" />
       )}
 
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.78)_0%,rgba(0,0,0,0.26)_24%,rgba(0,0,0,0.03)_62%,rgba(0,0,0,0.22)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.68)_0%,rgba(0,0,0,0.20)_20%,rgba(0,0,0,0.02)_62%,rgba(0,0,0,0.18)_100%)]" />
 
-      <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+68px)] left-3 right-3 z-20 text-white">
-        <div className="mb-2 inline-flex max-w-full items-center gap-2 rounded-full bg-black/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-[#9ee5df] backdrop-blur-md">
+      <div className="absolute right-2 bottom-[calc(env(safe-area-inset-bottom)+92px)] z-30 flex w-10 flex-col items-center text-white">
+        <button type="button" onClick={() => onOpenWorker(worker)} className="relative mb-2.5 flex h-11 w-11 items-center justify-center active:scale-95" aria-label="Ver perfil">
+          <img
+            src={worker?.avatar_url || '/avatar-fallback.png'}
+            onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }}
+            alt={name}
+            className="h-10 w-10 rounded-full border-2 border-white object-cover shadow-[0_12px_26px_rgba(0,0,0,0.55)]"
+          />
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(event) => {
+              event.stopPropagation();
+              setFollowed((value) => !value);
+              toast.success(followed ? 'Dejaste de seguir este perfil' : 'Ahora seguís este perfil');
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                event.stopPropagation();
+                setFollowed((value) => !value);
+              }
+            }}
+            className={`absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)] ${followed ? 'bg-sky-500' : 'bg-[#62bfb9]'}`}
+            aria-label={followed ? 'Siguiendo' : 'Agregar amigo'}
+          >
+            {followed ? <Check size={12} strokeWidth={3.4} /> : <UserPlus size={12} strokeWidth={3.2} />}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setLiked((value) => !value);
+          }}
+          className="mb-2 flex w-10 flex-col items-center active:scale-95"
+          aria-label={liked ? 'Quitar me encanta' : 'Dar me encanta'}
+        >
+          <Heart
+            size={26}
+            fill={liked ? '#ef4444' : 'white'}
+            stroke={liked ? '#ef4444' : 'white'}
+            strokeWidth={1.8}
+            className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]"
+          />
+          <span className="mt-0.5 text-[11px] font-black">{likes}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onOfferProduct(worker)}
+          className="mb-2 flex w-10 flex-col items-center active:scale-95"
+          aria-label="Comentar con producto"
+        >
+          <MessageCircle size={26} fill="white" strokeWidth={1.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+          <span className="mt-0.5 text-[11px] font-black">{comments}</span>
+        </button>
+
+        <button type="button" onClick={() => onMessageWorker(worker)} className="mb-2 flex w-10 flex-col items-center active:scale-95" aria-label="Mensaje privado">
+          <MessageSquareText size={25} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+        </button>
+
+        <button type="button" onClick={shareWorker} className="flex w-10 flex-col items-center active:scale-95" aria-label="Compartir">
+          <Share2 size={25} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+        </button>
+      </div>
+
+      <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+112px)] left-3 right-[58px] z-20 text-white">
+        <div className="mb-1.5 inline-flex max-w-full items-center gap-2 rounded-full bg-black/24 px-2.5 py-0.5 text-[9.5px] font-black uppercase tracking-[0.08em] text-[#9ee5df] backdrop-blur-md">
           Demanda real para {serviceLabel}
         </div>
 
         <div className="flex items-center gap-2">
-          <img src={worker?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={name} className="h-10 w-10 rounded-full border-2 border-white object-cover" />
+          <img src={worker?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt={name} className="h-9 w-9 rounded-full border-2 border-white object-cover" />
           <button type="button" onClick={() => onOpenWorker(worker)} className="min-w-0 text-left">
-            <div className="truncate text-[20px] font-black leading-tight">@{name}</div>
+            <div className="truncate text-[18px] font-black leading-tight">@{name}</div>
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-white/82">
               <span>{serviceIntent.detailText || serviceLabel}</span>
               {worker?.is_verified && (
@@ -158,19 +250,9 @@ function SupplierFeedCard({ worker, selectedService = '', isActive, onPublishFor
           </button>
         </div>
 
-        <p className="mt-2 line-clamp-2 text-[13px] font-semibold leading-5 text-white/94">
+        <p className="mt-1 line-clamp-1 text-[12.5px] font-semibold leading-5 text-white/92">
           {worker?.post_description || worker?.caption || worker?.bio || 'Trabajo activo dentro de ManosYA.'}
         </p>
-
-                <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => onPublishForService(serviceSlug)}
-            className="w-full rounded-full bg-[#62bfb9] px-4 py-3 text-[13px] font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.30)] active:scale-[0.98]"
-          >
-            Publicar insumo para {serviceLabel}
-          </button>
-        </div>
       </div>
     </article>
   );
@@ -205,6 +287,98 @@ function SupplierSheet({ title, open, onClose, children }) {
   );
 }
 
+function SupplierWorkerProfileSheet({ worker, onClose, onOfferProduct, onMessageWorker }) {
+  if (!worker) return null;
+
+  const name = worker?.full_name || worker?.username || 'Trabajador ManosYA';
+  const serviceLabel = serviceName(primaryServiceSlug(worker));
+  const coverUrl = worker?.cover_url || worker?.media_url || worker?.thumbnail_url || worker?.avatar_url || '/avatar-fallback.png';
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-[70000] flex items-end bg-black/55 backdrop-blur-sm">
+        <motion.section
+          initial={{ y: 520, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 520, opacity: 0 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 30 }}
+          className="mx-auto flex max-h-[82dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[30px] bg-white text-slate-950 shadow-[0_-26px_80px_rgba(0,0,0,0.32)]"
+        >
+          <div className="relative h-48 bg-slate-950">
+            <img
+              src={coverUrl}
+              onError={(event) => { event.currentTarget.src = '/avatar-fallback.png'; }}
+              alt={name}
+              className="h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/78 to-black/10" />
+            <button type="button" onClick={onClose} className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/16 text-white backdrop-blur-md active:scale-95" aria-label="Cerrar perfil">
+              <X size={18} />
+            </button>
+            <div className="absolute bottom-4 left-4 right-4 flex items-end gap-3 text-white">
+              <img
+                src={worker?.avatar_url || '/avatar-fallback.png'}
+                onError={(event) => { event.currentTarget.src = '/avatar-fallback.png'; }}
+                alt={name}
+                className="h-16 w-16 rounded-full border-4 border-white object-cover shadow-lg"
+              />
+              <div className="min-w-0 pb-1">
+                <div className="truncate text-2xl font-black leading-tight">{name}</div>
+                <div className="mt-1 inline-flex max-w-full items-center gap-1 rounded-full bg-white/14 px-3 py-1 text-[12px] font-black backdrop-blur-md">
+                  <BriefcaseBusiness size={14} />
+                  <span className="truncate">{serviceLabel}</span>
+                  {worker?.is_verified && <BadgeCheck size={14} className="text-sky-200" />}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-5">
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+              <div className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Demanda visible</div>
+              <p className="mt-2 text-[15px] font-semibold leading-6 text-slate-700">
+                {worker?.post_description || worker?.caption || worker?.bio || 'Trabajo activo dentro de ManosYA.'}
+              </p>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-[20px] bg-[#effffb] p-3">
+                <div className="text-lg font-black">{Number(worker?.likes_count || worker?.like_count || 0)}</div>
+                <div className="text-[10px] font-black uppercase text-slate-400">Me encanta</div>
+              </div>
+              <div className="rounded-[20px] bg-[#effffb] p-3">
+                <div className="text-lg font-black">{Number(worker?.total_reviews || worker?.rating_count || 0)}</div>
+                <div className="text-[10px] font-black uppercase text-slate-400">Reseñas</div>
+              </div>
+              <div className="rounded-[20px] bg-[#effffb] p-3">
+                <div className="truncate text-lg font-black">{serviceLabel}</div>
+                <div className="text-[10px] font-black uppercase text-slate-400">Rubro</div>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onOfferProduct(worker)}
+                className="inline-flex items-center justify-center gap-2 rounded-[20px] bg-[#62bfb9] px-4 py-3 text-[13px] font-black text-white shadow-[0_12px_26px_rgba(98,191,185,0.28)] active:scale-[0.98]"
+              >
+                <PackagePlus size={17} />
+                Ofrecer producto
+              </button>
+              <button
+                type="button"
+                onClick={() => onMessageWorker(worker)}
+                className="inline-flex items-center justify-center gap-2 rounded-[20px] bg-slate-950 px-4 py-3 text-[13px] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.22)] active:scale-[0.98]"
+              >
+                <MessageSquareText size={17} />
+                Mensaje
+              </button>
+            </div>
+          </div>
+        </motion.section>
+      </div>
+    </AnimatePresence>
+  );
+}
+
 export default function SupplierPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -221,7 +395,10 @@ export default function SupplierPage() {
   const [feedIndex, setFeedIndex] = useState(0);
   const [feedSlotIndex, setFeedSlotIndex] = useState(0);
   const [sheet, setSheet] = useState(null);
+  const [selectedWorkerProfile, setSelectedWorkerProfile] = useState(null);
+  const [offerWorker, setOfferWorker] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [savingOffer, setSavingOffer] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const initialServiceIntent = serviceIntentFromSearchParams(searchParams) || readServiceIntent();
   const [selectedService, setSelectedService] = useState(() => normalizeSlug(initialServiceIntent?.serviceSlug || ''));
@@ -242,6 +419,15 @@ export default function SupplierPage() {
     media_type: 'image',
     need_keywords: '',
     contact_url: '',
+  });
+  const [offerForm, setOfferForm] = useState({
+    comment: '',
+    title: '',
+    price_text: '',
+    description: '',
+    image_url: '',
+    media_type: 'image',
+    service_slug: normalizeSlug(initialServiceIntent?.serviceSlug || 'plomeria') || 'plomeria',
   });
 
   const activeProducts = useMemo(() => {
@@ -598,6 +784,31 @@ export default function SupplierPage() {
     });
     setSheet('product');
   }
+
+  function openOfferForWorker(worker) {
+    if (!worker) return;
+    const serviceSlug = normalizeSlug(selectedService || primaryServiceSlug(worker) || 'servicio-general');
+    setOfferWorker(worker);
+    setOfferForm({
+      comment: `Tengo una opción que puede servir para este trabajo de ${serviceName(serviceSlug)}.`,
+      title: '',
+      price_text: '',
+      description: '',
+      image_url: '',
+      media_type: 'image',
+      service_slug: serviceSlug,
+    });
+    setSheet('offer');
+  }
+
+  function messageWorker(worker) {
+    const workerId = worker?.user_id || worker?.worker_id || worker?.id;
+    if (!workerId) {
+      toast.error('No encontramos el perfil del trabajador');
+      return;
+    }
+    router.push(`/dm/${workerId}`);
+  }
     async function uploadSupplierMedia(file, folder, onDone) {
     if (!file || !me?.id) return;
 
@@ -786,6 +997,97 @@ export default function SupplierPage() {
     setProducts((prev) => prev.map((item) => (item.id === product.id ? { ...item, is_active: false } : item)));
   }
 
+  async function saveProductComment(event) {
+    event.preventDefault();
+    if (!me?.id || !offerWorker || savingOffer) return;
+
+    const workerId = offerWorker.user_id || offerWorker.worker_id || offerWorker.id;
+    if (!workerId) {
+      toast.error('No encontramos el trabajador');
+      return;
+    }
+
+    if (!offerForm.comment.trim()) {
+      toast.error('Escribí el comentario para el trabajador');
+      return;
+    }
+
+    if (!offerForm.title.trim()) {
+      toast.error('Poné el nombre del producto');
+      return;
+    }
+
+    if (!offerForm.image_url.trim()) {
+      toast.error('Subí una foto del producto');
+      return;
+    }
+
+    setSavingOffer(true);
+
+    try {
+      const supplierName =
+        supplierProfile?.store_name ||
+        profileForm.store_name ||
+        profile?.full_name ||
+        profile?.email ||
+        'Proveedor ManosYA';
+      const cleanServiceSlug = normalizeSlug(offerForm.service_slug || selectedService || primaryServiceSlug(offerWorker));
+      const cleanTitle = cleanSecurityText(offerForm.title, 90);
+      const cleanPrice = cleanSecurityText(offerForm.price_text, 60);
+      const cleanComment = cleanSecurityText(offerForm.comment, 500);
+      const cleanDescription = cleanSecurityText(offerForm.description, 600);
+
+      const { data: product, error: productError } = await supabase
+        .from('supplier_products')
+        .insert([
+          {
+            supplier_id: me.id,
+            supplier_name: cleanSecurityText(supplierName, 90),
+            title: cleanTitle,
+            description: cleanDescription,
+            price_text: cleanPrice,
+            service_slug: cleanServiceSlug,
+            image_url: offerForm.image_url,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          },
+        ])
+        .select('id')
+        .single();
+
+      if (productError) throw productError;
+
+      const { error: commentError } = await supabase.from('worker_comments').insert([
+        {
+          worker_id: workerId,
+          client_id: me.id,
+          client_name: supplierName,
+          client_avatar: profileForm.avatar_url || profile?.avatar_url || '',
+          comment: cleanComment,
+          commenter_role: 'supplier',
+          product_id: product?.id || null,
+          product_title: cleanTitle,
+          product_price_text: cleanPrice,
+          product_image_url: offerForm.image_url,
+          product_service_slug: cleanServiceSlug,
+        },
+      ]);
+
+      if (commentError) throw commentError;
+
+      toast.success('Comentario con producto enviado');
+      await loadProducts();
+      setOfferWorker(null);
+      setSheet(null);
+    } catch (error) {
+      console.error('supplier product comment error', error);
+      const missingColumns = error?.code === 'PGRST204' || String(error?.message || '').includes('commenter_role');
+      toast.error(missingColumns ? 'Falta aplicar la migración 011 en Supabase' : error.message || 'No se pudo enviar el producto');
+    } finally {
+      setSavingOffer(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="flex min-h-[100dvh] items-center justify-center bg-black text-white">
@@ -801,11 +1103,8 @@ export default function SupplierPage() {
     <main className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-white">
       <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)]">
         <div className="mx-auto flex max-w-4xl items-center gap-2">
-          <button type="button" onClick={() => router.push('/role-selector')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/34 text-white backdrop-blur-xl active:scale-95">
-            <ArrowLeft size={18} />
-          </button>
-          <button type="button" onClick={() => setSheet('profile')} className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-white/12 bg-black/28 px-2.5 py-1.5 text-left backdrop-blur-xl active:scale-[0.99]">
-            <img src={profileForm.avatar_url || profile?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt="Proveedor" className="h-8 w-8 rounded-full object-cover" />
+          <button type="button" onClick={() => setSheet('profile')} className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-white/12 bg-black/24 px-2 py-1 text-left backdrop-blur-xl active:scale-[0.99]" aria-label="Abrir perfil proveedor">
+            <img src={profileForm.avatar_url || profile?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt="Proveedor" className="h-7 w-7 rounded-full object-cover" />
             <div className="min-w-0">
               <div className="truncate text-[13px] font-black">{profileForm.store_name || profile?.full_name || 'Proveedor ManosYA'}</div>
               <div className="truncate text-[10px] font-bold text-[#9ee5df]">{storeScore}% listo</div>
@@ -821,8 +1120,8 @@ export default function SupplierPage() {
           </button>
         </div>
         {selectedServiceLabel && (
-          <div className="mx-auto mt-2 flex max-w-4xl justify-center">
-            <div className="rounded-full border border-white/16 bg-black/34 px-3 py-1.5 text-[11px] font-black text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+          <div className="mx-auto mt-1.5 flex max-w-4xl justify-center">
+            <div className="max-w-[88vw] truncate rounded-full border border-white/12 bg-black/24 px-2.5 py-1 text-[10px] font-black text-white/90 shadow-[0_10px_24px_rgba(0,0,0,0.16)] backdrop-blur-xl">
               Proveedores e insumos para {selectedServiceLabel}
             </div>
           </div>
@@ -879,26 +1178,48 @@ export default function SupplierPage() {
               worker={worker}
               selectedService={selectedService}
               isActive={index === feedSlotIndex}
-              onPublishForService={openProductForService}
-              onOpenWorker={(item) => router.push(`/worker/feed?worker=${item.user_id || item.worker_id || item.id}`)}
+              onOpenWorker={(item) => setSelectedWorkerProfile(item)}
+              onOfferProduct={openOfferForWorker}
+              onMessageWorker={messageWorker}
             />
           ))}
         </div>
       )}
 
-      <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-50 flex justify-center px-3">
-        <div className="grid w-[360px] max-w-full grid-cols-4 gap-1 rounded-full border border-white/12 bg-black/42 p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.42)] backdrop-blur-[22px]">
-          <button type="button" onClick={() => setSheet('profile')} className="rounded-full px-2 py-2.5 text-[11px] font-black text-white active:scale-95">
-            Perfil
+      <SupplierWorkerProfileSheet
+        worker={selectedWorkerProfile}
+        onClose={() => setSelectedWorkerProfile(null)}
+        onOfferProduct={openOfferForWorker}
+        onMessageWorker={messageWorker}
+      />
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+10px)] z-50 flex justify-center px-3">
+        <div className="pointer-events-auto flex w-full max-w-[356px] items-center justify-between rounded-[30px] border border-white/75 bg-white/95 px-2 py-2 text-[#071827] shadow-[0_22px_54px_rgba(7,24,39,0.22)] backdrop-blur-[22px]">
+          <button type="button" onClick={() => setSheet('profile')} className="flex h-12 w-[62px] flex-col items-center justify-center gap-0.5 rounded-[22px] bg-slate-100 px-2 text-center transition active:scale-95">
+            <Store size={18} />
+            <span className="max-w-full truncate text-[9.5px] font-black leading-none">Perfil</span>
           </button>
-          <button type="button" onClick={() => setSheet('product')} className="rounded-full bg-[#62bfb9] px-2 py-2.5 text-[11px] font-black text-white active:scale-95">
-            Producto
+          <button type="button" onClick={() => openProductForService(selectedService)} className="flex h-[58px] w-[92px] flex-col items-center justify-center gap-0.5 rounded-[25px] bg-[linear-gradient(135deg,#8af2e8_0%,#42c8bd_48%,#15998f_100%)] px-2 text-center text-white shadow-[0_16px_34px_rgba(66,200,189,0.44)] ring-1 ring-white/28 transition active:scale-95">
+            <PackagePlus size={20} />
+            <span className="max-w-full truncate text-[10px] font-black leading-none">Producto</span>
           </button>
-          <button type="button" onClick={() => setSheet('contacts')} className="rounded-full px-2 py-2.5 text-[11px] font-black text-white active:scale-95">
-            Consultas
+          <button type="button" onClick={() => setSheet('contacts')} className="relative flex h-12 w-[62px] flex-col items-center justify-center gap-0.5 rounded-[22px] bg-slate-100 px-2 text-center transition active:scale-95">
+            <MessageSquareText size={18} />
+            <span className="max-w-full truncate text-[9.5px] font-black leading-none">Consultas</span>
+            {unreadContacts > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white">
+                {unreadContacts}
+              </span>
+            )}
           </button>
-          <button type="button" onClick={() => setSheet('catalog')} className="rounded-full px-2 py-2.5 text-[11px] font-black text-white active:scale-95">
-            Catálogo
+          <button type="button" onClick={() => setSheet('catalog')} className="relative flex h-12 w-[62px] flex-col items-center justify-center gap-0.5 rounded-[22px] bg-slate-100 px-2 text-center transition active:scale-95">
+            <BriefcaseBusiness size={18} />
+            <span className="max-w-full truncate text-[9.5px] font-black leading-none">Catálogo</span>
+            {activeProducts.length > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#62bfb9] px-1 text-[10px] font-black text-white">
+                {activeProducts.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -1044,6 +1365,124 @@ export default function SupplierPage() {
         </form>
       </SupplierSheet>
 
+      <SupplierSheet title="Responder con producto" open={sheet === 'offer'} onClose={() => setSheet(null)}>
+        <form onSubmit={saveProductComment} className="space-y-4">
+          {offerWorker && (
+            <div className="overflow-hidden rounded-[26px] bg-slate-950 text-white shadow-[0_16px_38px_rgba(15,23,42,0.22)]">
+              <div className="relative h-36">
+                <img
+                  src={offerWorker.media_url || offerWorker.cover_url || offerWorker.avatar_url || '/avatar-fallback.png'}
+                  onError={(event) => { event.currentTarget.src = '/avatar-fallback.png'; }}
+                  alt={offerWorker.full_name || 'Trabajador'}
+                  className="h-full w-full object-cover opacity-80"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/82 to-black/5" />
+                <div className="absolute bottom-3 left-3 right-3">
+                  <div className="text-[11px] font-black uppercase tracking-[0.12em] text-[#9ee5df]">Respuesta inteligente</div>
+                  <div className="mt-1 truncate text-xl font-black">{offerWorker.full_name || 'Trabajador ManosYA'}</div>
+                  <p className="mt-1 line-clamp-1 text-[12px] font-semibold text-white/76">
+                    {offerWorker.post_description || offerWorker.caption || offerWorker.bio || serviceName(primaryServiceSlug(offerWorker))}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-[26px] border border-[#d6f4f1] bg-[#effffb] p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#62bfb9] text-white">
+                <Sparkles size={20} />
+              </div>
+              <div>
+                <div className="text-[15px] font-black text-slate-950">Comentario + producto en una sola respuesta</div>
+                <p className="mt-1 text-[13px] font-semibold leading-5 text-slate-600">
+                  Se publica en los comentarios del trabajador y el producto queda en tu catálogo para que puedan escribirte por privado.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <MediaUploader
+            value={offerForm.image_url}
+            mediaType={offerForm.media_type}
+            label="Subir foto del producto"
+            accept="image/*"
+            wide
+            onFile={(file) =>
+              uploadSupplierMedia(file, 'products', (url, mediaType) =>
+                setOfferForm((prev) => ({
+                  ...prev,
+                  image_url: url,
+                  media_type: mediaType,
+                }))
+              )
+            }
+          />
+
+          <Field label="Comentario para el trabajador">
+            <textarea
+              value={offerForm.comment}
+              onChange={(event) => setOfferForm((prev) => ({ ...prev, comment: event.target.value }))}
+              rows={3}
+              placeholder="Ej: Tengo este material listo para tu obra, puedo preparar entrega hoy."
+              className="min-h-[92px] w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]"
+            />
+          </Field>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Producto">
+              <input
+                value={offerForm.title}
+                onChange={(event) => setOfferForm((prev) => ({ ...prev, title: event.target.value }))}
+                placeholder="Ej: Malla para losa"
+                className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]"
+              />
+            </Field>
+            <Field label="Precio">
+              <input
+                value={offerForm.price_text}
+                onChange={(event) => setOfferForm((prev) => ({ ...prev, price_text: event.target.value }))}
+                placeholder="Ej: Gs. 85.000"
+                className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]"
+              />
+            </Field>
+          </div>
+
+          <Field label="Rubro">
+            <select
+              value={offerForm.service_slug}
+              onChange={(event) => setOfferForm((prev) => ({ ...prev, service_slug: event.target.value }))}
+              className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]"
+            >
+              {SERVICES.map((service) => (
+                <option key={service.slug} value={service.slug}>
+                  {service.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Detalle opcional">
+            <textarea
+              value={offerForm.description}
+              onChange={(event) => setOfferForm((prev) => ({ ...prev, description: event.target.value }))}
+              rows={3}
+              placeholder="Medidas, disponibilidad, entrega, marca o condición."
+              className="min-h-[92px] w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:border-[#62bfb9]"
+            />
+          </Field>
+
+          <button
+            type="submit"
+            disabled={savingOffer}
+            className="flex w-full items-center justify-center gap-2 rounded-[22px] bg-[#62bfb9] px-5 py-4 text-sm font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.35)] disabled:opacity-60"
+          >
+            {savingOffer ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal size={17} />}
+            Comentar con producto
+          </button>
+        </form>
+      </SupplierSheet>
+
       <SupplierSheet title="Videos que venden" open={sheet === 'creator'} onClose={() => setSheet(null)}>
         <div className="space-y-4">
           <div className="overflow-hidden rounded-[30px] bg-[#08233a] p-5 text-white">
@@ -1078,9 +1517,9 @@ export default function SupplierPage() {
             <p className="mt-2 text-[15px] font-bold leading-7 text-slate-700">
               Cerrá el video diciendo: &quot;Pedime por ManosYA&quot;. Así el cliente vuelve a la app, tu tienda sube de nivel y el negocio queda ordenado.
             </p>
-            <button type="button" onClick={() => setSheet('product')} className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#62bfb9] px-5 py-3 text-sm font-black text-white shadow-[0_12px_26px_rgba(98,191,185,0.32)] active:scale-95">
-              <PackagePlus size={17} />
-              Publicar producto después del video
+            <button type="button" onClick={() => setSheet('catalog')} className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#62bfb9] px-5 py-3 text-sm font-black text-white shadow-[0_12px_26px_rgba(98,191,185,0.32)] active:scale-95">
+              <Store size={17} />
+              Ir al catálogo
             </button>
           </div>
         </div>
@@ -1207,7 +1646,7 @@ export default function SupplierPage() {
     </main>
   );
 }
-function MediaUploader({ value, mediaType = 'image', label, wide = false, onFile }) {
+function MediaUploader({ value, mediaType = 'image', label, wide = false, accept = 'image/*,video/*', onFile }) {
   const isVideo = mediaType === 'video';
 
   return (
@@ -1234,7 +1673,7 @@ function MediaUploader({ value, mediaType = 'image', label, wide = false, onFile
         {label}
         <input
           type="file"
-          accept="image/*,video/*"
+          accept={accept}
           className="hidden"
           onChange={(event) => {
             const file = event.target.files?.[0];
