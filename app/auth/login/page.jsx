@@ -1085,21 +1085,21 @@ function PromptBubble({ title, subtitle }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -12 }}
       transition={{ duration: 0.25 }}
-      className="mx-auto w-full max-w-[560px] text-center"
+      className="mx-auto w-full max-w-[680px] text-center"
     >
       <h1
         className={[
-          'mx-auto max-w-[12ch] font-extrabold leading-[1.02] tracking-normal text-white drop-shadow-[0_8px_18px_rgba(0,0,0,0.12)] [text-wrap:balance]',
+          'mx-auto max-w-[18ch] font-extrabold leading-[1.02] tracking-normal text-white drop-shadow-[0_8px_18px_rgba(0,0,0,0.12)] [text-wrap:balance]',
           hasSubtitle
-            ? 'text-[clamp(1.55rem,4.2dvh,2.55rem)]'
-            : 'text-[clamp(1.85rem,5.2dvh,3rem)]',
+            ? 'text-[clamp(1.32rem,3.35dvh,2.15rem)]'
+            : 'text-[clamp(1.55rem,4.2dvh,2.55rem)]',
         ].join(' ')}
       >
         {title}
       </h1>
 
       {subtitle ? (
-        <h2 className="mx-auto mt-[clamp(0.25rem,0.9dvh,0.8rem)] max-w-[13ch] text-[clamp(1.45rem,3.8dvh,2.35rem)] font-extrabold leading-[1.08] tracking-normal text-white/96 drop-shadow-[0_8px_18px_rgba(0,0,0,0.12)] [text-wrap:balance]">
+        <h2 className="mx-auto mt-[clamp(0.2rem,0.75dvh,0.6rem)] max-w-[19ch] text-[clamp(1.18rem,3dvh,1.95rem)] font-extrabold leading-[1.05] tracking-normal text-white drop-shadow-[0_8px_18px_rgba(0,0,0,0.12)] [text-wrap:balance]">
           {subtitle}
         </h2>
       ) : null}
@@ -1127,7 +1127,7 @@ function ChoicePill({ active, label, onClick }) {
         'relative flex h-[clamp(78px,13dvh,118px)] w-[clamp(78px,13dvh,118px)] items-center justify-center overflow-hidden rounded-full px-3 text-center transition-all duration-300 sm:px-4',
         active
           ? 'scale-[1.03] bg-[#06182a] text-white shadow-[0_20px_48px_rgba(6,24,42,0.26)]'
-          : 'bg-white/96 text-[#071a27] shadow-[0_20px_46px_rgba(8,15,52,0.14)] hover:bg-white',
+          : 'bg-white/10 text-white shadow-[0_20px_46px_rgba(8,15,52,0.10)] ring-1 ring-white/45 hover:bg-white/16',
       ].join(' ')}
     >
       <span className="pointer-events-none absolute inset-[8px] rounded-full border border-white/70" />
@@ -1228,7 +1228,7 @@ function MainInput({
           tracking-normal
           text-white
           outline-none
-          placeholder:text-slate-500/45
+          placeholder:text-white/58
           disabled:opacity-70
         "
       />
@@ -1297,8 +1297,8 @@ function DownActionButton({ onClick, disabled, busy }) {
 
 function RecognizedCard({ name, email, avatarUrl, onContinue, onReset, busy }) {
   return (
-    <div className="mx-auto w-full max-w-[760px] rounded-[34px] bg-white/88 p-6 text-center shadow-[0_18px_40px_rgba(8,15,52,0.10)]">
-      <div className="mx-auto h-[96px] w-[96px] overflow-hidden rounded-full border-4 border-white shadow-[0_10px_24px_rgba(8,15,52,0.12)]">
+    <div className="mx-auto w-full max-w-[560px] rounded-[30px] border border-white/30 bg-white/12 p-4 text-center text-white shadow-[0_18px_40px_rgba(8,15,52,0.10)] backdrop-blur-2xl">
+      <div className="mx-auto h-[clamp(64px,11dvh,86px)] w-[clamp(64px,11dvh,86px)] overflow-hidden rounded-full border-[3px] border-white shadow-[0_10px_24px_rgba(8,15,52,0.12)]">
         {avatarUrl ? (
           <img src={avatarUrl} alt={name} className="h-full w-full object-cover" />
         ) : (
@@ -1308,20 +1308,20 @@ function RecognizedCard({ name, email, avatarUrl, onContinue, onReset, busy }) {
         )}
       </div>
 
-      <div className="mt-4 text-[28px] font-black text-[#08233a]">
+      <div className="mt-3 text-[clamp(20px,3.2dvh,24px)] font-black leading-tight text-white">
         Hola {name}, volvimos 🔥
       </div>
 
-      <div className="mt-2 text-[16px] text-[#5e7486]">
+      <div className="mt-1 text-[clamp(12px,2dvh,14px)] font-semibold leading-tight text-white/82">
         Te reconocí con {email}
       </div>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
         <button
           type="button"
           onClick={onContinue}
           disabled={busy}
-          className="rounded-[22px] bg-[#06182a] px-5 py-4 text-base font-black text-white disabled:opacity-50"
+          className="rounded-[22px] bg-[#06182a] px-5 py-3.5 text-[clamp(14px,2.3dvh,16px)] font-black text-white disabled:opacity-50"
         >
           Entrar como {name}
         </button>
@@ -1330,7 +1330,7 @@ function RecognizedCard({ name, email, avatarUrl, onContinue, onReset, busy }) {
           type="button"
           onClick={onReset}
           disabled={busy}
-          className="rounded-[22px] bg-[#eef5f7] px-5 py-4 text-base font-black text-[#4f6978] disabled:opacity-50"
+          className="rounded-[22px] border border-white/35 bg-white/12 px-5 py-3.5 text-[clamp(14px,2.3dvh,16px)] font-black text-white disabled:opacity-50"
         >
           No soy yo
         </button>
@@ -2365,7 +2365,12 @@ function handleMainContinue(latestValue = '') {
             transition={{ duration: 0.28 }}
             src={displayAvatar}
             alt="Roger ManosYA"
-            className="mx-auto h-[clamp(104px,24dvh,270px)] w-auto max-w-full object-contain"
+            className={[
+              'mx-auto w-auto max-w-full object-contain',
+              showRecognizedCard
+                ? 'h-[clamp(54px,10dvh,110px)]'
+                : 'h-[clamp(104px,24dvh,270px)]',
+            ].join(' ')}
           />
 
           <div className="mt-[clamp(0.15rem,0.8dvh,0.65rem)]">
@@ -2529,7 +2534,7 @@ function handleMainContinue(latestValue = '') {
               );
               return;
             }}
-            className="rounded-full bg-white/90 px-5 py-3 text-sm font-black text-[#08233a] shadow-[0_10px_24px_rgba(8,15,52,0.08)]"
+            className="rounded-full border border-white/45 bg-white/10 px-5 py-3 text-sm font-black text-white shadow-[0_10px_24px_rgba(8,15,52,0.08)]"
           >
             {service.name}
           </button>
@@ -2550,7 +2555,7 @@ function handleMainContinue(latestValue = '') {
           'rounded-full px-8 py-4 text-lg font-black shadow-[0_10px_24px_rgba(8,15,52,0.08)] transition',
           selectedTiming === item.id
             ? 'bg-[#06182a] text-white'
-            : 'bg-white text-[#08233a]',
+            : 'border border-white/45 bg-white/10 text-white',
         ].join(' ')}
       >
         {item.label}
@@ -2698,9 +2703,14 @@ function handleMainContinue(latestValue = '') {
           <img
             src="/logo-manosya.png"
             alt="ManosYA"
-            className="mx-auto h-[clamp(26px,5dvh,46px)] w-auto object-contain"
+            className={[
+              'mx-auto w-auto object-contain brightness-0 invert',
+              showRecognizedCard
+                ? 'h-[clamp(20px,3.8dvh,34px)]'
+                : 'h-[clamp(26px,5dvh,46px)]',
+            ].join(' ')}
           />
-          <p className="mt-1 text-[clamp(9px,1.5dvh,13px)] font-medium leading-tight text-white/95">
+          <p className="mt-1 text-[clamp(8px,1.35dvh,12px)] font-medium leading-tight text-white/95">
             Al continuar, aceptás nuestras condiciones de uso y política de privacidad.
           </p>
         </div>
@@ -2708,14 +2718,14 @@ function handleMainContinue(latestValue = '') {
       <AnimatePresence>
   {cameraOpen && (
   <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#06252c]/78 px-4 py-4 backdrop-blur-xl">
-    <div className="relative flex max-h-full w-full max-w-[430px] flex-col overflow-hidden rounded-[30px] border border-white/18 bg-[#f8fffd] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.36)]">
+    <div className="relative flex max-h-full w-full max-w-[430px] flex-col overflow-hidden rounded-[30px] border border-white/22 bg-[#69c4c0] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.36)]">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_50%_0%,rgba(98,191,185,0.22),transparent_70%)]" />
       <div className="relative mb-3 text-center">
-        <div className="mx-auto mb-3 h-1.5 w-14 rounded-full bg-[#62bfb9]/45" />
-        <div className="text-[22px] font-black leading-none tracking-normal text-[#06182a]">
+        <div className="mx-auto mb-3 h-1.5 w-14 rounded-full bg-white/45" />
+        <div className="text-[21px] font-black leading-none tracking-normal text-white">
           Sacar foto
         </div>
-        <div className="mt-2 text-sm font-bold text-[#6b7f8d]">
+        <div className="mt-2 text-sm font-bold text-white/86">
           Centrá tu rostro y mirá a la cámara
         </div>
       </div>
@@ -2757,7 +2767,7 @@ function handleMainContinue(latestValue = '') {
         <button
           type="button"
           onClick={closeCamera}
-          className="rounded-[22px] bg-[#edf5f4] px-5 py-4 text-base font-black text-[#405766] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition active:scale-95"
+          className="rounded-[22px] border border-white/35 bg-white/14 px-5 py-4 text-base font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24)] transition active:scale-95"
         >
           Cancelar
         </button>
