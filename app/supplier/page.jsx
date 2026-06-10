@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
+  ArrowLeft,
   BadgeCheck,
   BriefcaseBusiness,
   Check,
@@ -1101,24 +1102,60 @@ export default function SupplierPage() {
 
   return (
     <main className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-white">
-      <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)]">
-        <div className="mx-auto flex max-w-4xl items-center gap-2">
-          <button type="button" onClick={() => setSheet('profile')} className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-white/12 bg-black/24 px-2 py-1 text-left backdrop-blur-xl active:scale-[0.99]" aria-label="Abrir perfil proveedor">
-            <img src={profileForm.avatar_url || profile?.avatar_url || '/avatar-fallback.png'} onError={(e) => { e.currentTarget.src = '/avatar-fallback.png'; }} alt="Proveedor" className="h-7 w-7 rounded-full object-cover" />
-            <div className="min-w-0">
-              <div className="truncate text-[13px] font-black">{profileForm.store_name || profile?.full_name || 'Proveedor ManosYA'}</div>
-              <div className="truncate text-[10px] font-bold text-[#9ee5df]">{storeScore}% listo</div>
-            </div>
-          </button>
-          <button type="button" onClick={() => setSheet('contacts')} className="flex h-9 min-w-9 items-center justify-center rounded-full border border-white/18 bg-[#62bfb9] px-3 text-[11px] font-black text-white shadow-[0_12px_24px_rgba(98,191,185,0.24)] active:scale-95" aria-label="Consultas">
-            <MessageSquareText size={15} />
-            <span className="ml-1">{unreadContacts || contacts.length}</span>
-          </button>
-          <button type="button" onClick={() => setSheet('catalog')} className="flex h-9 min-w-9 items-center justify-center rounded-full bg-white px-3 text-[11px] font-black text-slate-950 active:scale-95" aria-label="Catálogo">
-            <Store size={15} />
-            <span className="ml-1">{activeProducts.length}</span>
-          </button>
+     <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)]">
+  <div className="mx-auto flex max-w-4xl items-center gap-2">
+    <button
+      type="button"
+      onClick={() => router.push('/role-selector')}
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/18 bg-black/28 text-white shadow-[0_12px_24px_rgba(0,0,0,0.22)] backdrop-blur-xl active:scale-95"
+      aria-label="Volver al selector de rol"
+      title="Volver"
+    >
+      <ArrowLeft size={18} strokeWidth={3} />
+    </button>
+
+    <button
+      type="button"
+      onClick={() => setSheet('profile')}
+      className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-white/12 bg-black/24 px-2 py-1 text-left backdrop-blur-xl active:scale-[0.99]"
+      aria-label="Abrir perfil proveedor"
+    >
+      <img
+        src={profileForm.avatar_url || profile?.avatar_url || '/avatar-fallback.png'}
+        onError={(e) => {
+          e.currentTarget.src = '/avatar-fallback.png';
+        }}
+        alt="Proveedor"
+        className="h-7 w-7 rounded-full object-cover"
+      />
+      <div className="min-w-0">
+        <div className="truncate text-[13px] font-black">
+          {profileForm.store_name || profile?.full_name || 'Proveedor ManosYA'}
         </div>
+        <div className="truncate text-[10px] font-bold text-[#9ee5df]">{storeScore}% listo</div>
+      </div>
+    </button>
+
+    <button
+      type="button"
+      onClick={() => setSheet('contacts')}
+      className="flex h-9 min-w-9 items-center justify-center rounded-full border border-white/18 bg-[#62bfb9] px-3 text-[11px] font-black text-white shadow-[0_12px_24px_rgba(98,191,185,0.24)] active:scale-95"
+      aria-label="Consultas"
+    >
+      <MessageSquareText size={15} />
+      <span className="ml-1">{unreadContacts || contacts.length}</span>
+    </button>
+
+    <button
+      type="button"
+      onClick={() => setSheet('catalog')}
+      className="flex h-9 min-w-9 items-center justify-center rounded-full bg-white px-3 text-[11px] font-black text-slate-950 active:scale-95"
+      aria-label="Catálogo"
+    >
+      <Store size={15} />
+      <span className="ml-1">{activeProducts.length}</span>
+    </button>
+  </div>
         {selectedServiceLabel && (
           <div className="mx-auto mt-1.5 flex max-w-4xl justify-center">
             <div className="max-w-[88vw] truncate rounded-full border border-white/12 bg-black/24 px-2.5 py-1 text-[10px] font-black text-white/90 shadow-[0_10px_24px_rgba(0,0,0,0.16)] backdrop-blur-xl">
