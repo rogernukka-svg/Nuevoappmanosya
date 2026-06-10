@@ -1,18 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getSupabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
+import { AlertTriangle, ArrowLeft, Loader2, ShieldCheck, Trash2, UserCog } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  Loader2,
-  Trash2,
-  ArrowLeft,
-  AlertTriangle,
-  UserCog,
-  ShieldCheck,
-} from 'lucide-react';
-import { motion } from 'framer-motion';
+import { getSupabase } from '@/lib/supabase';
 
 const supabase = getSupabase();
 const LOGIN_BG = '#62bfb9';
@@ -44,7 +37,7 @@ export default function AccountSettingsPage() {
       const userId = sessionData?.session?.user?.id;
 
       if (!userId) {
-        toast.error('Sesión expirada.');
+        toast.error('Sesion expirada.');
         router.replace('/auth/login');
         return;
       }
@@ -64,45 +57,43 @@ export default function AccountSettingsPage() {
       router.replace('/auth/login');
     } catch (err) {
       console.error('Error eliminando cuenta:', err);
-      toast.error('Ocurrió un error al eliminar tu cuenta.');
+      toast.error('Ocurrio un error al eliminar tu cuenta.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main
-      className="fixed inset-0 h-[100dvh] w-screen overflow-y-auto overflow-x-hidden text-[#08233a]"
-      style={{ background: LOGIN_BG }}
-    >
+    <main className="fixed inset-0 h-[100dvh] w-screen overflow-hidden text-white" style={{ background: LOGIN_BG }}>
       <div className="pointer-events-none fixed inset-0">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.34),transparent_30%),radial-gradient(circle_at_90%_18%,rgba(255,255,255,0.22),transparent_26%)]" />
         <div className="absolute -left-24 top-28 h-72 w-72 rounded-full bg-white/18 blur-3xl" />
         <div className="absolute -right-24 bottom-20 h-72 w-72 rounded-full bg-[#0c6b70]/18 blur-3xl" />
       </div>
 
-      <div className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col px-5 py-8">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-white/28 text-[#08233a] backdrop-blur-xl active:scale-95"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-
+      <div className="relative z-10 mx-auto flex h-full w-full max-w-[430px] flex-col px-4 py-3">
         <motion.section
           initial={{ opacity: 0, y: 18, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.35 }}
-          className="flex flex-1 flex-col items-center justify-center text-center"
+          className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-white/35 bg-white/8 px-4 pb-4 pt-3 text-center shadow-[0_26px_80px_rgba(8,15,52,0.12)] backdrop-blur-2xl"
         >
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="absolute left-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-white/30 bg-white/12 text-white backdrop-blur-xl active:scale-95"
+            aria-label="Volver"
+          >
+            <ArrowLeft className="h-5 w-5" strokeWidth={2.1} />
+          </button>
+
           <img
             src="/logo-manosya.png"
             alt="ManosYA"
-            className="mx-auto mb-3 w-[225px] object-contain"
+            className="mx-auto h-[clamp(36px,6.4dvh,56px)] w-auto object-contain"
           />
 
-          <div className="relative mx-auto mb-2 h-[185px] w-[185px]">
+          <div className="relative mx-auto mt-1 h-[clamp(88px,19dvh,145px)] w-[clamp(88px,19dvh,145px)] shrink-0">
             <div className="absolute inset-8 rounded-full bg-white/28 blur-3xl" />
             <img
               src="/ROGER OK.png"
@@ -111,117 +102,111 @@ export default function AccountSettingsPage() {
             />
           </div>
 
-          <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full bg-white/24 px-4 py-2 text-[12px] font-black text-[#08233a] backdrop-blur-xl">
-            <UserCog className="h-4 w-4" />
+          <div className="mx-auto mt-1 inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/12 px-3 py-1.5 text-[11px] font-black text-white backdrop-blur-xl">
+            <UserCog className="h-3.5 w-3.5" strokeWidth={1.9} />
             Gestionar perfil
           </div>
 
-          <h1 className="text-[40px] font-black leading-[0.94] tracking-[-0.05em] text-white">
-            Configuración
-            <br />
-            de cuenta
+          <h1 className="mx-auto mt-3 max-w-[11ch] text-[clamp(1.85rem,5.2dvh,2.75rem)] font-black leading-[0.94] tracking-normal text-white [text-wrap:balance]">
+            Configuracion de cuenta
           </h1>
 
-          <p className="mx-auto mt-4 max-w-[330px] text-[16px] font-semibold leading-6 text-[#071a27]/78">
-            Acá podés gestionar la parte sensible de tu cuenta.
+          <p className="mx-auto mt-2 max-w-[310px] text-[clamp(0.78rem,2dvh,0.95rem)] font-bold leading-tight text-white/86">
+            Aca podes gestionar la parte sensible de tu cuenta.
           </p>
 
-          <div className="mt-7 w-full rounded-[34px] bg-white px-5 py-5 text-left shadow-[0_18px_44px_rgba(8,15,52,0.14)]">
-            <div className="flex items-start gap-4">
-              <div className="flex h-15 w-15 shrink-0 items-center justify-center rounded-[24px] bg-[#06182a] p-4 text-white">
-                <ShieldCheck className="h-7 w-7" />
-              </div>
-
-              <div>
-                <h2 className="text-[22px] font-black leading-tight text-[#08233a]">
-                  Zona segura
-                </h2>
-                <p className="mt-1 text-[14px] font-semibold leading-5 text-[#5e7486]">
-                  Si eliminás tu cuenta, la acción es permanente.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 w-full rounded-[34px] bg-white/78 px-5 py-5 text-left shadow-[0_18px_44px_rgba(8,15,52,0.10)] backdrop-blur-xl">
-            <div className="flex items-start gap-4">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[24px] bg-red-50 text-red-600">
-                <Trash2 className="h-7 w-7" />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <h2 className="text-[22px] font-black leading-tight text-[#08233a]">
-                  Eliminar cuenta
-                </h2>
-                <p className="mt-1 text-[14px] font-semibold leading-5 text-[#5e7486]">
-                  Borra tu cuenta y tus datos de ManosYA.
-                </p>
+          <div className="mt-4 grid gap-2.5">
+            <div className="rounded-[26px] border border-white/32 bg-[#06182a] p-4 text-left text-white shadow-[0_16px_34px_rgba(8,15,52,0.14)]">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-white/12 text-white ring-1 ring-white/20">
+                  <ShieldCheck className="h-6 w-6" strokeWidth={1.9} />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-[20px] font-black leading-tight">Zona segura</h2>
+                  <p className="mt-0.5 text-[13px] font-bold leading-tight text-white/74">
+                    Si eliminas tu cuenta, la accion es permanente.
+                  </p>
+                </div>
               </div>
             </div>
 
-            {!confirming ? (
+            <div className="rounded-[26px] border border-white/32 bg-white/12 p-4 text-left text-white shadow-[0_16px_34px_rgba(8,15,52,0.10)] backdrop-blur-xl">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-red-600 text-white shadow-[0_12px_28px_rgba(220,38,38,0.22)]">
+                  <Trash2 className="h-6 w-6" strokeWidth={1.9} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-[20px] font-black leading-tight">Eliminar cuenta</h2>
+                  <p className="mt-0.5 text-[13px] font-bold leading-tight text-white/74">
+                    Borra tu cuenta y tus datos de ManosYA.
+                  </p>
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setConfirming(true)}
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-[24px] bg-red-600 px-5 py-4 text-[14px] font-black text-white shadow-[0_16px_34px_rgba(220,38,38,0.22)] active:scale-95"
+                disabled={loading}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-[22px] bg-red-600 px-5 py-3.5 text-[14px] font-black text-white shadow-[0_16px_34px_rgba(220,38,38,0.22)] active:scale-95 disabled:opacity-60"
               >
-                <Trash2 className="h-5 w-5" />
+                <Trash2 className="h-5 w-5" strokeWidth={1.9} />
                 Eliminar mi cuenta
               </button>
-            ) : (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-5 rounded-[26px] bg-white p-4 shadow-sm"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] bg-red-50 text-red-600">
-                    <AlertTriangle className="h-5 w-5" />
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-black text-[#08233a]">
-                      Confirmación final
-                    </p>
-                    <p className="mt-1 text-sm font-semibold leading-5 text-[#5e7486]">
-                      Esta acción no se puede deshacer.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setConfirming(false)}
-                    disabled={loading}
-                    className="rounded-[20px] bg-slate-100 px-4 py-3 text-sm font-black text-slate-700 disabled:opacity-60"
-                  >
-                    Cancelar
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDelete}
-                    disabled={loading}
-                    className="flex items-center justify-center gap-2 rounded-[20px] bg-red-700 px-4 py-3 text-sm font-black text-white disabled:opacity-70"
-                  >
-                    {loading ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-5 w-5" />
-                    )}
-                    Eliminar
-                  </button>
-                </div>
-              </motion.div>
-            )}
+            </div>
           </div>
 
-          <div className="mt-8 text-[11px] font-bold text-[#08233a]/45">
-            ManosYA • Gestión segura
+          <div className="mt-auto pt-3 text-[10px] font-bold text-white/58">
+            ManosYA • Gestion segura
           </div>
         </motion.section>
       </div>
+
+      <AnimatePresence>
+        {confirming ? (
+          <div className="fixed inset-0 z-30 flex items-end justify-center bg-[#06182a]/54 px-4 pb-4 backdrop-blur-md">
+            <motion.section
+              initial={{ opacity: 0, y: 24, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 24, scale: 0.98 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-[420px] rounded-[30px] border border-white/24 bg-[#69c4c0] p-4 text-white shadow-[0_30px_80px_rgba(0,0,0,0.26)]"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] bg-red-600 text-white">
+                  <AlertTriangle className="h-5 w-5" strokeWidth={1.9} />
+                </div>
+                <div className="min-w-0 text-left">
+                  <p className="text-lg font-black leading-tight">Confirmacion final</p>
+                  <p className="mt-1 text-sm font-bold leading-tight text-white/76">
+                    Esta accion no se puede deshacer.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirming(false)}
+                  disabled={loading}
+                  className="rounded-[20px] border border-white/30 bg-white/12 px-4 py-3 text-sm font-black text-white disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={loading}
+                  className="flex items-center justify-center gap-2 rounded-[20px] bg-red-700 px-4 py-3 text-sm font-black text-white disabled:opacity-70"
+                >
+                  {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Trash2 className="h-5 w-5" />}
+                  Eliminar
+                </button>
+              </div>
+            </motion.section>
+          </div>
+        ) : null}
+      </AnimatePresence>
     </main>
   );
 }
