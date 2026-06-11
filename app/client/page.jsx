@@ -833,8 +833,8 @@ useEffect(() => {
         </button>
 
         <button type="button" onClick={onNearbyMap} className="flex w-10 flex-col items-center active:scale-95" aria-label="Mapa cercano">
-          <MapPin size={26} fill="none" stroke="white" strokeWidth={2.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
-        </button>
+  <Compass size={27} stroke="white" strokeWidth={2.8} className="drop-shadow-[0_6px_14px_rgba(0,0,0,0.55)]" />
+</button>
       </div>
 
                 <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+102px)] left-3 right-[58px] z-20 text-white">
@@ -1495,223 +1495,267 @@ function WorkerProfileSheet({ worker, selectedService = '', onClose, onMessage }
   );
 }
 function NearbyMapSheet({ open, workers, center, hasMeCoords, me, selectedWorker, selectedService = '', onSelectWorker, onClose, onMessage, onRequest }) {
- const [activeIndex, setActiveIndex] = useState(0);
- const [activeWorker, setActiveWorker] = useState(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeWorker, setActiveWorker] = useState(null);
 
   const validWorkers = (workers || []).filter((worker) => {
     return Number.isFinite(Number(worker?.lat)) && Number.isFinite(Number(worker?.lng));
   });
 
   const closeWorkers = validWorkers
-  .filter((worker) => Number.isFinite(Number(worker?._distKm)))
-  .filter((worker) => Number(worker._distKm) <= 12)
-  .slice(0, 14);
+    .filter((worker) => Number.isFinite(Number(worker?._distKm)))
+    .filter((worker) => Number(worker._distKm) <= 12)
+    .slice(0, 14);
 
-const mapWorkers = closeWorkers.length ? closeWorkers : validWorkers.slice(0, 10);
-const active =
-  activeWorker ||
-  selectedWorker ||
-  mapWorkers[activeIndex] ||
-  mapWorkers[0] ||
-  validWorkers[0] ||
-  null;
+  const mapWorkers = closeWorkers.length ? closeWorkers : validWorkers.slice(0, 10);
 
-useEffect(() => {
-  if (!open) return;
+  const active =
+    activeWorker ||
+    selectedWorker ||
+    mapWorkers[activeIndex] ||
+    mapWorkers[0] ||
+    validWorkers[0] ||
+    null;
 
-  const selectedId = selectedWorker?.user_id || selectedWorker?.worker_id;
-  const selectedInMap = selectedId
-    ? mapWorkers.find((worker) => String(worker.user_id || worker.worker_id) === String(selectedId))
-    : null;
+  useEffect(() => {
+    if (!open) return;
 
-  const initialWorker = selectedInMap || mapWorkers[activeIndex] || mapWorkers[0] || validWorkers[0] || null;
-  setActiveWorker(initialWorker);
-}, [open, selectedWorker?.user_id, selectedWorker?.worker_id]);
+    const selectedId = selectedWorker?.user_id || selectedWorker?.worker_id;
+    const selectedInMap = selectedId
+      ? mapWorkers.find((worker) => String(worker.user_id || worker.worker_id) === String(selectedId))
+      : null;
 
-if (!open) return null;
+    const initialWorker = selectedInMap || mapWorkers[activeIndex] || mapWorkers[0] || validWorkers[0] || null;
+    setActiveWorker(initialWorker);
+  }, [open, selectedWorker?.user_id, selectedWorker?.worker_id]);
 
-const fitPoints = [
-  ...(hasMeCoords ? [[Number(me.lat), Number(me.lon)]] : []),
-  ...mapWorkers.map((worker) => [Number(worker.lat), Number(worker.lng)]),
-];
-function selectMapWorker(worker) {
-  if (!worker) return;
+  if (!open) return null;
 
-  const workerId = String(worker.user_id || worker.worker_id);
-  const nextIndex = mapWorkers.findIndex((item) => String(item.user_id || item.worker_id) === workerId);
-  const fallbackIndex = validWorkers.findIndex((item) => String(item.user_id || item.worker_id) === workerId);
+  const fitPoints = [
+    ...(hasMeCoords ? [[Number(me.lat), Number(me.lon)]] : []),
+    ...mapWorkers.map((worker) => [Number(worker.lat), Number(worker.lng)]),
+  ];
 
-  if (nextIndex >= 0) setActiveIndex(nextIndex);
-  else if (fallbackIndex >= 0) setActiveIndex(fallbackIndex);
+  function selectMapWorker(worker) {
+    if (!worker) return;
 
-  setActiveWorker(worker);
-  onSelectWorker(worker);
-}
+    const workerId = String(worker.user_id || worker.worker_id);
+    const nextIndex = mapWorkers.findIndex((item) => String(item.user_id || item.worker_id) === workerId);
+    const fallbackIndex = validWorkers.findIndex((item) => String(item.user_id || item.worker_id) === workerId);
 
-function goPrevWorker() {
-  const list = mapWorkers.length ? mapWorkers : validWorkers;
-  if (!list.length) return;
-  const current = active
-    ? list.findIndex((worker) => String(worker.user_id || worker.worker_id) === String(active.user_id || active.worker_id))
-    : activeIndex;
-  const safeIndex = current >= 0 ? current : activeIndex;
-  const next = safeIndex <= 0 ? list.length - 1 : safeIndex - 1;
-  setActiveIndex(next);
-  selectMapWorker(list[next]);
-}
+    if (nextIndex >= 0) setActiveIndex(nextIndex);
+    else if (fallbackIndex >= 0) setActiveIndex(fallbackIndex);
 
-function goNextWorker() {
-  const list = mapWorkers.length ? mapWorkers : validWorkers;
-  if (!list.length) return;
-  const current = active
-    ? list.findIndex((worker) => String(worker.user_id || worker.worker_id) === String(active.user_id || active.worker_id))
-    : activeIndex;
-  const safeIndex = current >= 0 ? current : activeIndex;
-  const next = safeIndex >= list.length - 1 ? 0 : safeIndex + 1;
-  setActiveIndex(next);
-  selectMapWorker(list[next]);
-}
+    setActiveWorker(worker);
+    onSelectWorker(worker);
+  }
+
+  function goPrevWorker() {
+    const list = mapWorkers.length ? mapWorkers : validWorkers;
+    if (!list.length) return;
+
+    const current = active
+      ? list.findIndex((worker) => String(worker.user_id || worker.worker_id) === String(active.user_id || active.worker_id))
+      : activeIndex;
+
+    const safeIndex = current >= 0 ? current : activeIndex;
+    const next = safeIndex <= 0 ? list.length - 1 : safeIndex - 1;
+
+    setActiveIndex(next);
+    selectMapWorker(list[next]);
+  }
+
+  function goNextWorker() {
+    const list = mapWorkers.length ? mapWorkers : validWorkers;
+    if (!list.length) return;
+
+    const current = active
+      ? list.findIndex((worker) => String(worker.user_id || worker.worker_id) === String(active.user_id || active.worker_id))
+      : activeIndex;
+
+    const safeIndex = current >= 0 ? current : activeIndex;
+    const next = safeIndex >= list.length - 1 ? 0 : safeIndex + 1;
+
+    setActiveIndex(next);
+    selectMapWorker(list[next]);
+  }
+
+  const activeName = active?.full_name || active?.username || 'Trabajador';
+  const activeDistanceText = active?._distKm != null ? formatKm(Number(active._distKm)) : '';
+  const activeOnline = active ? isOnlineRecent(active) : false;
+
   return (
-    <div className="fixed inset-0 z-[66000] bg-slate-950/70 p-3 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[66000] bg-[#062f33]/82 p-3 backdrop-blur-md">
       <motion.div
-        initial={{ opacity: 0, y: 28, scale: 0.98 }}
+        initial={{ opacity: 0, y: 24, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 22, scale: 0.98 }}
-        className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[34px] border border-white/18 bg-[#eef8f7] shadow-[0_30px_90px_rgba(0,0,0,0.32)]"
+        exit={{ opacity: 0, y: 18, scale: 0.985 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+        className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[34px] border border-white/20 bg-[#f7fbfb] shadow-[0_30px_90px_rgba(0,0,0,0.42)]"
       >
-        <div className="flex items-center justify-between border-b border-white/50 bg-white/70 px-4 py-3 backdrop-blur-xl">
-          <div>
-            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0c6b70]">
-              Cerca tuyo
-            </div>
-            <div className="text-[20px] font-black text-slate-900">
-              Elegí un trabajador cerca
+        <div className="relative z-[1000] flex items-center justify-between bg-white/94 px-5 py-4 backdrop-blur-2xl">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e5f8f6] text-[#0c6b70] ring-1 ring-[#bdecea]">
+              <MapPin size={16} strokeWidth={3} />
+            </span>
+
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#0c6b70]">
+                ManosYA
+              </div>
+              <div className="text-[18px] font-black leading-tight text-slate-950">
+                Cerca tuyo
+              </div>
             </div>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900/8 text-slate-700 active:scale-95"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.08)] active:scale-95"
+            aria-label="Cerrar mapa cercano"
           >
-            <X size={18} />
+            <X size={18} strokeWidth={2.8} />
           </button>
         </div>
 
-        <div className="relative flex-1 overflow-hidden bg-white">
+        <div className="relative flex-1 overflow-hidden bg-[#eaf5f4]">
           <MapContainer
-  center={center}
-  zoom={hasMeCoords ? 12 : 11}
-  className="h-full w-full"
->
+            center={center}
+            zoom={hasMeCoords ? 12 : 11}
+            className="h-full w-full"
+          >
             <TileLayer
-  attribution="&copy; CartoDB"
-  url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-/>
-<FitBounds points={fitPoints} />
+              attribution="&copy; CartoDB"
+              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+            />
+
+            <FitBounds points={fitPoints} />
+
             {hasMeCoords && (
               <>
                 <Marker
                   position={[Number(me.lat), Number(me.lon)]}
                   icon={clientLocationIcon() || undefined}
                 />
+
                 <Circle
                   center={[Number(me.lat), Number(me.lon)]}
                   radius={2500}
                   pathOptions={{
                     color: '#62bfb9',
                     fillColor: '#62bfb9',
-                    fillOpacity: 0.12,
+                    fillOpacity: 0.1,
                   }}
                 />
               </>
             )}
 
-           {mapWorkers.map((worker) => (
+            {mapWorkers.map((worker) => (
               <Marker
-                key={String(worker.user_id)}
+                key={String(worker.user_id || worker.worker_id || worker.id)}
                 position={[Number(worker.lat), Number(worker.lng)]}
                 icon={avatarIcon(worker.avatar_url, worker) || undefined}
                 eventHandlers={{
                   click: () => {
-  selectMapWorker(worker);
-},
+                    selectMapWorker(worker);
+                  },
                 }}
               />
             ))}
           </MapContainer>
 
-         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[999] bg-gradient-to-t from-white/82 via-white/20 to-transparent p-4">
-  {active && (
-    <div className="pointer-events-auto rounded-[30px] border border-white/80 bg-white/96 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur-xl">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={goPrevWorker}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 active:scale-95"
-        >
-          ←
-        </button>
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-[998] h-16 bg-gradient-to-b from-white/72 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[998] h-[190px] bg-gradient-to-t from-[#062f33]/42 via-[#062f33]/10 to-transparent" />
 
-        <img
-          src={active?.avatar_url || '/avatar-fallback.png'}
-          onError={(e) => {
-            e.currentTarget.src = '/avatar-fallback.png';
-          }}
-          alt={active?.full_name || 'Trabajador'}
-          className="h-14 w-14 rounded-2xl object-cover"
-        />
-
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-black text-slate-900">
-            {active?.full_name || 'Trabajador'}
-          </div>
-
-          <div className="mt-1 text-[12px] font-extrabold text-[#0c6b70]">
-            {active?.full_name || 'El trabajador'} esta aca
-            {active?._distKm != null ? `, a ${formatKm(Number(active._distKm))} de ti` : ''}
-          </div>
-
-          <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] font-bold text-slate-500">
-            <span>{workerIntentSummary(active, selectedService).detailText}</span>
-            {active?._distKm != null && <span>• {formatKm(active._distKm)}</span>}
-            <span>• {formatWorkerRatingClean(active)}</span>
-          </div>
-
-          <div className="mt-1 text-[10px] font-black text-[#0c6b70]">
-            {isOnlineRecent(active) ? 'En línea ahora' : 'Disponible'}
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={goNextWorker}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 active:scale-95"
-        >
-          →
-        </button>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => onMessage(active)}
-          className="rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-[13px] font-black text-slate-700"
-        >
-          Mensaje
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onRequest(active)}
-          className="rounded-[18px] bg-[#62bfb9] px-4 py-3 text-[13px] font-black text-white shadow-[0_12px_28px_rgba(98,191,185,0.35)]"
-        >
-          Elegir trabajador
-        </button>
-      </div>
-    </div>
-  )}
+          <div className="pointer-events-none absolute left-4 top-4 z-[999]">
+  <div className="rounded-full border border-[#bdecea] bg-white/92 px-3 py-1.5 text-[11px] font-black text-[#0f766e] shadow-[0_12px_30px_rgba(98,191,185,0.16)] backdrop-blur-xl">
+    {mapWorkers.length || 0} disponibles
+  </div>
 </div>
+
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[999] p-4">
+            {active && (
+              <motion.div
+                key={String(active.user_id || active.worker_id || active.id || activeIndex)}
+                initial={{ opacity: 0, y: 18, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ type: 'spring', stiffness: 280, damping: 26 }}
+                className="pointer-events-auto overflow-hidden rounded-[30px] border border-white/70 bg-white/94 p-3 shadow-[0_24px_70px_rgba(0,0,0,0.26)] backdrop-blur-2xl"
+              >
+                <div className="grid grid-cols-[42px_1fr_42px] items-center gap-3">
+                  <button
+  type="button"
+  onClick={goPrevWorker}
+  className="flex h-10 w-10 items-center justify-center rounded-full border border-[#bdecea] bg-[#e5f8f6] text-[#0f766e] shadow-[0_8px_18px_rgba(98,191,185,0.18)] active:scale-95"
+  aria-label="Trabajador anterior"
+>
+  ←
+</button>
+
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="relative shrink-0">
+                      <img
+                        src={active?.avatar_url || '/avatar-fallback.png'}
+                        onError={(e) => {
+                          e.currentTarget.src = '/avatar-fallback.png';
+                        }}
+                        alt={activeName}
+                        className="h-14 w-14 rounded-[20px] border-2 border-white object-cover shadow-[0_12px_26px_rgba(15,23,42,0.16)]"
+                      />
+
+                      <span className={`absolute -right-1 -bottom-1 h-4 w-4 rounded-full border-2 border-white ${activeOnline ? 'bg-[#62bfb9]' : 'bg-slate-400'}`} />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[16px] font-black leading-tight text-slate-950">
+                        {activeName}
+                      </div>
+
+                      <div className="mt-1 flex items-center gap-1.5 text-[12px] font-black text-[#0c6b70]">
+                        <MapPin size={13} strokeWidth={3} />
+                        <span>{activeDistanceText || 'Cerca de tu zona'}</span>
+                      </div>
+
+                      <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#e5f8f6] px-2.5 py-1 text-[10px] font-black text-[#0f766e] ring-1 ring-[#bdecea]">
+  <span className={`h-1.5 w-1.5 rounded-full ${activeOnline ? 'bg-[#62bfb9]' : 'bg-[#62bfb9]'}`} />
+  {activeOnline ? 'En línea' : 'Disponible'}
+</div>
+                    </div>
+                  </div>
+
+                  <button
+  type="button"
+  onClick={goNextWorker}
+  className="flex h-10 w-10 items-center justify-center rounded-full border border-[#bdecea] bg-[#e5f8f6] text-[#0f766e] shadow-[0_8px_18px_rgba(98,191,185,0.18)] active:scale-95"
+  aria-label="Siguiente trabajador"
+>
+  →
+</button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-[1fr_1.15fr] gap-2">
+  <button
+    type="button"
+    onClick={() => onMessage(active)}
+    className="flex h-13 min-h-[52px] items-center justify-center gap-2 rounded-[22px] border border-[#bdecea] bg-white text-[13px] font-black text-[#0f766e] shadow-[0_10px_24px_rgba(98,191,185,0.12)] active:scale-95"
+  >
+    <MessageCircle size={17} strokeWidth={2.7} />
+    Mensaje
+  </button>
+
+  <button
+    type="button"
+    onClick={() => onRequest(active)}
+    className="flex h-13 min-h-[52px] items-center justify-center gap-2 rounded-[22px] bg-[#62bfb9] text-[13px] font-black text-white shadow-[0_16px_34px_rgba(98,191,185,0.34)] ring-1 ring-[#9ee5df]/70 active:scale-95"
+  >
+    <SendHorizontal size={17} strokeWidth={2.8} />
+    Elegir
+  </button>
+</div>
+              </motion.div>
+            )}
+          </div>
         </div>
       </motion.div>
     </div>
@@ -3448,190 +3492,103 @@ async function cancelActiveJob() {
   <div className="relative h-full">
     <div className="relative z-10 h-full">
           <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white">
-  <div className="mx-auto flex h-12 max-w-[520px] items-center gap-2 rounded-[28px] border border-white/18 bg-black/36 p-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.28)] backdrop-blur-2xl">
-    <button
-      type="button"
-      onClick={() => {
-        router.push('/role-selector');
-      }}
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] active:scale-95"
-      aria-label="Volver al selector de rol"
-    >
-      <ArrowLeft size={18} strokeWidth={3} />
-    </button>
+  <div className="mx-auto flex h-12 max-w-[520px] items-center justify-between gap-2 px-0">
+  <button
+    type="button"
+    onClick={() => {
+      router.push('/role-selector');
+    }}
+    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/55 bg-white/10 text-white shadow-[0_12px_28px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-2xl transition active:scale-95"
+    aria-label="Volver"
+  >
+    <ArrowLeft size={20} strokeWidth={3} />
+  </button>
 
-    <div className="shrink-0 text-[17px] font-black tracking-[-0.02em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
-      ManosYA
-    </div>
+  <div className="relative h-11 min-w-0 flex-1 rounded-full border border-white/55 bg-white/10 shadow-[0_12px_28px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.18)] backdrop-blur-2xl">
+    <Search
+      className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/72"
+      size={16}
+    />
 
-    <div className="relative h-9 min-w-0 flex-1 rounded-full border border-white/16 bg-white/12 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
-      <Search
-        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60"
-        size={15}
-      />
+    <input
+      value={serviceQuery}
+      onChange={(e) => {
+        const value = e.target.value;
+        userEditedServiceQueryRef.current = true;
+        setServiceQuery(value);
 
-      <input
-        value={serviceQuery}
-        onChange={(e) => {
-          const value = e.target.value;
-          userEditedServiceQueryRef.current = true;
-          setServiceQuery(value);
+        const normalizedValue = normalizeSlug(value);
+        if (!normalizedValue) {
+          setSelectedService('');
+          clearServiceIntent();
+          return;
+        }
 
-          const normalizedValue = normalizeSlug(value);
-          if (!normalizedValue) {
-            setSelectedService('');
-            clearServiceIntent();
-            return;
-          }
+        const matchedService = SERVICE_CATALOG.find((service) => {
+          const slug = normalizeSlug(service.slug);
+          const name = normalizeSlug(service.name);
+          return (
+            slug.includes(normalizedValue) ||
+            name.includes(normalizedValue) ||
+            normalizedValue.includes(slug)
+          );
+        });
 
-          const matchedService = SERVICE_CATALOG.find((service) => {
-            const slug = normalizeSlug(service.slug);
-            const name = normalizeSlug(service.name);
-            return (
-              slug.includes(normalizedValue) ||
-              name.includes(normalizedValue) ||
-              normalizedValue.includes(slug)
-            );
+        setSelectedService(matchedService ? matchedService.slug : '');
+
+        if (matchedService) {
+          saveServiceIntent({
+            role: 'client',
+            serviceSlug: matchedService.slug,
+            serviceName: getServiceLabel(matchedService.slug),
+            timing: bookingTime || null,
+            source: 'client_search',
           });
+        } else {
+          clearServiceIntent();
+        }
+      }}
+      placeholder="Buscar"
+      className="h-full w-full rounded-full bg-transparent pl-10 pr-10 text-[13px] font-black text-white placeholder:text-white/62 outline-none"
+    />
 
-          setSelectedService(matchedService ? matchedService.slug : '');
-          if (matchedService) {
-            saveServiceIntent({
-              role: 'client',
-              serviceSlug: matchedService.slug,
-              serviceName: getServiceLabel(matchedService.slug),
-              timing: bookingTime || null,
-              source: 'client_search',
-            });
-          } else {
-            clearServiceIntent();
-          }
-        }}
-        placeholder="Buscar..."
-        className="h-full w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/62 outline-none"
-      />
-
-      {serviceQuery && (
-        <button
-          type="button"
-          onClick={() => {
-            userEditedServiceQueryRef.current = true;
-            setServiceQuery('');
-            setSelectedService('');
-            clearServiceIntent();
-            router.replace('/client');
-          }}
-          className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/16 text-white/82 active:scale-95"
-        >
-          <X size={14} />
-        </button>
-      )}
-    </div>
-
-    <button
-      type="button"
-      onClick={openCommentNotifications}
-      className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] active:scale-95"
-    >
-      <Bell size={18} />
-
-      {unreadCommentsCount > 0 && (
-        <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#62bfb9] px-1 text-[10px] font-black text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)]">
-          {unreadCommentsCount > 9 ? '9+' : unreadCommentsCount}
-        </span>
-      )}
-    </button>
-  </div>
-
-    {selectedServiceLabel && (
-    <div className="mt-2 flex justify-center px-1">
-      <div className="flex max-w-full items-center gap-2 rounded-full border border-white/18 bg-black/34 px-3 py-1.5 text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur-xl">
-        <span className="min-w-0 truncate text-[11px] font-black">
-          Filtro activo: {selectedServiceLabel}
-          {exactServiceMatches === 0 ? ' · mostrando similares' : ''}
-        </span>
-
-        <button
-          type="button"
-          onClick={() => {
-            userEditedServiceQueryRef.current = true;
-            setFeedMode('all');
-            setSelectedService('');
-            setServiceQuery('');
-            setFeedSeed(Date.now() + Math.random());
-            setFeedIndex(0);
-            setFeedSlotIndex(0);
-            setSelected(null);
-            setNearbyMapWorker(null);
-            clearServiceIntent();
-            router.replace('/client');
-            fetchWorkers('');
-            feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
-          }}
-          className="shrink-0 rounded-full bg-white px-3 py-1 text-[10px] font-black text-black shadow-[0_6px_14px_rgba(0,0,0,0.18)] active:scale-95"
-          aria-label={`Ver otros servicios, salir del filtro ${selectedServiceLabel}`}
-        >
-          Ver otros servicios
-        </button>
-      </div>
-    </div>
-  )}
-
-  <div className="mt-2 flex justify-center">
-    <div className="relative grid h-10 w-[214px] grid-cols-2 items-center rounded-full border border-white/16 bg-black/32 p-1 shadow-[0_14px_34px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
-      <motion.div
-        layout
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-white shadow-[0_8px_20px_rgba(0,0,0,0.20)]"
-        style={{
-          left: feedMode === 'all' ? '4px' : '50%',
-        }}
-      />
-
+    {serviceQuery && (
       <button
         type="button"
         onClick={() => {
           userEditedServiceQueryRef.current = true;
-          setFeedMode('all');
-          setSelectedService('');
           setServiceQuery('');
-            setFeedSeed(Date.now() + Math.random());
-            setFeedIndex(0);
-            setFeedSlotIndex(0);
-            setSelected(null);
-            setNearbyMapWorker(null);
-            clearServiceIntent();
+          setSelectedService('');
+          clearServiceIntent();
           router.replace('/client');
           fetchWorkers('');
           feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
         }}
-        className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${
-          feedMode === 'all' ? 'text-black' : 'text-white'
-        }`}
+        className="absolute right-2.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white/88 transition active:scale-95"
+        aria-label="Limpiar búsqueda"
       >
-        Todos
+        <X size={15} strokeWidth={3} />
       </button>
-
-      <button
-        type="button"
-        onClick={() => {
-          setFeedMode('near');
-          setFeedSeed(Date.now() + Math.random());
-          setFeedIndex(0);
-          setFeedSlotIndex(0);
-          setSelected(null);
-          setNearbyMapWorker(null);
-          feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
-        }}
-        className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${
-          feedMode === 'near' ? 'text-black' : 'text-white'
-        }`}
-      >
-        Cerca tuyo
-      </button>
-    </div>
+    )}
   </div>
+
+  <button
+    type="button"
+    onClick={openCommentNotifications}
+    className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/55 bg-white/10 text-white shadow-[0_12px_28px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-2xl transition active:scale-95"
+    aria-label="Notificaciones"
+  >
+    <Bell size={19} strokeWidth={2.6} />
+
+    {unreadCommentsCount > 0 && (
+      <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#62bfb9] px-1 text-[10px] font-black text-white shadow-[0_8px_18px_rgba(98,191,185,0.45)]">
+        {unreadCommentsCount > 9 ? '9+' : unreadCommentsCount}
+      </span>
+    )}
+  </button>
 </div>
+</div>
+
             {!trackingOpen ? (
               <div className="h-full">
                 {busy ? (
@@ -3948,22 +3905,23 @@ async function cancelActiveJob() {
     <button
   type="button"
   onClick={() => {
-    const currentService = selectedService || detectServiceSlugFromSearch(serviceQuery);
-    const title = currentService
-      ? `Trabajadores de ${getServiceLabel(currentService)}`
-      : serviceQuery?.trim()
-        ? `Resultados para "${serviceQuery.trim()}"`
-        : 'Todos los trabajadores';
-
-    setWorkersSheetTitle(title);
-    setWorkersSheetList(Array.isArray(feedWorkers) && feedWorkers.length ? feedWorkers : workers);
-    setShowAllWorkers(true);
+    setFeedMode('near');
+    setFeedSeed(Date.now() + Math.random());
+    setFeedIndex(0);
+    setFeedSlotIndex(0);
+    setSelected(null);
+    setNearbyMapWorker(null);
+    feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
   }}
-  className="flex h-full flex-col items-center justify-center gap-1 rounded-full bg-[#62bfb9] text-white shadow-[0_12px_26px_rgba(98,191,185,0.45)] ring-1 ring-[#9ee5df]/70 active:scale-95"
-  aria-label="Ver trabajadores en lista"
+  className={`flex h-full flex-col items-center justify-center gap-1 rounded-full active:scale-95 ${
+    feedMode === 'near'
+      ? 'bg-[#62bfb9] text-white shadow-[0_12px_26px_rgba(98,191,185,0.45)] ring-1 ring-[#9ee5df]/70'
+      : 'text-[#071827]'
+  }`}
+  aria-label="Ver trabajadores cerca tuyo"
 >
-  <Users size={21} strokeWidth={2.8} />
-  <span>Ver lista</span>
+  <MapPin size={21} strokeWidth={2.8} />
+  <span>Cerca tuyo</span>
 </button>
 
     <button
