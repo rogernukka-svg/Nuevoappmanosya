@@ -2567,25 +2567,46 @@ async function fetchWorkers(serviceFilter = '') {
     if (feedWorkers.length <= 1) return feedWorkers;
     return Array.from({ length: 5 }, () => feedWorkers).flat();
   }, [feedWorkers]);
-  const currentWorker = feedWorkers[feedIndex] || null;
-  useEffect(() => {
-    if (!feedWorkers.length) return;
+ const currentWorker = feedWorkers[feedIndex] || null;
 
-    const mediaUrls = collectWorkerMediaUrls(feedWorkers, {
-      limit: 12,
-      minVideos: 3,
-      minImages: 4,
-    });
-    const scheduleCache = window.requestIdleCallback || ((callback) => setTimeout(callback, 900));
-    const cancelSchedule = window.cancelIdleCallback || clearTimeout;
-    const handle = scheduleCache(() => {
-      cacheMediaUrls(mediaUrls, 'manosya-worker-feed-media-v1');
-    });
+useEffect(() => {
+  if (!feedWorkers.length) return;
 
-    return () => cancelSchedule(handle);
-  }, [feedWorkers]);
-  useEffect(() => {
-    if (!loopedFeedWorkers.length) return;
+  const mediaUrls = collectWorkerMediaUrls(feedWorkers, {
+    limit: 8,
+    minVideos: 0,
+    minImages: 6,
+  }).filter((url) => {
+    const cleanUrl = String(url || '').toLowerCase();
+
+    return (
+      cleanUrl &&
+      !cleanUrl.includes('.mp4') &&
+      !cleanUrl.includes('.mov') &&
+      !cleanUrl.includes('.webm') &&
+      !cleanUrl.includes('.m4v') &&
+      !cleanUrl.includes('.3gp') &&
+      !cleanUrl.includes('.3gpp')
+    );
+  });
+
+  if (!mediaUrls.length) return;
+
+  const scheduleCache =
+    window.requestIdleCallback || ((callback) => setTimeout(callback, 900));
+
+  const cancelSchedule =
+    window.cancelIdleCallback || clearTimeout;
+
+  const handle = scheduleCache(() => {
+    cacheMediaUrls(mediaUrls, 'manosya-worker-feed-media-v1');
+  });
+
+  return () => cancelSchedule(handle);
+}, [feedWorkers]);
+
+useEffect(() => {
+  if (!loopedFeedWorkers.length) return;
 
     const targetSlot = feedWorkers.length > 1 ? feedWorkers.length * 2 : 0;
     setFeedIndex(0);
