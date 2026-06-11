@@ -1623,11 +1623,17 @@ async function toggleStatus() {
   }
 }
 
-/* === ACCEPT JOB === */
+/* === ACCEPT / OPEN JOB === */
 async function acceptJob(job) {
   try {
-    if (job.status !== 'open') {
-      return toast.warning('Este trabajo ya fue tomado');
+    if (!job?.id || !user?.id) {
+      toast.error('Faltan datos para aceptar el pedido');
+      return null;
+    }
+
+    if (String(job.status || '').toLowerCase() !== 'open') {
+      toast.warning('Este trabajo ya fue tomado');
+      return null;
     }
 
     const details = parseJobRequestDetails(job?.description);
@@ -1639,16 +1645,36 @@ async function acceptJob(job) {
       ? null
       : new Date(Date.now() + 60 * 60000).toISOString();
 
-    const { error: jobError } = await supabase
+    const { data: updatedJob, error: jobError } = await supabase
       .from('jobs')
       .update({
         status: nextJobStatus,
         worker_id: user.id,
         accepted_at: new Date().toISOString(),
       })
-      .eq('id', job.id);
+      .eq('id', job.id)
+      .eq('status', 'open')
+      .select(`
+        id,
+        title,
+        description,
+        status,
+        client_id,
+        worker_id,
+        client_lat,
+        client_lng,
+        created_at,
+        service_type
+      `)
+      .maybeSingle();
 
     if (jobError) throw jobError;
+
+    if (!updatedJob) {
+      toast.warning('Este pedido ya fue tomado por otro trabajador');
+      await loadJobs();
+      return null;
+    }
 
     const { error: workerError } = await supabase
       .from('worker_profiles')
@@ -1664,22 +1690,56 @@ async function acceptJob(job) {
 
     setStatus(nextWorkerStatus);
 
-    toast.success(
-      isScheduledBooking
-        ? '📅 Agenda aceptada correctamente'
-        : '✅ Trabajo aceptado correctamente'
-    );
+    const enrichedJob = {
+      ...job,
+      ...updatedJob,
+      client: job.client || null,
+    };
 
     setJobs((prev) =>
       prev.map((j) =>
-        j.id === job.id
-          ? { ...j, status: nextJobStatus, worker_id: user.id }
+        String(j.id) === String(job.id)
+          ? enrichedJob
           : j
       )
     );
+
+    toast.success(
+      isScheduledBooking
+        ? '📅 Agenda aceptada correctamente'
+        : '✅ Pedido aceptado correctamente'
+    );
+
+    return enrichedJob;
   } catch (err) {
-    toast.error('No se pudo aceptar el trabajo');
-    console.error(err);
+    console.error('❌ Error aceptando pedido:', err);
+    toast.error('No se pudo aceptar el pedido');
+    return null;
+  }
+}
+
+async function openWorkerJob(job) {
+  try {
+    if (!job?.id || !user?.id) {
+      toast.error('Faltan datos para abrir el pedido');
+      return;
+    }
+
+    const currentStatus = String(job.status || '').toLowerCase();
+
+    if (currentStatus === 'open') {
+      const acceptedJob = await acceptJob(job);
+
+      if (!acceptedJob) return;
+
+      await openChat(acceptedJob);
+      return;
+    }
+
+    await openChat(job);
+  } catch (err) {
+    console.error('❌ Error abriendo pedido:', err);
+    toast.error('No se pudo abrir el pedido');
   }
 }
 
@@ -2207,7 +2267,7 @@ const unreadMessages =
   initial={{ opacity: 0, y: 6 }}
   animate={{ opacity: 1, y: 0 }}
   transition={{ delay: index * 0.02 }}
-  onClick={() => openChat(job)}
+  onClick={() => openWorkerJob(job)}
   className="
     group relative overflow-hidden
     rounded-[18px]
@@ -2308,21 +2368,21 @@ const unreadMessages =
     </button>
 
     <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        openChat(job);
-      }}
-      className="
-        relative flex h-9 w-9 items-center justify-center
-        rounded-full bg-[#18b8aa]/10
-        text-[#18b8aa]
-        transition-all duration-200
-        hover:bg-[#18b8aa]/18
-        active:scale-95
-      "
-    >
-      <MessageCircle size={16} />
+  type="button"
+  onClick={(e) => {
+    e.stopPropagation();
+    openWorkerJob(job);
+  }}
+  className="
+    relative flex h-9 w-9 items-center justify-center
+    rounded-full bg-[#18b8aa]/10
+    text-[#18b8aa]
+    transition-all duration-200
+    hover:bg-[#18b8aa]/18
+    active:scale-95
+  "
+>
+  <MessageCircle size={16} />
 
       {unreadMessages > 0 && (
         <span
