@@ -38,6 +38,8 @@ import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
 import ProfileOnlyFeedVisual, { isProfileOnlyMedia } from '@/components/ProfileOnlyFeedVisual';
 import {
   FEED_VIDEO_ATTR,
+  FEED_VIDEO_MANUAL_PAUSE_EVENT,
+  FEED_VIDEO_PLAY_REQUEST_EVENT,
   pauseFeedVideo,
   pauseOtherFeedVideos,
   playFeedVideo,
@@ -587,6 +589,27 @@ function FeedCard({ worker, selectedService = '', isActive, isFollowed, isLiked,
   const shortBio = isLongBio ? `${postText.slice(0, 95).trim()}...` : postText;
 
   useEffect(() => {
+    if (!isVideo || !videoRef.current) return;
+
+    const video = videoRef.current;
+    const syncPaused = () => setPaused(true);
+    const syncPlaying = () => setPaused(false);
+
+    video.addEventListener(FEED_VIDEO_MANUAL_PAUSE_EVENT, syncPaused);
+    video.addEventListener(FEED_VIDEO_PLAY_REQUEST_EVENT, syncPlaying);
+
+    return () => {
+      video.removeEventListener(FEED_VIDEO_MANUAL_PAUSE_EVENT, syncPaused);
+      video.removeEventListener(FEED_VIDEO_PLAY_REQUEST_EVENT, syncPlaying);
+    };
+  }, [isVideo, mediaUrl]);
+
+  useEffect(() => {
+    if (!isVideo) return;
+    setPaused(!isActive);
+  }, [isActive, isVideo, mediaUrl]);
+
+  useEffect(() => {
     const markSoundEnabled = () => unlockFeedSound();
     const syncSound = () => {
       setMuted(false);
@@ -595,6 +618,7 @@ function FeedCard({ worker, selectedService = '', isActive, isFollowed, isLiked,
       const token = ++playbackTokenRef.current;
       playFeedVideo(video, {
         withSound: true,
+        protect: true,
         isCurrent: () => playbackTokenRef.current === token,
       }).then((played) => {
         if (!played || playbackTokenRef.current !== token) return;
@@ -649,14 +673,14 @@ useEffect(() => {
         }
       });
     } else {
-      pauseFeedVideo(video);
+      pauseFeedVideo(video, { manual: false });
       setPaused(true);
     }
 
     const stopIfHidden = () => {
       if (document.hidden) {
         playbackTokenRef.current += 1;
-        pauseFeedVideo(video);
+        pauseFeedVideo(video, { manual: false });
         setPaused(true);
       }
     };
@@ -668,7 +692,7 @@ useEffect(() => {
       playbackTokenRef.current += 1;
       document.removeEventListener('visibilitychange', stopIfHidden);
       window.removeEventListener('pagehide', stopIfHidden);
-      pauseFeedVideo(video);
+      pauseFeedVideo(video, { manual: false });
       setMuted(true);
       setPaused(true);
     };
@@ -682,6 +706,7 @@ useEffect(() => {
 
     if (video.paused || paused) {
       setMuted(false);
+      setPaused(false);
       const token = ++playbackTokenRef.current;
       playFeedVideo(video, {
         withSound: true,
@@ -2522,6 +2547,7 @@ useEffect(() => {
   if (!me?.id) return;
 
   let mounted = true;
+  let refreshTimer = null;
 
   const safeRefresh = async () => {
     if (!mounted) return;
@@ -2531,6 +2557,15 @@ useEffect(() => {
     } catch (err) {
       console.warn('refreshClientBadges error', err);
     }
+  };
+
+  const scheduleRefresh = () => {
+    if (!mounted) return;
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      safeRefresh();
+    }, 350);
   };
 
   safeRefresh();
@@ -2544,9 +2579,7 @@ useEffect(() => {
         schema: 'public',
         table: 'messages',
       },
-      async () => {
-        await safeRefresh();
-      }
+      scheduleRefresh
     )
     .on(
       'postgres_changes',
@@ -2556,9 +2589,7 @@ useEffect(() => {
         table: 'worker_comments',
         filter: `client_id=eq.${me.id}`,
       },
-      async () => {
-        await safeRefresh();
-      }
+      scheduleRefresh
     )
     .subscribe((status) => {
       console.log('client notification channel:', status);
@@ -2566,6 +2597,7 @@ useEffect(() => {
 
   return () => {
     mounted = false;
+    if (refreshTimer) clearTimeout(refreshTimer);
     supabase.removeChannel(channel);
   };
 }, [me?.id]);
@@ -2804,15 +2836,34 @@ const nearbyWorkers = useMemo(() => {
     setSelected(worker);
     setShowProfile(true);
   }
+
+function validPostId(value) {
+  const raw = String(value || '');
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw)
+    ? raw
+    : '';
+}
+
 async function openComments(worker) {
   setCommentsWorker(worker);
   setCommentsOpen(true);
 
-  const { data } = await supabase
-  .from('worker_comments')
-  .select('*')
-  .eq('worker_id', worker.user_id)
-  .order('created_at', { ascending: false });
+  const postId = validPostId(worker?.post_id);
+  let query = supabase
+    .from('worker_comments')
+    .select('*')
+    .eq('worker_id', worker.user_id);
+
+  query = postId ? query.eq('post_id', postId) : query.is('post_id', null);
+
+  const { data, error } = await query.order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('comment load error', error);
+    toast.error(error.message || 'No se pudieron cargar comentarios');
+    setWorkerComments([]);
+    return;
+  }
 
   setWorkerComments(data || []);
 }
@@ -2828,6 +2879,9 @@ async function sendPublicComment() {
     client_avatar: clientProfile?.avatar_url || '',
     comment: commentText.trim(),
   };
+
+  const postId = validPostId(commentsWorker?.post_id);
+  if (postId) payload.post_id = postId;
 
   const { error } = await supabase.from('worker_comments').insert([payload]);
 

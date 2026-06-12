@@ -108,7 +108,7 @@ const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
     if (role === 'worker') {
       toast.success('Modo profesional activado');
-      router.push('/worker/feed');
+      router.push('/worker');
     } else if (role === 'supplier') {
       toast.success('Modo proveedor activado');
       router.push('/supplier');

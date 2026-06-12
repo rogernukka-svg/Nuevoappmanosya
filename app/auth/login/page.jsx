@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getSupabase } from '@/lib/supabase';
 import { redirectToRole } from '@/lib/roleRedirect';
-import { validateMediaFile } from '@/lib/security';
 import { saveServiceIntent } from '@/lib/services';
 import { toast } from 'sonner';
 
@@ -1035,7 +1034,7 @@ function guessFlowFromMessage(text) {
 
 function getRedirectPathFromRole(role) {
   const normalizedRole = String(role || '').trim().toLowerCase();
-  if (normalizedRole === 'worker') return '/worker/feed';
+  if (normalizedRole === 'worker') return '/worker';
   if (normalizedRole === 'client') return '/client';
   if (normalizedRole === 'supplier') return '/supplier';
   return '/role-selector';
@@ -1367,23 +1366,13 @@ const [showRecognizedCard, setShowRecognizedCard] = useState(false);
 
 const [rememberedIntent, setRememberedIntent] = useState(null);
 
-const [photoFile, setPhotoFile] = useState(null);
-
-
 const [currentPrompt, setCurrentPrompt] = useState({
   id: makeId(),
   title: '¡Hola!',
   subtitle: 'Bienvenido a ManosYA',
   mergeSubtitle: false,
 });
-const videoRef = useRef(null);
-const canvasRef = useRef(null);
-const streamRef = useRef(null);
 
-const [capturedPreview, setCapturedPreview] = useState('');
-const [cameraOpen, setCameraOpen] = useState(false);
-const [cameraError, setCameraError] = useState('');
-const [cameraReady, setCameraReady] = useState(false);
   const displayAvatar = useMemo(() => {
     if (showRecognizedCard) return '/ROGER SALUDANDO.png';
     if (draftStage === 'name') return '/ROGER SALUDANDO.png';
@@ -1392,7 +1381,6 @@ const [cameraReady, setCameraReady] = useState(false);
     if (draftStage === 'timing') return '/ROGER DEFINITIVO pensativo.png';
     if (draftStage === 'email') return '/ROGER OK.png';
     if (draftStage === 'password' || draftStage === 'login-password') return '/ROGER OK.png';
-    if (draftStage === 'photo') return '/ROGER OK.png';
     return '/ROGER SALUDANDO.png';
   }, [draftStage, showRecognizedCard]);
 
@@ -1423,37 +1411,6 @@ const [cameraReady, setCameraReady] = useState(false);
     }
 
     return data || null;
-  }
-
-  async function uploadAvatar(userId) {
-    if (!photoFile) return null;
-
-    const safety = validateMediaFile(photoFile, {
-      allowedTypes: ['image/jpeg', 'image/png', 'image/webp'],
-      maxBytes: 5 * 1024 * 1024,
-    });
-    if (!safety.ok) {
-      toast.error(safety.error || 'La foto no es válida');
-      return null;
-    }
-
-    const ext = photoFile.name.split('.').pop() || 'jpg';
-    const path = `avatars/${userId}-${Date.now()}.${ext}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(path, photoFile, {
-        upsert: true,
-        contentType: photoFile.type || 'image/jpeg',
-      });
-
-    if (uploadError) {
-      console.warn(uploadError);
-      return null;
-    }
-
-    const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-    return data?.publicUrl || null;
   }
 
   async function redirectByRealProfile(userId) {
@@ -1503,9 +1460,6 @@ const [cameraReady, setCameraReady] = useState(false);
   setServiceSuggestions([]);
   setEmail('');
   setPassword('');
-  setPhotoFile(null);
-  setCapturedPreview('');
-  setCameraError('');
   setShowRecognizedCard(false);
   appendPrompt('¡Hola!', 'Bienvenido a ManosYA');
 
@@ -1517,13 +1471,6 @@ const [cameraReady, setCameraReady] = useState(false);
     localStorage.removeItem(LS_LAST_EMAIL);
   }
 
-  if (streamRef.current) {
-    streamRef.current.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-  }
-
-  setCameraOpen(false);
-  setCameraReady(false);
   clearLastIntent();
   setSavedSessionEmail('');
   setRecognizedName('');
@@ -1557,9 +1504,6 @@ function handleAlreadyHaveAccount() {
   setServiceSuggestions([]);
   setEmail('');
   setPassword('');
-  setPhotoFile(null);
-  setCapturedPreview('');
-  setCameraError('');
 
   appendPrompt(
   'Dale, entramos 👌',
@@ -1571,11 +1515,6 @@ function handleAlreadyHaveAccount() {
 
 function handleBack() {
   if (busy) return;
-
-  if (cameraOpen) {
-    closeCamera();
-    return;
-  }
 
   if (showRecognizedCard) {
     handleNotMe();
@@ -1627,16 +1566,6 @@ function handleBack() {
     setPassword('');
     setDraftStage('email');
     appendPrompt('Pasame tu correo.', 'Asi seguimos con tu cuenta.');
-    setTimeout(() => inputRef.current?.focus(), 120);
-    return;
-  }
-
-  if (draftStage === 'photo') {
-    setPhotoFile(null);
-    setCapturedPreview('');
-    setCameraError('');
-    setDraftStage('password');
-    appendPrompt('Ahora crea tu contraseña.', 'Minimo 6 caracteres.');
     setTimeout(() => inputRef.current?.focus(), 120);
     return;
   }
@@ -1855,176 +1784,9 @@ function startSupplierFlow() {
     }
   }
 
- function handlePasswordStep() {
-  if (!password || password.length < 6) {
-    toast.error('La contraseña debe tener mínimo 6 caracteres');
-    return;
-  }
-
-  setDraftStage('photo');
-
-  appendPrompt(
-    'Último paso: tu foto 📸',
-    'Así tu perfil inspira más confianza dentro de ManosYA.'
-  );
-}
-async function openCamera() {
-  try {
-    setCameraError('');
-    setCapturedPreview('');
-    setCameraReady(false);
-
-    if (!navigator?.mediaDevices?.getUserMedia) {
-      toast.error('Este navegador no permite usar la cámara');
-      setCameraError('Este navegador no permite usar la cámara');
-      return;
-    }
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-
-    setCameraOpen(true);
-
-    let stream;
-
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'user',
-          width: { ideal: 720 },
-          height: { ideal: 960 },
-        },
-        audio: false,
-      });
-    } catch {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false,
-      });
-    }
-
-    streamRef.current = stream;
-
-    requestAnimationFrame(async () => {
-      const video = videoRef.current;
-      if (!video) return;
-
-      video.srcObject = stream;
-      video.muted = true;
-      video.playsInline = true;
-
-      try {
-        await video.play();
-
-        const waitUntilReady = () => {
-          if (
-            video.readyState >= 2 &&
-            video.videoWidth > 0 &&
-            video.videoHeight > 0
-          ) {
-            setCameraReady(true);
-            setCameraError('');
-            return;
-          }
-
-          setTimeout(waitUntilReady, 120);
-        };
-
-        waitUntilReady();
-      } catch (err) {
-        console.warn(err);
-        setCameraReady(false);
-        setCameraError('No pude iniciar la cámara');
-        toast.error('No pude iniciar la cámara');
-      }
-    });
-  } catch (err) {
-    console.error(err);
-    setCameraOpen(false);
-    setCameraReady(false);
-    setCameraError('No pude abrir la cámara');
-    toast.error('No pude abrir la cámara');
-  }
-}
-
-function closeCamera() {
-  if (streamRef.current) {
-    streamRef.current.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-  }
-
-  if (videoRef.current) {
-    videoRef.current.srcObject = null;
-  }
-
-  setCameraOpen(false);
-  setCameraReady(false);
-}
-
-function capturePhoto() {
-  try {
-    if (!videoRef.current || !canvasRef.current) {
-      toast.error('La cámara no está lista');
-      return;
-    }
-
-    const video = videoRef.current;
-
-    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
-      toast.error('Esperá un segundo y probá otra vez');
-      return;
-    }
-
-    const canvas = canvasRef.current;
-    const width = video.videoWidth;
-    const height = video.videoHeight;
-
-    canvas.width = width;
-    canvas.height = height;
-
-   const ctx = canvas.getContext('2d');
-
-if (!ctx) {
-  toast.error('No pude capturar la foto');
-  return;
-}
-
-ctx.setTransform(1, 0, 0, 1, 0, 0);
-ctx.clearRect(0, 0, width, height);
-
-    ctx.translate(width, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(video, 0, 0, width, height);
-
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          toast.error('No pude generar la foto');
-          return;
-        }
-
-        const file = new File([blob], `manosya-${Date.now()}.jpg`, {
-          type: 'image/jpeg',
-        });
-
-        setPhotoFile(file);
-        setCapturedPreview(URL.createObjectURL(blob));
-        setCameraReady(false);
-        closeCamera();
-        toast.success('Foto capturada');
-      },
-      'image/jpeg',
-      0.95
-    );
-  } catch (err) {
-    console.error(err);
-    toast.error('No pude sacar la foto');
-  }
-}
-  async function handleFinishSignup() {
+  async function handleFinishSignup(passwordOverride = '') {
     const cleanEmail = normalizeEmail(email);
+    const finalPassword = passwordOverride || password;
 
     if (!fullName.trim()) {
       toast.error('Falta tu nombre');
@@ -2043,13 +1805,8 @@ ctx.clearRect(0, 0, width, height);
 
     const finalTiming = flow === 'client' ? selectedTiming || 'hoy' : null;
 
-    if (!cleanEmail || !password || password.length < 6) {
+    if (!cleanEmail || !finalPassword || finalPassword.length < 6) {
   toast.error('Revisá correo y contraseña');
-  return;
-}
-
-if (!photoFile || !capturedPreview) {
-  toast.error('Primero sacá tu foto');
   return;
 }
 
@@ -2058,15 +1815,13 @@ if (!photoFile || !capturedPreview) {
     try {
       const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
-        password,
+        password: finalPassword,
       });
 
       if (error) throw error;
 
       const userId = data.user?.id;
       if (!userId) throw new Error('No se pudo crear el usuario');
-
-      const avatarUrl = await uploadAvatar(userId);
 
      const finalFlow = getLockedFlow();
 const roleToSave = finalFlow === 'worker' ? 'worker' : finalFlow === 'supplier' ? 'supplier' : 'client';
@@ -2079,7 +1834,6 @@ const roleToSave = finalFlow === 'worker' ? 'worker' : finalFlow === 'supplier' 
             full_name: fullName.trim(),
             email: cleanEmail,
             role: roleToSave,
-            avatar_url: avatarUrl,
             updated_at: new Date().toISOString(),
           },
         ]);
@@ -2093,6 +1847,7 @@ const roleToSave = finalFlow === 'worker' ? 'worker' : finalFlow === 'supplier' 
             [
               {
                 user_id: userId,
+                status: 'available',
                 is_active: true,
                 radius_km: 5,
                 skills: selectedNeed?.slug ? [selectedNeed.slug] : [],
@@ -2222,9 +1977,6 @@ const roleToSave = finalFlow === 'worker' ? 'worker' : finalFlow === 'supplier' 
     case 'password':
       return password.trim().length >= 6;
 
-    case 'photo':
-      return !!capturedPreview && !!photoFile;
-
     case 'login-password':
       return password.trim().length >= 6;
 
@@ -2242,11 +1994,9 @@ const roleToSave = finalFlow === 'worker' ? 'worker' : finalFlow === 'supplier' 
   selectedTiming,
   email,
   password,
-  capturedPreview,
-  photoFile,
 ]);
 
-function handleMainContinue(latestValue = '') {
+async function handleMainContinue(latestValue = '') {
   const liveValue = String(latestValue || '').trim();
 
   if (draftStage === 'name') {
@@ -2305,17 +2055,7 @@ function handleMainContinue(latestValue = '') {
     }
 
     setPassword(passwordToUse);
-    setDraftStage('photo');
-
-    appendPrompt(
-      'Último paso: tu foto 📸',
-      'Así tu perfil inspira más confianza dentro de ManosYA.'
-    );
-    return;
-  }
-
-  if (draftStage === 'photo') {
-    handleFinishSignup();
+    await handleFinishSignup(passwordToUse);
     return;
   }
 
@@ -2648,46 +2388,7 @@ function handleMainContinue(latestValue = '') {
   </div>
 )}
 
-{draftStage === 'photo' && (
-  <div className="mx-auto mt-0 flex w-full max-w-[760px] flex-col items-center">
-    {!capturedPreview ? (
-      <button
-        type="button"
-        onClick={openCamera}
-        className="
-          rounded-full border border-white/12 bg-[#06182a] px-10 py-5
-          text-[clamp(18px,3dvh,22px)] font-black text-white
-          shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_18px_38px_rgba(6,24,42,0.28)]
-          transition hover:scale-[1.01] active:scale-95
-        "
-      >
-        Abrir cámara
-      </button>
-    ) : (
-      <>
-        <img
-          src={capturedPreview}
-          alt="preview"
-          className="h-[clamp(118px,18dvh,170px)] w-[clamp(118px,18dvh,170px)] rounded-full border-4 border-white object-cover shadow-xl"
-        />
-
-        <button
-          type="button"
-          onClick={handleMainContinue}
-          className="
-            mt-4 rounded-full bg-[#06182a] px-10 py-5
-            text-[22px] font-black text-white
-            shadow-[0_16px_34px_rgba(6,24,42,0.28)]
-          "
-        >
-          Finalizar registro
-        </button>
-      </>
-    )}
-  </div>
-)}
-
-                                                              {!['name', 'real-name', 'flow', 'need', 'timing', 'email', 'password', 'login-password', 'login-direct', 'photo'].includes(draftStage) && (
+                                                              {!['name', 'real-name', 'flow', 'need', 'timing', 'email', 'password', 'login-password', 'login-direct'].includes(draftStage) && (
   <DownActionButton
     onClick={handleMainContinue}
     disabled={!canContinue}
@@ -2715,85 +2416,6 @@ function handleMainContinue(latestValue = '') {
           </p>
         </div>
       </div>
-      <AnimatePresence>
-  {cameraOpen && (
-  <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#06252c]/78 px-4 py-4 backdrop-blur-xl">
-    <div className="relative flex max-h-full w-full max-w-[430px] flex-col overflow-hidden rounded-[30px] border border-white/22 bg-[#69c4c0] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.36)]">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_50%_0%,rgba(98,191,185,0.22),transparent_70%)]" />
-      <div className="relative mb-3 text-center">
-        <div className="mx-auto mb-3 h-1.5 w-14 rounded-full bg-white/45" />
-        <div className="text-[21px] font-black leading-none tracking-normal text-white">
-          Sacar foto
-        </div>
-        <div className="mt-2 text-sm font-bold text-white/86">
-          Centrá tu rostro y mirá a la cámara
-        </div>
-      </div>
-
-      <div className="relative min-h-0 overflow-hidden rounded-[28px] bg-[#06182a] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.10),0_18px_40px_rgba(6,24,42,0.18)]">
-        <video
-  ref={videoRef}
-  autoPlay
-  playsInline
-  muted
-  className="h-[clamp(270px,54dvh,430px)] w-full scale-x-[-1] object-cover"
-/>
-
-<canvas ref={canvasRef} className="hidden" />
-
-        {!cameraReady && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#06182a]/70 text-center text-white">
-            <div>
-              <div className="mx-auto h-9 w-9 animate-spin rounded-full border-[3px] border-white border-t-transparent" />
-              <div className="mt-3 text-sm font-black">Preparando cámara...</div>
-            </div>
-          </div>
-        )}
-
-        <div className="pointer-events-none absolute inset-5 rounded-[24px] border border-white/70 shadow-[inset_0_0_0_1px_rgba(98,191,185,0.28)]" />
-        <div className="pointer-events-none absolute left-1/2 top-5 h-8 w-px -translate-x-1/2 bg-white/30" />
-        <div className="pointer-events-none absolute bottom-5 left-1/2 h-8 w-px -translate-x-1/2 bg-white/30" />
-        <div className="pointer-events-none absolute left-5 top-1/2 h-px w-8 -translate-y-1/2 bg-white/30" />
-        <div className="pointer-events-none absolute right-5 top-1/2 h-px w-8 -translate-y-1/2 bg-white/30" />
-      </div>
-
-    {cameraError && !cameraReady ? (
-  <div className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600">
-    {cameraError}
-  </div>
-) : null}
-
-      <div className="relative mt-4 grid grid-cols-2 gap-3">
-        <button
-          type="button"
-          onClick={closeCamera}
-          className="rounded-[22px] border border-white/35 bg-white/14 px-5 py-4 text-base font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24)] transition active:scale-95"
-        >
-          Cancelar
-        </button>
-
-        <button
-  type="button"
-  onClick={() => {
-    setCameraError('');
-    capturePhoto();
-  }}
-  className="
-    rounded-[22px]
-    bg-[#06182a]
-    px-8 py-4
-    text-[18px] font-black text-white
-    shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_14px_30px_rgba(6,24,42,0.24)]
-    transition active:scale-95
-  "
->
-  Sacar foto
-</button>
-      </div>
-    </div>
-  </div>
-)}
-</AnimatePresence>
     </main>
   );
 }

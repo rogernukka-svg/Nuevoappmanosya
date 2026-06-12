@@ -89,11 +89,16 @@ export default function DMPage() {
 
     const channel = supabase
       .channel(`dm_messages_${user.id}_${otherId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dm_messages' }, (payload) => {
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'dm_messages',
+        filter: `receiver_id=eq.${user.id}`,
+      }, (payload) => {
         const msg = payload.new;
         if (
-          (msg.sender_id === user.id && msg.receiver_id === otherId) ||
-          (msg.sender_id === otherId && msg.receiver_id === user.id)
+          msg.sender_id === otherId &&
+          msg.receiver_id === user.id
         ) {
           setMessages((prev) => {
             if (prev.some((item) => item.id === msg.id)) return prev;
@@ -121,17 +126,22 @@ export default function DMPage() {
       return;
     }
 
-    const { error } = await supabase.from('dm_messages').insert({
-      sender_id: user.id,
-      receiver_id: otherId,
-      content: safety.text,
-    });
+    const { data, error } = await supabase
+      .from('dm_messages')
+      .insert({
+        sender_id: user.id,
+        receiver_id: otherId,
+        content: safety.text,
+      })
+      .select()
+      .single();
 
     if (error) {
       setErr(error.message);
       return;
     }
 
+    setMessages((prev) => (prev.some((item) => item.id === data.id) ? prev : [...prev, data]));
     setNewMsg('');
   }
 
@@ -146,15 +156,20 @@ export default function DMPage() {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
-        const { error } = await supabase.from('dm_messages').insert({
-          sender_id: user.id,
-          receiver_id: otherId,
-          content: 'Ubicacion compartida',
-          lat: latitude,
-          lng: longitude,
-        });
+        const { data, error } = await supabase
+          .from('dm_messages')
+          .insert({
+            sender_id: user.id,
+            receiver_id: otherId,
+            content: 'Ubicacion compartida',
+            lat: latitude,
+            lng: longitude,
+          })
+          .select()
+          .single();
 
         if (error) setErr(error.message);
+        else setMessages((prev) => (prev.some((item) => item.id === data.id) ? prev : [...prev, data]));
       },
       () => alert('No pudimos obtener tu ubicacion. Revisa permisos o GPS.'),
       { enableHighAccuracy: false, timeout: 12000, maximumAge: 30000 }

@@ -33,6 +33,8 @@ import { cacheMediaUrls, collectWorkerMediaUrls } from '@/lib/mediaCache';
 import ProfileOnlyFeedVisual, { isProfileOnlyMedia } from '@/components/ProfileOnlyFeedVisual';
 import {
   FEED_VIDEO_ATTR,
+  FEED_VIDEO_MANUAL_PAUSE_EVENT,
+  FEED_VIDEO_PLAY_REQUEST_EVENT,
   pauseFeedVideo,
   pauseOtherFeedVideos,
   playFeedVideo,
@@ -400,6 +402,27 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFr
   const shortBio = isLongBio ? `${postText.slice(0, 95).trim()}...` : postText;
 
   useEffect(() => {
+    if (!isVideo || !videoRef.current) return;
+
+    const video = videoRef.current;
+    const syncPaused = () => setPaused(true);
+    const syncPlaying = () => setPaused(false);
+
+    video.addEventListener(FEED_VIDEO_MANUAL_PAUSE_EVENT, syncPaused);
+    video.addEventListener(FEED_VIDEO_PLAY_REQUEST_EVENT, syncPlaying);
+
+    return () => {
+      video.removeEventListener(FEED_VIDEO_MANUAL_PAUSE_EVENT, syncPaused);
+      video.removeEventListener(FEED_VIDEO_PLAY_REQUEST_EVENT, syncPlaying);
+    };
+  }, [isVideo, mediaUrl]);
+
+  useEffect(() => {
+    if (!isVideo) return;
+    setPaused(!isActive);
+  }, [isActive, isVideo, mediaUrl]);
+
+  useEffect(() => {
     const markSoundEnabled = () => unlockFeedSound();
     const syncSound = () => {
       setMuted(false);
@@ -408,6 +431,7 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFr
       const token = ++playbackTokenRef.current;
       playFeedVideo(video, {
         withSound: true,
+        protect: true,
         isCurrent: () => playbackTokenRef.current === token,
       }).then((played) => {
         if (!played || playbackTokenRef.current !== token) return;
@@ -450,14 +474,14 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFr
         }
       });
     } else {
-      pauseFeedVideo(video);
+      pauseFeedVideo(video, { manual: false });
       setPaused(true);
     }
 
     const stopIfHidden = () => {
       if (document.hidden) {
         playbackTokenRef.current += 1;
-        pauseFeedVideo(video);
+        pauseFeedVideo(video, { manual: false });
         setPaused(true);
       }
     };
@@ -469,7 +493,7 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFr
       playbackTokenRef.current += 1;
       document.removeEventListener('visibilitychange', stopIfHidden);
       window.removeEventListener('pagehide', stopIfHidden);
-      pauseFeedVideo(video);
+      pauseFeedVideo(video, { manual: false });
       setMuted(true);
       setPaused(true);
     };
@@ -482,6 +506,7 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFr
 
     if (video.paused || paused) {
       setMuted(false);
+      setPaused(false);
       const token = ++playbackTokenRef.current;
       playFeedVideo(video, {
         withSound: true,
@@ -2702,8 +2727,60 @@ useEffect(() => {
   setSelected(worker);
   setShowProfile(true);
 }
-  async function openComments(worker) { setCommentsWorker(worker); setCommentsOpen(true); const { data } = await supabase.from('worker_comments').select('*').eq('worker_id', worker.user_id).order('created_at', { ascending: false }); setWorkerComments(data || []); }
-  async function sendPublicComment() { if (!commentsWorker || !commentText.trim() || !me?.id) return; const workerId = commentsWorker.user_id; const payload = { worker_id: workerId, client_id: me.id, client_name: viewerProfile?.full_name || 'Trabajador', client_avatar: viewerProfile?.avatar_url || '', comment: commentText.trim() }; const { error } = await supabase.from('worker_comments').insert([payload]); if (error) { console.error('comment insert error', error); toast.error(error.message || 'No se pudo comentar'); return; } setWorkers((prev) => prev.map((w) => String(w.user_id) === String(workerId) ? { ...w, comments_count: Number(w.comments_count || 0) + 1 } : w)); setCommentText(''); openComments(commentsWorker); }
+  function validPostId(value) {
+    const raw = String(value || '');
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw)
+      ? raw
+      : '';
+  }
+  async function openComments(worker) {
+    setCommentsWorker(worker);
+    setCommentsOpen(true);
+
+    const postId = validPostId(worker?.post_id);
+    let query = supabase
+      .from('worker_comments')
+      .select('*')
+      .eq('worker_id', worker.user_id);
+
+    query = postId ? query.eq('post_id', postId) : query.is('post_id', null);
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('comment load error', error);
+      toast.error(error.message || 'No se pudieron cargar comentarios');
+      setWorkerComments([]);
+      return;
+    }
+
+    setWorkerComments(data || []);
+  }
+  async function sendPublicComment() {
+    if (!commentsWorker || !commentText.trim() || !me?.id) return;
+
+    const workerId = commentsWorker.user_id;
+    const payload = {
+      worker_id: workerId,
+      client_id: me.id,
+      client_name: viewerProfile?.full_name || 'Trabajador',
+      client_avatar: viewerProfile?.avatar_url || '',
+      comment: commentText.trim(),
+    };
+    const postId = validPostId(commentsWorker?.post_id);
+    if (postId) payload.post_id = postId;
+
+    const { error } = await supabase.from('worker_comments').insert([payload]);
+    if (error) {
+      console.error('comment insert error', error);
+      toast.error(error.message || 'No se pudo comentar');
+      return;
+    }
+
+    setWorkers((prev) => prev.map((w) => String(w.user_id) === String(workerId) ? { ...w, comments_count: Number(w.comments_count || 0) + 1 } : w));
+    setCommentText('');
+    openComments(commentsWorker);
+  }
   async function addFriend(worker) {
     const targetId = worker?.user_id || worker?.worker_id;
     if (!targetId || !me?.id) return;

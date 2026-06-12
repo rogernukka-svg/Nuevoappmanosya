@@ -729,6 +729,7 @@ export default function SupplierPage() {
           ...owner,
           ...post,
           user_id: post.worker_id,
+          post_id: post.post_id || post.id || null,
           full_name: owner.full_name || post.full_name || 'Trabajador ManosYA',
           avatar_url: owner.avatar_url || post.avatar_url || '/avatar-fallback.png',
           skills: owner.skills || post.service_type || 'Servicio general',
@@ -1071,6 +1072,9 @@ export default function SupplierPage() {
           product_price_text: cleanPrice,
           product_image_url: offerForm.image_url,
           product_service_slug: cleanServiceSlug,
+          post_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(offerWorker?.post_id || ''))
+            ? offerWorker.post_id
+            : null,
         },
       ]);
 
