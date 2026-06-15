@@ -3205,6 +3205,30 @@ async function openCommentNotifications() {
 async function getOrCreateChatForJob({ jobId, workerId }) {
   if (!jobId || !workerId || !me?.id) return null;
 
+  const { data: chatByPair, error: chatByPairError } = await supabase
+    .from('chats')
+    .select('id, job_id')
+    .eq('client_id', me.id)
+    .eq('worker_id', workerId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (chatByPairError) throw chatByPairError;
+
+  if (chatByPair?.id) {
+    if (!chatByPair.job_id && jobId) {
+      const { error: linkError } = await supabase
+        .from('chats')
+        .update({ job_id: jobId })
+        .eq('id', chatByPair.id);
+
+      if (linkError && linkError.code !== '23505') throw linkError;
+    }
+
+    return chatByPair.id;
+  }
+
   const { data: chatByJob, error: chatByJobError } = await supabase
     .from('chats')
     .select('id, job_id')
