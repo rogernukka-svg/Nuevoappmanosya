@@ -204,7 +204,10 @@ const SERVICE_ALIASES = {
   jardineria: [
     'jardin', 'jardín', 'pasto', 'césped', 'cesped', 'jardinero',
     'patio', 'cortar pasto', 'desmalezar', 'podar plantas', 'riego',
-    'cantero', 'huerta', 'limpiar patio'
+    'cantero', 'huerta', 'limpiar patio', 'mi pasto esta largo',
+    'mi pasto está largo', 'pasto largo', 'cesped alto', 'césped alto',
+    'yuyal', 'malezas', 'maleza', 'cortar jardin', 'cortar jardín',
+    'limpiar jardin', 'limpiar jardín', 'arreglar jardin', 'arreglar jardín'
   ],
   limpieza: [
     'limpieza', 'limpiar', 'mucama', 'ordenar', 'sucio', 'casa',
@@ -793,6 +796,15 @@ function detectServiceCandidates(message) {
 
     'me mudo': 'fletes',
     'quiero mudanza': 'fletes',
+
+    'mi pasto esta largo': 'jardineria',
+    'mi pasto está largo': 'jardineria',
+    'pasto largo': 'jardineria',
+    'cesped alto': 'jardineria',
+    'césped alto': 'jardineria',
+    'hay mucho yuyal': 'jardineria',
+    'cortar el pasto': 'jardineria',
+    'limpiar mi patio': 'jardineria',
 
     'mi heladera no enfria': 'refrigeracion',
     'mi heladera no enfría': 'refrigeracion',
@@ -1506,7 +1518,7 @@ function handleAlreadyHaveAccount() {
   setPassword('');
 
   appendPrompt(
-  'Dale, entramos 👌',
+  'Dale, entramos',
   'Poné tu correo y contraseña.'
 );
 
@@ -1552,10 +1564,10 @@ function handleBack() {
     setDraftStage('need');
     appendPrompt(
       getLockedFlow() === 'supplier'
-        ? '¿QUE INSUMOS VENDES?'
+        ? '¿Qué insumos vendés?'
         : getLockedFlow() === 'worker'
-          ? '¿QUE SERVICIO HACES?'
-          : '¿QUE NECESITAS HOY?',
+          ? '¿Qué servicio hacés?'
+          : '¿Qué necesitás hoy?',
       ''
     );
     setTimeout(() => inputRef.current?.focus(), 120);
@@ -1617,7 +1629,7 @@ function startClientFlow() {
 
   setDraftStage('need');
 
-  appendPrompt('¿QUÉ NECESITÁS HOY?', '');
+  appendPrompt('¿Qué necesitás hoy?', '');
 }
 
 function startWorkerFlow() {
@@ -1631,7 +1643,7 @@ function startWorkerFlow() {
 
   setDraftStage('need');
 
-  appendPrompt('¿QUÉ SERVICIO HACÉS?', '');
+  appendPrompt('¿Qué servicio hacés?', '');
 }
 
 function startSupplierFlow() {
@@ -1645,7 +1657,7 @@ function startSupplierFlow() {
 
   setDraftStage('need');
 
-  appendPrompt('¿QUÉ INSUMOS VENDÉS?', '');
+  appendPrompt('¿Qué insumos vendés?', '');
 }
  function handleNeedDetection(raw) {
   const clean = String(raw || '').trim();
@@ -2016,7 +2028,7 @@ async function handleMainContinue(latestValue = '') {
     setServiceSuggestions([]);
 
     appendPrompt(
-      `Un gusto, ${firstNameOf(nameToUse)} 👌`,
+      `Un gusto, ${firstNameOf(nameToUse)}`,
       '¿Venís a pedir ayuda, ofrecer tu trabajo o vender insumos?',
       { mergeSubtitle: false }
     );
@@ -2119,9 +2131,9 @@ async function handleMainContinue(latestValue = '') {
   key={`${currentPrompt.id}-${draftStage}-${getLockedFlow()}`}
   title={
     draftStage === 'need'
-      ? getLockedFlow() === 'supplier' ? '¿QUÉ INSUMOS VENDÉS?' : getLockedFlow() === 'worker'
-        ? '¿QUÉ SERVICIO HACÉS?'
-        : '¿QUÉ NECESITÁS HOY?'
+      ? getLockedFlow() === 'supplier' ? '¿Qué insumos vendés?' : getLockedFlow() === 'worker'
+        ? '¿Qué servicio hacés?'
+        : '¿Qué necesitás hoy?'
       : currentPrompt.title
   }
   subtitle={currentPrompt.subtitle}
@@ -2160,7 +2172,7 @@ async function handleMainContinue(latestValue = '') {
     setAssistantInput('');
     setServiceSuggestions([]);
 
-    appendPrompt('Buenísimo 👌', 'Primero decime tu nombre completo.');
+    appendPrompt('Buenísimo', 'Primero decime tu nombre completo.');
     setDraftStage('real-name');
   }}
 />
@@ -2191,7 +2203,7 @@ async function handleMainContinue(latestValue = '') {
       setServiceSuggestions([]);
 
       appendPrompt(
-        `Un gusto, ${firstNameOf(nameToUse)} 👌`,
+        `Un gusto, ${firstNameOf(nameToUse)}`,
         '¿Venís a pedir ayuda, ofrecer tu trabajo o vender insumos?',
         { mergeSubtitle: false }
       );

@@ -41,6 +41,7 @@ import {
 } from '@/lib/feedVideoPlayback';
 import { requireRole } from '@/lib/roleRedirect';
 import { canAttemptAction, inspectTextSafety, validateMediaFile } from '@/lib/security';
+import { userFriendlyError } from '@/lib/userFacingErrors';
 
 const supabase = getSupabase();
 const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
@@ -1781,7 +1782,9 @@ function WorkerHubSheet({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="truncate text-[14px] font-black">{job.title || job.service_type || 'Pedido'}</div>
-                          <div className="mt-1 line-clamp-2 text-[12px] font-semibold leading-5 text-slate-500">{job.description || 'Solicitud de cliente'}</div>
+                          <div className="mt-1 line-clamp-2 text-[12px] font-semibold leading-5 text-slate-500">
+                            {job.last_message?.text || job.last_message?.content || job.last_message?.body || job.description || 'Solicitud de cliente'}
+                          </div>
                           <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-[0.04em] text-[#18b8aa]">
                             <MessageCircle size={13} />
                             Abrir chat
@@ -2014,7 +2017,7 @@ const draftPreviewUrlRef = useRef('');
       const { data: chatsData } = jobIds.length
         ? await supabase
             .from('chats')
-            .select('id, job_id, client_id, worker_id')
+            .select('id, job_id, client_id, worker_id, created_at')
             .in('job_id', jobIds)
             .eq('worker_id', me.id)
         : { data: [] };
@@ -2026,13 +2029,47 @@ const draftPreviewUrlRef = useRef('');
         }
       }
 
-      setWorkerJobs(filtered.map((job) => ({
-        ...job,
-        chat_id: chatByJobId[String(job.id)]?.id || null,
-      })));
+      const chatIds = (chatsData || []).map((chat) => chat.id).filter(Boolean);
+      const { data: messagesData } = chatIds.length
+        ? await supabase
+            .from('messages')
+            .select('id, chat_id, text, content, body, created_at')
+            .in('chat_id', chatIds)
+            .order('created_at', { ascending: false })
+            .limit(200)
+        : { data: [] };
+
+      const lastMessageByChatId = {};
+      for (const message of messagesData || []) {
+        const chatId = String(message.chat_id || '');
+        if (chatId && !lastMessageByChatId[chatId]) {
+          lastMessageByChatId[chatId] = message;
+        }
+      }
+
+      const enrichedJobs = filtered
+        .map((job) => {
+          const chat = chatByJobId[String(job.id)] || null;
+          const lastMessage = chat?.id ? lastMessageByChatId[String(chat.id)] || null : null;
+          const lastActivityAt = lastMessage?.created_at || chat?.created_at || job.created_at || null;
+
+          return {
+            ...job,
+            chat_id: chat?.id || null,
+            last_message: lastMessage,
+            last_activity_at: lastActivityAt,
+          };
+        })
+        .sort(
+          (a, b) =>
+            new Date(b.last_activity_at || b.created_at || 0).getTime() -
+            new Date(a.last_activity_at || a.created_at || 0).getTime()
+        );
+
+      setWorkerJobs(enrichedJobs);
     } catch (error) {
       console.error('worker hub load error', error);
-      toast.error('No se pudo cargar tu panel');
+      toast.error(userFriendlyError(error, 'Estamos ordenando tus pedidos. Proba actualizar en un momento.'));
     } finally {
       setWorkerJobsLoading(false);
     }
@@ -2075,8 +2112,26 @@ const draftPreviewUrlRef = useRef('');
           .select('id')
           .single();
 
-        if (newChatError) throw newChatError;
+        if (newChatError) {
+          if (newChatError.code === '23505') {
+            const { data: racedChat, error: racedError } = await supabase
+              .from('chats')
+              .select('id')
+              .eq('job_id', job.id)
+              .maybeSingle();
+
+            if (racedError) throw racedError;
+            if (racedChat?.id) {
+              chatId = String(racedChat.id);
+            } else {
+              throw newChatError;
+            }
+          } else {
+            throw newChatError;
+          }
+        } else {
         chatId = newChat?.id ? String(newChat.id) : '';
+        }
       }
 
       if (!chatId) throw new Error('No se pudo abrir el chat del pedido');
@@ -2086,7 +2141,7 @@ const draftPreviewUrlRef = useRef('');
       router.push(`/chat/${chatId}`);
     } catch (error) {
       console.error('open worker job chat error:', error);
-      toast.error(error?.message || 'No se pudo abrir el chat del pedido');
+      toast.error(userFriendlyError(error, 'No pudimos abrir el chat ahora. Proba de nuevo.'));
     }
   }
 
@@ -2318,11 +2373,32 @@ useEffect(() => {
 
         const { data: chat } = await supabase
           .from('chats')
-          .select('id, worker_id')
+          .select('id, job_id, worker_id')
           .eq('id', message.chat_id)
           .maybeSingle();
 
         if (String(chat?.worker_id || '') !== String(me.id)) return;
+
+        if (chat?.job_id) {
+          setWorkerJobs((prev) =>
+            [...prev]
+              .map((job) =>
+                String(job.id) === String(chat.job_id)
+                  ? {
+                      ...job,
+                      chat_id: chat.id,
+                      last_message: message,
+                      last_activity_at: message.created_at || new Date().toISOString(),
+                    }
+                  : job
+              )
+              .sort(
+                (a, b) =>
+                  new Date(b.last_activity_at || b.created_at || 0).getTime() -
+                  new Date(a.last_activity_at || a.created_at || 0).getTime()
+              )
+          );
+        }
 
         loadMessageNotifications();
         notifyWorkerDevice('Nuevo mensaje en ManosYA', message.text || 'Un cliente te escribio.');
@@ -3030,27 +3106,42 @@ useEffect(() => {
         nextJobId = newJob.id;
       }
 
-      const { data: existingChat, error: existingChatError } = await supabase
+      const { data: chatByJob, error: chatByJobError } = await supabase
         .from('chats')
         .select('id, job_id')
+        .eq('job_id', nextJobId)
         .eq('client_id', me.id)
         .eq('worker_id', workerId)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
+      if (chatByJobError) throw chatByJobError;
+
+      const { data: existingChat, error: existingChatError } = chatByJob?.id
+        ? { data: null, error: null }
+        : await supabase
+        .from('chats')
+        .select('id, job_id')
+        .eq('client_id', me.id)
+        .eq('worker_id', workerId)
+        .is('job_id', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
       if (existingChatError) throw existingChatError;
 
-      let nextChatId = existingChat?.id || null;
+      let nextChatId = chatByJob?.id || existingChat?.id || null;
 
-      if (nextChatId) {
+      if (existingChat?.id) {
         const { error: chatUpdateError } = await supabase
           .from('chats')
           .update({ job_id: nextJobId })
           .eq('id', nextChatId);
 
         if (chatUpdateError) throw chatUpdateError;
-      } else {
+      } else if (!nextChatId) {
         const { data: newChat, error: chatError } = await supabase
           .from('chats')
           .insert([
@@ -3063,8 +3154,26 @@ useEffect(() => {
           .select('id')
           .single();
 
-        if (chatError) throw chatError;
-        nextChatId = newChat?.id || null;
+        if (chatError) {
+          if (chatError.code === '23505') {
+            const { data: racedChat, error: racedError } = await supabase
+              .from('chats')
+              .select('id')
+              .eq('job_id', nextJobId)
+              .maybeSingle();
+
+            if (racedError) throw racedError;
+            if (racedChat?.id) {
+              nextChatId = racedChat.id;
+            } else {
+              throw chatError;
+            }
+          } else {
+            throw chatError;
+          }
+        } else {
+          nextChatId = newChat?.id || null;
+        }
       }
 
       if (!nextChatId) throw new Error('No pudimos abrir el chat creado');
@@ -3080,7 +3189,7 @@ useEffect(() => {
       router.push(`/chat/${nextChatId}`);
     } catch (error) {
       console.error('hire worker from worker feed error:', error);
-      toast.error(error?.message || 'No pudimos iniciar la contratacion');
+      toast.error(userFriendlyError(error, 'No pudimos abrir la conversacion ahora. Proba de nuevo.'));
     }
   }
 

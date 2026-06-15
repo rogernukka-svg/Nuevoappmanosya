@@ -32,6 +32,7 @@ import { getSupabase } from '@/lib/supabase';
 import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
 import { requireRole } from '@/lib/roleRedirect';
 import { canAttemptAction, inspectTextSafety, safeExternalUrl } from '@/lib/security';
+import { userFriendlyError } from '@/lib/userFacingErrors';
 
 /* === Leaflet Map === */
 import dynamic from 'next/dynamic';
@@ -1081,12 +1082,62 @@ useEffect(() => {
       }, {});
     }
 
-    const enriched = filteredList.map((j) => ({
-      ...j,
-      client: profilesMap[j.client_id] || null,
-    }));
+    const jobIds = filteredList.map((job) => job.id).filter(Boolean);
+    const { data: chatsData } = jobIds.length
+      ? await supabase
+          .from('chats')
+          .select('id, job_id, created_at')
+          .in('job_id', jobIds)
+          .eq('worker_id', workerId)
+      : { data: [] };
+
+    const chatByJobId = {};
+    for (const chat of chatsData || []) {
+      if (chat?.job_id && !chatByJobId[String(chat.job_id)]) {
+        chatByJobId[String(chat.job_id)] = chat;
+      }
+    }
+
+    const chatIds = (chatsData || []).map((chat) => chat.id).filter(Boolean);
+    const { data: messagesData } = chatIds.length
+      ? await supabase
+          .from('messages')
+          .select('id, chat_id, text, content, body, created_at')
+          .in('chat_id', chatIds)
+          .order('created_at', { ascending: false })
+          .limit(250)
+      : { data: [] };
+
+    const lastMessageByChatId = {};
+    for (const message of messagesData || []) {
+      const chatId = String(message.chat_id || '');
+      if (chatId && !lastMessageByChatId[chatId]) {
+        lastMessageByChatId[chatId] = message;
+      }
+    }
+
+    const nextJobLastMessages = {};
+    const enriched = filteredList
+      .map((j) => {
+        const chat = chatByJobId[String(j.id)] || null;
+        const lastMessage = chat?.id ? lastMessageByChatId[String(chat.id)] || null : null;
+        if (lastMessage) nextJobLastMessages[String(j.id)] = lastMessage;
+
+        return {
+          ...j,
+          client: profilesMap[j.client_id] || null,
+          chat_id: chat?.id || null,
+          last_activity_at: lastMessage?.created_at || chat?.created_at || j.created_at || null,
+        };
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.last_activity_at || b.created_at || 0).getTime() -
+          new Date(a.last_activity_at || a.created_at || 0).getTime()
+      );
 
     setJobs(enriched);
+    setJobLastMessages(nextJobLastMessages);
 
     const currentStatus = workerProfile?.status || 'available';
     const finalStatus = currentStatus === 'paused' ? 'paused' : 'available';
@@ -1105,7 +1156,7 @@ useEffect(() => {
       .eq('user_id', workerId);
   } catch (err) {
     console.error('âŒ Error cargando trabajos:', err);
-    toast.error('Error al cargar trabajos');
+    toast.error(userFriendlyError(err, 'Estamos actualizando tus pedidos. Proba de nuevo en un momento.'));
   } finally {
     setLoading(false);
   }
@@ -1142,9 +1193,9 @@ async function refreshWorkerUnreadBadges() {
 
     const { data: msgs, error: msgsError } = await supabase
       .from('messages')
-      .select('id, chat_id, sender_id, created_at')
+      .select('id, chat_id, sender_id, text, content, body, created_at')
       .in('chat_id', chatIds)
-      .neq('sender_id', user.id);
+      .order('created_at', { ascending: false });
 
     if (msgsError) throw msgsError;
 
@@ -1154,16 +1205,21 @@ async function refreshWorkerUnreadBadges() {
     }, {});
 
     const nextByJob = {};
+    const nextLastMessages = {};
 
     (msgs || []).forEach((msg) => {
       const chatId = String(msg.chat_id);
       const jobId = chatToJob[chatId];
       if (!jobId) return;
 
+      if (!nextLastMessages[jobId]) {
+        nextLastMessages[jobId] = msg;
+      }
+
       const seenAt = Number(seenMap[chatId] || 0);
       const msgTime = new Date(msg.created_at).getTime();
 
-      if (msgTime > seenAt) {
+      if (String(msg.sender_id || '') !== String(user.id) && msgTime > seenAt) {
         nextByJob[jobId] = (nextByJob[jobId] || 0) + 1;
       }
     });
@@ -1171,6 +1227,21 @@ async function refreshWorkerUnreadBadges() {
     const total = Object.values(nextByJob).reduce((sum, n) => sum + Number(n || 0), 0);
 
     setWorkerUnreadByJob(nextByJob);
+    setJobLastMessages((prev) => ({ ...prev, ...nextLastMessages }));
+    setJobs((prev) =>
+      [...prev]
+        .map((job) => {
+          const lastMessage = nextLastMessages[String(job.id)];
+          return lastMessage
+            ? { ...job, last_activity_at: lastMessage.created_at || job.last_activity_at || job.created_at }
+            : job;
+        })
+        .sort(
+          (a, b) =>
+            new Date(b.last_activity_at || b.created_at || 0).getTime() -
+            new Date(a.last_activity_at || a.created_at || 0).getTime()
+        )
+    );
     setUnreadCount(total);
     setHasUnread(total > 0);
   } catch (err) {
@@ -1600,7 +1671,7 @@ async function toggleStatus() {
     );
   } catch (err) {
     console.error('Error cambiando estado:', err.message);
-    toast.error('No se pudo cambiar tu estado');
+    toast.error(userFriendlyError(err, 'No pudimos actualizar tu estado. Proba de nuevo.'));
   }
 }
 
@@ -1614,7 +1685,7 @@ async function openWorkerJob(job) {
     await openChat(job);
   } catch (err) {
     console.error('âŒ Error abriendo pedido:', err);
-    toast.error('No se pudo abrir el pedido');
+    toast.error(userFriendlyError(err, 'No pudimos abrir este pedido ahora. Proba de nuevo.'));
   }
 }
 
@@ -1711,7 +1782,7 @@ async function openChat(job) {
       } else {
         const { data: chatByPair, error: chatByPairError } = await supabase
           .from('chats')
-          .select('id')
+          .select('id, job_id')
           .eq('client_id', job.client_id)
           .eq('worker_id', user.id)
           .order('created_at', { ascending: false })
@@ -1720,13 +1791,15 @@ async function openChat(job) {
 
         if (chatByPairError) throw chatByPairError;
 
-        if (chatByPair?.id) {
+        if (chatByPair?.id && !chatByPair?.job_id) {
           cid = chatByPair.id;
 
-          await supabase
+          const { error: linkChatError } = await supabase
             .from('chats')
             .update({ job_id: job.id })
             .eq('id', cid);
+
+          if (linkChatError) throw linkChatError;
         } else {
           const { data: newChat, error: newChatError } = await supabase
             .from('chats')
@@ -1740,8 +1813,26 @@ async function openChat(job) {
             .select('id')
             .single();
 
-          if (newChatError) throw newChatError;
+          if (newChatError) {
+            if (newChatError.code === '23505') {
+              const { data: racedChat, error: racedChatError } = await supabase
+                .from('chats')
+                .select('id')
+                .eq('job_id', job.id)
+                .maybeSingle();
+
+              if (racedChatError) throw racedChatError;
+              if (racedChat?.id) {
+                cid = racedChat.id;
+              } else {
+                throw newChatError;
+              }
+            } else {
+              throw newChatError;
+            }
+          } else {
           cid = newChat.id;
+          }
         }
       }
     }
@@ -1839,7 +1930,7 @@ setWorkerUnreadByJob((prev) => {
     chatChannelRef.current = ch;
   } catch (err) {
     console.error('âŒ Error abriendo chat:', err);
-    toast.error('No se pudo abrir el chat');
+    toast.error(userFriendlyError(err, 'No pudimos abrir el chat ahora. Proba de nuevo.'));
   }
 }
 
@@ -1913,7 +2004,7 @@ useEffect(() => {
       router.replace('/worker', { scroll: false });
     } catch (error) {
       console.error('open worker chat deeplink error:', error);
-      toast.error('No se pudo abrir el chat del panel');
+      toast.error(userFriendlyError(error, 'No pudimos abrir este chat ahora. Proba actualizar.'));
     }
   }
 
@@ -1968,7 +2059,7 @@ async function sendMessage() {
     setTimeout(() => scrollWorkerChatToBottom(), 80);
   } catch (err) {
     console.error('âŒ Error enviando mensaje:', err);
-    toast.error('No se pudo enviar el mensaje');
+    toast.error(userFriendlyError(err, 'No pudimos enviar el mensaje. Proba de nuevo.'));
   } finally {
     setSending(false);
   }

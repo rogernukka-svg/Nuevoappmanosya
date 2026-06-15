@@ -47,6 +47,7 @@ import {
 import { requireRole } from '@/lib/roleRedirect';
 import { canAttemptAction, inspectTextSafety, safeExternalUrl } from '@/lib/security';
 import { trackUserEvent } from '@/lib/userEvents';
+import { userFriendlyError } from '@/lib/userFacingErrors';
 import {
   clearServiceIntent,
   getServiceLabel,
@@ -3200,6 +3201,75 @@ async function openCommentNotifications() {
   setCommentNotifications(data || []);
   setCommentNotificationsOpen(true);
 }
+
+async function getOrCreateChatForJob({ jobId, workerId }) {
+  if (!jobId || !workerId || !me?.id) return null;
+
+  const { data: chatByJob, error: chatByJobError } = await supabase
+    .from('chats')
+    .select('id, job_id')
+    .eq('job_id', jobId)
+    .eq('client_id', me.id)
+    .eq('worker_id', workerId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (chatByJobError) throw chatByJobError;
+  if (chatByJob?.id) return chatByJob.id;
+
+  const { data: reusableChat, error: reusableChatError } = await supabase
+    .from('chats')
+    .select('id, job_id')
+    .eq('client_id', me.id)
+    .eq('worker_id', workerId)
+    .is('job_id', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (reusableChatError) throw reusableChatError;
+
+  if (reusableChat?.id) {
+    const { error: linkError } = await supabase
+      .from('chats')
+      .update({ job_id: jobId })
+      .eq('id', reusableChat.id);
+
+    if (linkError) throw linkError;
+    return reusableChat.id;
+  }
+
+  const { data: newChat, error: chatError } = await supabase
+    .from('chats')
+    .insert([
+      {
+        job_id: jobId,
+        client_id: me.id,
+        worker_id: workerId,
+      },
+    ])
+    .select('id')
+    .single();
+
+  if (chatError) {
+    if (chatError.code === '23505') {
+      const { data: racedChat, error: racedError } = await supabase
+        .from('chats')
+        .select('id')
+        .eq('job_id', jobId)
+        .maybeSingle();
+
+      if (racedError) throw racedError;
+      if (racedChat?.id) return racedChat.id;
+    }
+
+    throw chatError;
+  }
+
+  return newChat?.id || null;
+}
+
 async function openMessage(worker, presetMessage = '') {
   const target = worker || selected || currentWorker;
   if (!target || !me?.id) return;
@@ -3268,42 +3338,7 @@ trackWorkerClientEvent('contact_worker', target, {
       jobId = newJob.id;
     }
 
-    const { data: existingChat, error: existingChatError } = await supabase
-      .from('chats')
-      .select('id, job_id')
-      .eq('client_id', me.id)
-      .eq('worker_id', workerId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (existingChatError) throw existingChatError;
-
-    let nextChatId = existingChat?.id || null;
-
-    if (nextChatId) {
-      const { error: chatUpdateError } = await supabase
-        .from('chats')
-        .update({ job_id: jobId })
-        .eq('id', nextChatId);
-
-      if (chatUpdateError) throw chatUpdateError;
-    } else {
-      const { data: newChat, error: chatError } = await supabase
-        .from('chats')
-        .insert([
-          {
-            job_id: jobId,
-            client_id: me.id,
-            worker_id: workerId,
-          },
-        ])
-        .select('id')
-        .single();
-
-      if (chatError) throw chatError;
-      nextChatId = newChat?.id || null;
-    }
+    const nextChatId = await getOrCreateChatForJob({ jobId, workerId });
 
     if (!nextChatId) throw new Error('No pudimos abrir el chat creado');
 
@@ -3329,7 +3364,7 @@ trackWorkerClientEvent('contact_worker', target, {
     router.push(`/client/chat/${nextChatId}`);
   } catch (error) {
     console.error('openMessage error', error);
-    toast.error(error?.message || 'No pudimos enviar el mensaje');
+    toast.error(userFriendlyError(error, 'No pudimos enviar el mensaje ahora. Proba de nuevo.'));
   }
 }
  async function requestWorker(worker) {
@@ -3373,40 +3408,7 @@ trackWorkerClientEvent('request_service', activeWorker, {
 
     if (jobError) throw jobError;
 
-    const { data: existingChat, error: existingChatError } = await supabase
-      .from('chats')
-      .select('id, job_id')
-      .eq('client_id', me.id)
-      .eq('worker_id', workerId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (existingChatError) throw existingChatError;
-
-    let nextChatId = existingChat?.id || null;
-
-    if (nextChatId) {
-      await supabase
-        .from('chats')
-        .update({ job_id: job.id })
-        .eq('id', nextChatId);
-    } else {
-      const { data: chat, error: chatError } = await supabase
-        .from('chats')
-        .insert([
-          {
-            job_id: job.id,
-            client_id: me.id,
-            worker_id: workerId,
-          },
-        ])
-        .select('id')
-        .single();
-
-      if (chatError) throw chatError;
-      nextChatId = chat?.id || null;
-    }
+    const nextChatId = await getOrCreateChatForJob({ jobId: job.id, workerId });
 
     setJobId(job.id);
     setJobStatus(job.status);
@@ -3508,7 +3510,7 @@ async function cancelActiveJob() {
     toast.success('Pedido cancelado');
   } catch (error) {
     console.error(error);
-    toast.error(error?.message || 'No pudimos cancelar el pedido');
+    toast.error(userFriendlyError(error, 'No pudimos cancelar el pedido. Proba de nuevo.'));
   } finally {
     setIsCancelling(false);
   }

@@ -7,10 +7,13 @@ import { motion } from 'framer-motion';
 import {
   BriefcaseBusiness,
   AudioLines,
+  Camera,
   ChevronLeft,
+  ImageIcon,
   MapPin,
   MessageCircle,
   Mic,
+  Plus,
   SendHorizontal,
   ShieldCheck,
   Sparkles,
@@ -27,7 +30,9 @@ import {
   hydrateAudioMessages,
   normalizeAudioMessage,
   uploadChatAudio,
+  uploadChatMedia,
 } from '@/lib/chatAudio';
+import { userFriendlyError } from '@/lib/userFacingErrors';
 
 const supabase = getSupabase();
 const WORKER_CHAT_SEEN_MAP_KEY = 'manosya_worker_chat_seen_map';
@@ -195,6 +200,38 @@ function AudioMessage({ message }) {
   );
 }
 
+function ChatMediaMessage({ message }) {
+  const src = message?.media_url || '';
+  const type = message?.message_type || '';
+
+  if (!src) {
+    return <div className="font-semibold text-[#123437]/70">Archivo no disponible</div>;
+  }
+
+  if (type === 'image') {
+    return (
+      <img
+        src={src}
+        alt="Imagen enviada"
+        className="max-h-[260px] w-full max-w-[260px] rounded-[16px] object-cover"
+      />
+    );
+  }
+
+  if (type === 'video') {
+    return (
+      <video
+        controls
+        preload="metadata"
+        src={src}
+        className="max-h-[260px] w-full max-w-[260px] rounded-[16px] bg-black"
+      />
+    );
+  }
+
+  return <AudioMessage message={message} />;
+}
+
 export default function ChatPage() {
   const params = useParams();
   const chatId = params?.chatId;
@@ -208,12 +245,16 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [sendingAudio, setSendingAudio] = useState(false);
+  const [sendingMedia, setSendingMedia] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [counterpartTyping, setCounterpartTyping] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
   const [viewportHeight, setViewportHeight] = useState('100dvh');
   const [keyboardOffset, setKeyboardOffset] = useState(0);
 
   const inputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
   const messagesWrapRef = useRef(null);
   const typingChannelRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -520,7 +561,7 @@ export default function ChatPage() {
       markWorkerChatRead(chatId);
     } catch (error) {
       console.error('No se pudo enviar el mensaje:', error);
-      toast.error(error?.message || 'No se pudo enviar el mensaje');
+      toast.error(userFriendlyError(error, 'No pudimos enviar el mensaje. Proba de nuevo.'));
     } finally {
       setSending(false);
     }
@@ -569,9 +610,106 @@ export default function ChatPage() {
       markWorkerChatRead(chatId);
     } catch (error) {
       console.error('No se pudo enviar el audio:', error);
-      toast.error(error?.message || 'No se pudo enviar el audio');
+      toast.error(userFriendlyError(error, 'No pudimos enviar el audio. Proba otra vez.'));
     } finally {
       setSendingAudio(false);
+    }
+  }
+
+  async function sendMediaMessage(file) {
+    if (!user?.id || !chatId || !file || sendingMedia) return;
+
+    try {
+      setSendingMedia(true);
+      setAttachOpen(false);
+
+      const media = await uploadChatMedia({
+        supabase,
+        chatId,
+        userId: user.id,
+        file,
+      });
+
+      const label = media.messageType === 'image' ? '[foto]' : '[video]';
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          chat_id: chatId,
+          sender_id: user.id,
+          text: label,
+          content: label,
+          body: label,
+          message_type: media.messageType,
+          media_path: media.mediaPath,
+          media_url: media.mediaUrl,
+          metadata: media.metadata,
+        })
+        .select('*')
+        .single();
+
+      if (error) throw error;
+
+      const saved = await hydrateAudioMessage({ supabase, message: data });
+      if (saved?.id) {
+        setMessages((prev) => {
+          if (prev.some((message) => message.id === saved.id)) return prev;
+          return [...prev, saved];
+        });
+      }
+
+      markWorkerChatRead(chatId);
+    } catch (error) {
+      console.error('No se pudo enviar el archivo:', error);
+      toast.error(userFriendlyError(error, 'No pudimos enviar el archivo. Proba con otro.'));
+    } finally {
+      setSendingMedia(false);
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
+      if (galleryInputRef.current) galleryInputRef.current.value = '';
+    }
+  }
+
+  function handleMediaInput(event) {
+    const file = event.target.files?.[0];
+    if (file) sendMediaMessage(file);
+  }
+
+  async function shareMyLocation() {
+    if (!navigator.geolocation || !user?.id || !chatId) {
+      toast.error('Tu navegador no permite compartir ubicacion');
+      return;
+    }
+
+    try {
+      setAttachOpen(false);
+
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: false,
+          timeout: 12000,
+          maximumAge: 15000,
+        });
+      });
+
+      const lat = Number(position.coords.latitude).toFixed(6);
+      const lng = Number(position.coords.longitude).toFixed(6);
+
+      const { data, error } = await supabase.rpc('post_chat_message', {
+        p_chat_id: chatId,
+        p_text: `Te comparto mi ubicacion: https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
+      });
+
+      if (error) throw error;
+
+      const saved = normalizeMessageRecord(data);
+      if (saved?.id) {
+        setMessages((prev) => {
+          if (prev.some((message) => message.id === saved.id)) return prev;
+          return [...prev, saved];
+        });
+      }
+    } catch (error) {
+      console.error('No se pudo compartir ubicacion:', error);
+      toast.error(userFriendlyError(error, 'No pudimos compartir la ubicacion. Revisa permisos y proba otra vez.'));
     }
   }
 
@@ -589,7 +727,7 @@ export default function ChatPage() {
         await sendAudioMessage(result.blob, result.durationMs);
       } catch (error) {
         console.error('No se pudo detener el audio:', error);
-        toast.error(error?.message || 'No se pudo enviar el audio');
+        toast.error(userFriendlyError(error, 'No pudimos enviar el audio. Revisa el microfono y proba otra vez.'));
         cancelRecording();
       }
       return;
@@ -600,7 +738,7 @@ export default function ChatPage() {
       toast.message('Grabando audio. Toca de nuevo para enviar.');
     } catch (error) {
       console.error('No se pudo iniciar la grabacion:', error);
-      toast.error(error?.message || 'No se pudo iniciar la grabacion');
+      toast.error(userFriendlyError(error, 'No pudimos abrir el microfono. Revisa permisos y proba otra vez.'));
     }
   }
 
@@ -717,7 +855,7 @@ export default function ChatPage() {
           {messages.map((message) => {
             const mine = String(message.sender_id || '') === String(user?.id || '');
             const text = message.text || '';
-            const isAudio = message.message_type === 'audio';
+            const isMedia = ['audio', 'image', 'video'].includes(message.message_type);
 
             return (
               <div key={message.id || `${message.created_at}-${text}`} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
@@ -729,8 +867,8 @@ export default function ChatPage() {
                       : 'rounded-tl-[4px] bg-[#dff7f5] text-[#123437]',
                   ].join(' ')}
                 >
-                  {isAudio ? (
-                    <AudioMessage message={message} />
+                  {isMedia ? (
+                    <ChatMediaMessage message={message} />
                   ) : (
                     <div className="whitespace-pre-wrap break-words font-semibold">{text}</div>
                   )}
@@ -770,13 +908,68 @@ export default function ChatPage() {
         ) : null}
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/16 text-[#1e7f7a]"
-            aria-label="Ubicacion"
-          >
-            <MapPin size={21} strokeWidth={2.4} />
-          </button>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setAttachOpen((prev) => !prev)}
+              disabled={sendingMedia}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/16 text-[#1e7f7a] disabled:opacity-55"
+              aria-label="Adjuntar"
+            >
+              <Plus size={22} strokeWidth={2.5} />
+            </button>
+
+            {attachOpen ? (
+              <div className="absolute bottom-[58px] left-0 z-30 w-[218px] overflow-hidden rounded-[24px] border border-white/55 bg-white/92 p-2 text-[#123437] shadow-[0_22px_48px_rgba(7,55,59,0.22)] backdrop-blur-xl">
+                <button
+                  type="button"
+                  onClick={shareMyLocation}
+                  className="flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-left text-[13px] font-black active:bg-[#e8f7f6]"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#dff7f5] text-[#1e7f7a]">
+                    <MapPin size={19} strokeWidth={2.6} />
+                  </span>
+                  Ubicacion
+                </button>
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-left text-[13px] font-black active:bg-[#e8f7f6]"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#dff7f5] text-[#1e7f7a]">
+                    <Camera size={19} strokeWidth={2.6} />
+                  </span>
+                  Sacar foto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                  className="flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-left text-[13px] font-black active:bg-[#e8f7f6]"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#dff7f5] text-[#1e7f7a]">
+                    <ImageIcon size={19} strokeWidth={2.6} />
+                  </span>
+                  Enviar foto o video
+                </button>
+              </div>
+            ) : null}
+
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleMediaInput}
+            />
+            <input
+              ref={galleryInputRef}
+              type="file"
+              accept="image/*,video/*"
+              className="hidden"
+              onChange={handleMediaInput}
+            />
+          </div>
 
           <div className="flex h-12 min-w-0 flex-1 items-center rounded-full bg-white/16 px-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.10)]">
             <input
