@@ -143,6 +143,11 @@ const nextConfig = {
   async redirects() {
     return [
       {
+        source: "/worker",
+        destination: "/worker/feed",
+        permanent: false,
+      },
+      {
         source: "/:path*",
         has: [{ type: "host", value: "manosya.app" }],
         destination: "https://www.manosya.app/:path*",

@@ -107,7 +107,7 @@ export default function WorkerFullMap() {
         <div className="relative flex items-center justify-between px-4 py-4">
 
           <button
-            onClick={() => router.push("/worker")}
+            onClick={() => router.push("/worker/feed")}
             className="flex items-center gap-2 text-emerald-600 font-semibold active:scale-95 transition"
           >
             <svg xmlns="http://www.w3.org/2000/svg"

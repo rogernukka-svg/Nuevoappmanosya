@@ -35,6 +35,7 @@ export default function ClientOnlyLayout({ children }) {
   const isIsolated =
     pathname.startsWith('/fundador') ||
     pathname.startsWith('/founder') ||
+    pathname.startsWith('/chat') ||
     pathname.startsWith('/worker') ||
     pathname.startsWith('/supplier') ||
     pathname.startsWith('/business') ||

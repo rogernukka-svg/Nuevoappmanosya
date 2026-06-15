@@ -2548,6 +2548,7 @@ useEffect(() => {
 
   let mounted = true;
   let refreshTimer = null;
+  let channel = null;
 
   const safeRefresh = async () => {
     if (!mounted) return;
@@ -2565,40 +2566,67 @@ useEffect(() => {
     refreshTimer = setTimeout(() => {
       refreshTimer = null;
       safeRefresh();
-    }, 350);
+    }, 600);
   };
 
-  safeRefresh();
+  const startClientNotifications = async () => {
+    safeRefresh();
 
-  const channel = supabase
-    .channel(`client-notifications-${me.id}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'messages',
-      },
-      scheduleRefresh
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'worker_comments',
-        filter: `client_id=eq.${me.id}`,
-      },
-      scheduleRefresh
-    )
-    .subscribe((status) => {
-      console.log('client notification channel:', status);
+    const { data: chatsRaw, error: chatsError } = await supabase
+      .from('chats')
+      .select('id')
+      .eq('client_id', me.id);
+
+    if (!mounted) return;
+
+    if (chatsError) {
+      console.warn('client notification chats error', chatsError);
+      return;
+    }
+
+    const chatIds = [...new Set((chatsRaw || []).map((chat) => chat.id).filter(Boolean))].slice(0, 40);
+    const nextChannel = supabase
+      .channel(`client-notifications-${me.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chats',
+          filter: `client_id=eq.${me.id}`,
+        },
+        scheduleRefresh
+      );
+
+    chatIds.forEach((id) => {
+      nextChannel.on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${id}`,
+        },
+        (payload) => {
+          if (String(payload?.new?.sender_id || '') === String(me.id)) return;
+          scheduleRefresh();
+        }
+      );
     });
+
+    channel = nextChannel.subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('client notification channel:', status);
+      }
+    });
+  };
+
+  startClientNotifications();
 
   return () => {
     mounted = false;
     if (refreshTimer) clearTimeout(refreshTimer);
-    supabase.removeChannel(channel);
+    if (channel) supabase.removeChannel(channel);
   };
 }, [me?.id]);
   const filteredServices = useMemo(() => {
@@ -3204,64 +3232,6 @@ trackWorkerClientEvent('contact_worker', target, {
       return;
     }
 
-    if (presetMessage !== undefined) {
-      const { data: chatOnlyExisting, error: chatOnlyExistingError } = await supabase
-        .from('chats')
-        .select('id')
-        .eq('client_id', me.id)
-        .eq('worker_id', workerId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (chatOnlyExistingError) throw chatOnlyExistingError;
-
-      let chatOnlyId = chatOnlyExisting?.id || null;
-
-      if (!chatOnlyId) {
-        const { data: chatOnlyNew, error: chatOnlyCreateError } = await supabase
-          .from('chats')
-          .insert([
-            {
-              client_id: me.id,
-              worker_id: workerId,
-            },
-          ])
-          .select('id')
-          .single();
-
-        if (chatOnlyCreateError) throw chatOnlyCreateError;
-        chatOnlyId = chatOnlyNew?.id || null;
-      }
-
-      if (!chatOnlyId) throw new Error('No pudimos abrir el chat creado');
-
-      const { error: chatOnlyMessageError } = await supabase.from('messages').insert([
-        {
-          chat_id: chatOnlyId,
-          sender_id: me.id,
-          text: messageSafety.text,
-          content: messageSafety.text,
-        },
-      ]);
-
-      if (chatOnlyMessageError) throw chatOnlyMessageError;
-
-      setChatId(chatOnlyId);
-
-      saveServiceIntent({
-        role: 'client',
-        serviceSlug: chosenService,
-        serviceName: serviceLabel,
-        timing: null,
-        source: 'client_open_message',
-      });
-
-      toast.success('Mensaje enviado al trabajador');
-      router.push(`/client/chat/${chatOnlyId}`);
-      return;
-    }
-
     const { data: activeJob, error: activeJobError } = await supabase
       .from('jobs')
       .select('id, status, service_type')
@@ -3287,6 +3257,7 @@ trackWorkerClientEvent('contact_worker', target, {
             worker_id: workerId,
             service_type: chosenService || null,
             status: 'open',
+            ...(hasMeCoords ? { client_lat: Number(me.lat), client_lng: Number(me.lon) } : {}),
             description: `Servicio: ${serviceLabel} · Consulta desde feed cliente`,
           },
         ])
@@ -3336,14 +3307,10 @@ trackWorkerClientEvent('contact_worker', target, {
 
     if (!nextChatId) throw new Error('No pudimos abrir el chat creado');
 
-    const { error: messageError } = await supabase.from('messages').insert([
-      {
-        chat_id: nextChatId,
-        sender_id: me.id,
-        text: messageSafety.text,
-        content: messageSafety.text,
-      },
-    ]);
+    const { error: messageError } = await supabase.rpc('post_chat_message', {
+      p_chat_id: nextChatId,
+      p_text: messageSafety.text,
+    });
 
     if (messageError) throw messageError;
 
@@ -3397,6 +3364,7 @@ trackWorkerClientEvent('request_service', activeWorker, {
           worker_id: workerId,
           service_type: chosenService || null,
           status: 'open',
+          ...(hasMeCoords ? { client_lat: Number(me.lat), client_lng: Number(me.lon) } : {}),
           description: descriptionParts.join(' · '),
         },
       ])
@@ -3443,6 +3411,18 @@ trackWorkerClientEvent('request_service', activeWorker, {
     setJobId(job.id);
     setJobStatus(job.status);
     setChatId(nextChatId);
+
+    const requestText = `Hola ${activeWorker.full_name || ''}, necesito consultar por ${String(serviceLabel).toLowerCase()}.`;
+    const requestSafety = inspectTextSafety(requestText, { maxLength: 500 });
+    if (requestSafety.ok && nextChatId) {
+      const { error: messageError } = await supabase.rpc('post_chat_message', {
+        p_chat_id: nextChatId,
+        p_text: requestSafety.text,
+      });
+
+      if (messageError) throw messageError;
+    }
+
     setTrackingWorker(activeWorker);
     setTrackingOpen(true);
     setShowProfile(false);

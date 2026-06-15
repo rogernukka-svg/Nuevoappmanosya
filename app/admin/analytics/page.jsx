@@ -44,6 +44,9 @@ import {
   MessageCircle,
   Video,
   Image as ImageIcon,
+  Download,
+  Share2,
+  Crown,
 } from 'lucide-react';
 
 /* 📊 Recharts */
@@ -297,6 +300,10 @@ function probabilityToHitGoal(current, goal, slopePerDay) {
 
 function gs(n) {
   return `Gs. ${Number(n || 0).toLocaleString('es-PY')}`;
+}
+
+function fmtNumber(value) {
+  return Number(value || 0).toLocaleString('es-PY');
 }
 
 function pct(n, total) {
@@ -1657,6 +1664,66 @@ export default function AdminAnalyticsPage() {
     return out;
   }, [finance, stats, ops, healthScore]);
 
+  const strategicPlan = useMemo(
+    () =>
+      buildStrategicPlan({
+        stats,
+        finance,
+        ops,
+        operational,
+        control,
+        healthScore,
+        alerts: executiveAlerts,
+      }),
+    [stats, finance, ops, operational, control, healthScore, executiveAlerts]
+  );
+
+  const executiveReport = useMemo(
+    () =>
+      buildExecutiveReport({
+        range,
+        stats,
+        finance,
+        ops,
+        control,
+        operational,
+        insights,
+        healthScore,
+        alerts: executiveAlerts,
+        strategicPlan,
+      }),
+    [range, stats, finance, ops, control, operational, insights, healthScore, executiveAlerts, strategicPlan]
+  );
+
+  function handleDownloadReport() {
+    downloadTextFile(
+      `manosya-reporte-ejecutivo-${fmtD(new Date())}.md`,
+      executiveReport,
+      'text/markdown;charset=utf-8'
+    );
+    toast.success('Reporte ejecutivo descargado');
+  }
+
+  async function handleShareReport() {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({
+          title: 'Reporte ejecutivo ManosYA',
+          text: executiveReport,
+        });
+        return;
+      }
+
+      await navigator.clipboard.writeText(executiveReport);
+      toast.success('Reporte copiado para compartir');
+    } catch (err) {
+      if (err?.name !== 'AbortError') {
+        console.error(err);
+        toast.error('No se pudo compartir el reporte');
+      }
+    }
+  }
+
     if (!accessChecked) {
     return (
       <div className="min-h-screen bg-[#06111A] text-white flex items-center justify-center">
@@ -1681,7 +1748,12 @@ export default function AdminAnalyticsPage() {
       </div>
 
       <main className="relative z-10 mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8">
-        <TopHeader range={range} setRange={setRange} />
+        <TopHeader
+          range={range}
+          setRange={setRange}
+          onDownloadReport={handleDownloadReport}
+          onShareReport={handleShareReport}
+        />
 
         <ExecutiveHero
           healthScore={healthScore}
@@ -1690,6 +1762,14 @@ export default function AdminAnalyticsPage() {
           finance={finance}
           control={control}
           loading={loading}
+        />
+
+        <ExecutiveOperatingBrief
+          strategicPlan={strategicPlan}
+          alerts={executiveAlerts}
+          healthScore={healthScore}
+          finance={finance}
+          operational={operational}
         />
 
         <TabsBar activeTab={activeTab} setActiveTab={setActiveTab} alerts={executiveAlerts.length} />
@@ -2006,7 +2086,7 @@ export default function AdminAnalyticsPage() {
 /* =========================
    UI PARTS
 ========================= */
-function TopHeader({ range, setRange }) {
+function TopHeader({ range, setRange, onDownloadReport, onShareReport }) {
   return (
     <div className="mb-6 overflow-hidden rounded-[34px] border border-white/55 bg-white/88 p-5 text-[#06182a] shadow-[0_24px_70px_rgba(8,35,52,0.14)] backdrop-blur-xl">
       <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
@@ -2029,21 +2109,42 @@ function TopHeader({ range, setRange }) {
         </div>
         </div>
 
-        <div className="flex items-center gap-2 rounded-2xl border border-[#69c4c0]/25 bg-[#69c4c0]/10 p-2">
-          <CalendarClock className="ml-2 h-4 w-4 text-[#137d78]" />
-          {RANGES.map((r) => (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 rounded-2xl border border-[#69c4c0]/25 bg-[#69c4c0]/10 p-2">
+            <CalendarClock className="ml-2 h-4 w-4 text-[#137d78]" />
+            {RANGES.map((r) => (
+              <button
+                key={r.key}
+                onClick={() => setRange(r.key)}
+                className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                  range === r.key
+                    ? 'bg-[#06182a] text-white'
+                    : 'text-[#06182a]/65 hover:bg-white/70'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
             <button
-              key={r.key}
-              onClick={() => setRange(r.key)}
-              className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                range === r.key
-                  ? 'bg-[#06182a] text-white'
-                  : 'text-[#06182a]/65 hover:bg-white/70'
-              }`}
+              type="button"
+              onClick={onDownloadReport}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#06182a] px-4 py-3 text-sm font-black text-white shadow-[0_16px_34px_rgba(6,24,42,0.18)] transition hover:scale-[1.01] active:scale-95"
             >
-              {r.label}
+              <Download className="h-4 w-4" />
+              Descargar
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={onShareReport}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#69c4c0]/35 bg-white/70 px-4 py-3 text-sm font-black text-[#06182a] transition hover:bg-white active:scale-95"
+            >
+              <Share2 className="h-4 w-4" />
+              Compartir
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -2111,6 +2212,109 @@ function ExecutiveHero({ healthScore, healthUI, stats, finance, loading }) {
           <MiniKeyLine icon={<Brain className="h-4 w-4" />} label="Proyección de crecimiento" />
         </div>
       </div>
+    </div>
+  );
+}
+
+function ExecutiveOperatingBrief({ strategicPlan, alerts, healthScore, finance, operational }) {
+  const topAlerts = alerts.slice(0, 3);
+  const margin =
+    finance.totalRevenue > 0
+      ? ((finance.netProfit || 0) / Math.max(finance.totalRevenue, 1)) * 100
+      : 0;
+
+  return (
+    <div className="mb-6 rounded-[30px] border border-white/55 bg-white/86 p-5 text-[#06182a] shadow-[0_20px_58px_rgba(8,35,52,0.13)] backdrop-blur-xl">
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[#69c4c0]/35 bg-[#69c4c0]/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-[#137d78]">
+            <Crown className="h-3.5 w-3.5" />
+            Founder operating brief
+          </div>
+          <h2 className="text-2xl font-black tracking-[-0.035em] md:text-3xl">Lo que miraría un CEO obsesivo</h2>
+          <p className="mt-1 max-w-3xl text-sm font-semibold leading-relaxed text-slate-600">
+            Una lectura corta para decidir producto, operación y marketing sin perderse en datos sueltos.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <MiniBoardMetric label="Salud" value={`${healthScore}/100`} />
+          <MiniBoardMetric label="Margen" value={`${margin.toFixed(1)}%`} />
+          <MiniBoardMetric label="Riesgos" value={alerts.length} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-4">
+        {strategicPlan.map((item) => {
+          const Icon = item.icon;
+          return (
+            <div key={item.title} className="rounded-[24px] border border-[#69c4c0]/24 bg-[#69c4c0]/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.38)]">
+              <div className="mb-3 flex items-center gap-3">
+                <div className="rounded-2xl bg-white/70 p-3 text-[#137d78]">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-black uppercase tracking-[0.14em] text-[#137d78]">{item.kicker}</div>
+                  <div className="font-black text-[#06182a]">{item.title}</div>
+                </div>
+              </div>
+              <p className="text-sm font-semibold leading-relaxed text-slate-600">{item.read}</p>
+              <div className="mt-3 rounded-2xl bg-white/62 px-3 py-2 text-xs font-black text-[#06182a]">
+                {item.next}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-[24px] border border-white/55 bg-white/62 p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-black text-[#06182a]">
+            <Siren className="h-4 w-4 text-amber-600" />
+            Prioridades de dirección
+          </div>
+          <div className="grid gap-2">
+            {(topAlerts.length ? topAlerts : [{ title: 'Sin alertas críticas', detail: 'El sistema está estable para ejecutar foco comercial.' }]).map((alert) => (
+              <div key={`${alert.title}-${alert.detail}`} className="rounded-2xl bg-[#06182a]/5 px-4 py-3">
+                <div className="text-sm font-black text-[#06182a]">{alert.title}</div>
+                <div className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">{alert.detail}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-[24px] border border-white/55 bg-[#06182a] p-4 text-white">
+          <div className="mb-3 flex items-center gap-2 text-sm font-black">
+            <Target className="h-4 w-4 text-[#9af7ef]" />
+            Mensaje para marketing
+          </div>
+          <p className="text-sm font-semibold leading-relaxed text-white/72">
+            Empujar confianza y rapidez: mostrar trabajadores verificados, pedidos resueltos, respuesta humana y oficios con demanda real.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <MiniDarkMetric label="Aceptación" value={`${(operational.metrics?.acceptanceRate || 0).toFixed(1)}%`} />
+            <MiniDarkMetric label="Respuesta" value={formatDuration(Math.round(operational.metrics?.avgResponseMinutes || 0))} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniBoardMetric({ label, value }) {
+  return (
+    <div className="rounded-2xl bg-[#06182a]/7 px-4 py-3">
+      <div className="text-[11px] font-black uppercase tracking-[0.12em] text-[#137d78]">{label}</div>
+      <div className="mt-1 text-xl font-black text-[#06182a]">{value}</div>
+    </div>
+  );
+}
+
+function MiniDarkMetric({ label, value }) {
+  return (
+    <div className="rounded-2xl bg-white/10 px-3 py-3">
+      <div className="text-[11px] font-black uppercase tracking-[0.12em] text-white/45">{label}</div>
+      <div className="mt-1 text-lg font-black text-white">{value}</div>
     </div>
   );
 }
@@ -3243,4 +3447,176 @@ Resultado neto: ${gs(finance.netProfit)}.
 Documentación incompleta: ${ops.workersWithoutDocs}.
 Crecimiento anualizado de usuarios: ${growth}.
 Alertas activas: ${alerts.length}.`;
+}
+
+function buildStrategicPlan({ stats, finance, ops, operational, control, healthScore, alerts }) {
+  const workerCoverage =
+    stats.totalWorkers > 0 ? (stats.activeWorkers / Math.max(stats.totalWorkers, 1)) * 100 : 0;
+  const documentation =
+    stats.totalWorkers > 0 ? (ops.workersWithDocs / Math.max(stats.totalWorkers, 1)) * 100 : 0;
+  const demandRatio = stats.totalWorkers > 0 ? stats.totalJobs / Math.max(stats.totalWorkers, 1) : 0;
+  const netMargin =
+    finance.totalRevenue > 0 ? ((finance.netProfit || 0) / Math.max(finance.totalRevenue, 1)) * 100 : 0;
+
+  return [
+    {
+      icon: Target,
+      kicker: 'Producto',
+      title: 'Una promesa simple',
+      read:
+        demandRatio >= 1
+          ? 'La oferta ya tiene señales de uso. El producto debe reducir fricción entre pedido, respuesta y cierre.'
+          : 'La promesa todavía necesita más demanda observable por trabajador. Menos pantallas, más pedido resuelto.',
+      next: 'Medir tiempo desde necesidad hasta primer contacto.',
+    },
+    {
+      icon: ShieldCheck,
+      kicker: 'Confianza',
+      title: 'Verificación como marca',
+      read:
+        documentation >= 70
+          ? 'La documentación puede convertirse en argumento comercial: trabajadores visibles, seguros y ordenados.'
+          : `${ops.workersWithoutDocs || 0} trabajadores sin documentación completa frenan confianza y conversión.`,
+      next: 'Campaña interna: completar perfiles antes de crecer oferta.',
+    },
+    {
+      icon: Activity,
+      kicker: 'Operación',
+      title: 'Velocidad o ruido',
+      read:
+        (operational.metrics?.openNoResponse || 0) > 0
+          ? `${operational.metrics.openNoResponse} pedidos abiertos sin respuesta. La prioridad es respuesta, no volumen.`
+          : 'No hay cola crítica de pedidos sin respuesta. Es momento de empujar adquisición controlada.',
+      next: 'Crear tablero diario: abiertos, aceptados, completados, cancelados.',
+    },
+    {
+      icon: MegaphoneIcon,
+      kicker: 'Marketing',
+      title: 'Contar pruebas, no promesas',
+      read:
+        control.videos || control.photos || control.posts
+          ? `Hay ${control.posts} publicaciones, ${control.videos} videos y ${control.photos} fotos para convertir en historias.`
+          : 'Marketing necesita material de prueba: perfiles reales, antes/después, respuestas y testimonios.',
+      next: 'Publicar casos por rubro con ciudad, oficio, rapidez y resultado.',
+    },
+    {
+      icon: Wallet,
+      kicker: 'Finanzas',
+      title: 'Margen manda',
+      read:
+        netMargin >= 15
+          ? `Margen saludable de ${netMargin.toFixed(1)}%. Reinvertir en canales que traen pedidos, no solo usuarios.`
+          : `Margen en ${netMargin.toFixed(1)}%. Cuidar gasto operativo antes de acelerar campañas.`,
+      next: 'Cruzar gasto de marketing contra pedidos reales por semana.',
+    },
+    {
+      icon: Brain,
+      kicker: 'Dirección',
+      title: 'Foco brutal',
+      read:
+        healthScore >= 70 && alerts.length <= 2
+          ? 'El sistema está suficientemente estable para elegir una zona, un rubro y ganar densidad.'
+          : 'Hay que estabilizar la base antes de multiplicar ruido: datos, perfiles, respuesta y confianza.',
+      next: 'Elegir 3 métricas semanales y negar todo lo que no las mueva.',
+    },
+  ];
+}
+
+function MegaphoneIcon(props) {
+  return <SendHorizontal {...props} />;
+}
+
+function buildExecutiveReport({
+  range,
+  stats,
+  finance,
+  ops,
+  control,
+  operational,
+  insights,
+  healthScore,
+  alerts,
+  strategicPlan,
+}) {
+  const generatedAt = new Date().toLocaleString('es-PY');
+  const health = getHealthLabel(healthScore).label;
+  const margin =
+    finance.totalRevenue > 0 ? ((finance.netProfit || 0) / Math.max(finance.totalRevenue, 1)) * 100 : 0;
+
+  const lines = [
+    '# ManosYA - Reporte ejecutivo',
+    '',
+    `Generado: ${generatedAt}`,
+    `Ventana analizada: ${range} días`,
+    '',
+    '## Lectura de dirección',
+    `- Salud del negocio: ${healthScore}/100 (${health})`,
+    `- Margen neto registrado: ${margin.toFixed(1)}%`,
+    `- Usuarios: ${fmtNumber(stats.totalUsers)}`,
+    `- Trabajadores: ${fmtNumber(stats.totalWorkers)}`,
+    `- Trabajadores activos: ${fmtNumber(stats.activeWorkers)}`,
+    `- Trabajos/pedidos: ${fmtNumber(stats.totalJobs)}`,
+    `- Ingresos: ${gs(finance.totalRevenue)}`,
+    `- Gastos: ${gs(finance.totalExpenses)}`,
+    `- Resultado neto: ${gs(finance.netProfit)}`,
+    '',
+    '## Operación',
+    `- Tasa de aceptación: ${(operational.metrics?.acceptanceRate || 0).toFixed(1)}%`,
+    `- Tasa de cancelación: ${(operational.metrics?.cancellationRate || 0).toFixed(1)}%`,
+    `- Tasa de finalización: ${(operational.metrics?.completionRate || 0).toFixed(1)}%`,
+    `- Respuesta promedio: ${formatDuration(Math.round(operational.metrics?.avgResponseMinutes || 0))}`,
+    `- Pedidos abiertos sin respuesta: ${fmtNumber(operational.metrics?.openNoResponse || 0)}`,
+    `- Chats sin respuesta: ${fmtNumber(operational.metrics?.chatsNoResponse || 0)}`,
+    `- Trabajadores con documentos: ${fmtNumber(ops.workersWithDocs)}`,
+    `- Trabajadores sin documentos: ${fmtNumber(ops.workersWithoutDocs)}`,
+    '',
+    '## Crecimiento y contenido',
+    `- Forecast usuarios 30 días: ${formatForecast(insights.users)}`,
+    `- Forecast trabajadores 30 días: ${formatForecast(insights.workers)}`,
+    `- Forecast trabajos 30 días: ${formatForecast(insights.jobs)}`,
+    `- Publicaciones: ${fmtNumber(control.posts)}`,
+    `- Videos: ${fmtNumber(control.videos)}`,
+    `- Fotos: ${fmtNumber(control.photos)}`,
+    `- Chats: ${fmtNumber(control.chats)}`,
+    `- Mensajes: ${fmtNumber(control.messages)}`,
+    '',
+    '## Alertas ejecutivas',
+    ...(alerts.length
+      ? alerts.map((alert) => `- [${String(alert.level || 'info').toUpperCase()}] ${alert.title}: ${alert.detail}`)
+      : ['- Sin alertas críticas registradas.']),
+    '',
+    '## Plan Steve Jobs para ManosYA',
+    ...strategicPlan.map((item, index) => `${index + 1}. ${item.title}: ${item.read} Acción: ${item.next}`),
+    '',
+    '## Mensaje para marketing',
+    '- Vender confianza, rapidez y prueba real.',
+    '- Priorizar historias de trabajadores verificados, pedidos resueltos y rubros con demanda.',
+    '- No comunicar cantidad por cantidad: comunicar solución concreta, ciudad, oficio y resultado.',
+    '',
+    '## Preguntas para la próxima reunión',
+    '- Qué rubro genera más pedidos reales y mejor respuesta?',
+    '- Qué ciudad o zona merece densidad primero?',
+    '- Qué campaña trae pedidos, no solo visitas?',
+    '- Qué fricción impide que un cliente pase de mirar a pedir?',
+  ];
+
+  return lines.join('\n');
+}
+
+function formatForecast(insight) {
+  if (!insight?.forecast30 && insight?.forecast30 !== 0) return 'sin datos';
+  return fmtNumber(Math.max(0, Math.round(insight.forecast30)));
+}
+
+function downloadTextFile(filename, content, type = 'text/plain;charset=utf-8') {
+  if (typeof window === 'undefined') return;
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

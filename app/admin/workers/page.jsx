@@ -164,12 +164,12 @@ export default function AdminWorkersPage() {
         supabase.from('admin_workers_view').select('*').order('updated_at', { ascending: false }),
         supabase
           .from('profiles')
-          .select('id, full_name, email, phone, role, admin_role, avatar_url, city, created_at, updated_at, is_verified')
+          .select('id, full_name, email, phone, role, admin_role, avatar_url, created_at, updated_at, is_verified')
           .order('created_at', { ascending: false }),
         supabase.from('documents').select('user_id, doc_type, doc_number, front_url, back_url, file_url'),
         supabase
           .from('jobs')
-          .select('id, client_id, worker_id, status, service, created_at')
+          .select('*')
           .gte('created_at', since90.toISOString()),
         supabase.from(ADMIN_NOTES_TABLE).select('id, worker_id, note, created_at, admin_id').order('created_at', { ascending: false }),
         supabase
@@ -180,7 +180,7 @@ export default function AdminWorkersPage() {
 
       if (workerError) throw workerError;
       if (profileError) throw profileError;
-      if (docsError) throw docsError;
+      if (docsError) console.warn('No se pudieron cargar documentos admin:', docsError);
       if (jobsError) throw jobsError;
       if (notesError && notesError.code !== 'PGRST116') console.warn(notesError);
       if (blocksError && blocksError.code !== 'PGRST116') console.warn(blocksError);
@@ -199,12 +199,13 @@ export default function AdminWorkersPage() {
 
       for (const j of jobs || []) {
         const createdAt = new Date(j.created_at);
-        const service = j.service || 'Sin rubro';
+        const service = getJobServiceLabel(j);
+        const workerId = getJobWorkerId(j);
         serviceHeat[service] = (serviceHeat[service] || 0) + 1;
 
-        if (j.worker_id) {
-          if (!workerJobsByUser[j.worker_id]) workerJobsByUser[j.worker_id] = emptyWorkerStats();
-          hydrateWorkerStats(workerJobsByUser[j.worker_id], j, createdAt, startToday, startMonth);
+        if (workerId) {
+          if (!workerJobsByUser[workerId]) workerJobsByUser[workerId] = emptyWorkerStats();
+          hydrateWorkerStats(workerJobsByUser[workerId], j, createdAt, startToday, startMonth);
         }
 
         if (j.client_id) {
@@ -289,12 +290,14 @@ export default function AdminWorkersPage() {
           const stats = clientJobsByUser[p.id] || emptyClientStats();
           const status = getClientStatus(p, stats);
           const score = calculateClientScore(p, stats);
+          const clientCity = p.city || '';
 
           return {
             ...p,
             user_id: p.id,
             kind: 'client',
             personLabel: 'Cliente',
+            city: clientCity,
             stats,
             clientStatus: status,
             profileScore: score,
@@ -302,7 +305,7 @@ export default function AdminWorkersPage() {
               p.full_name,
               p.email,
               p.phone,
-              p.city,
+              clientCity,
               p.role,
               'cliente usuario comprador servicio solicitud pedido',
             ]
@@ -1247,7 +1250,7 @@ function ClientDetailModal({ client, onClose }) {
       try {
         const { data, error } = await supabase
           .from('jobs')
-          .select('id, service, status, created_at, worker_id')
+          .select('*')
           .eq('client_id', client.user_id)
           .order('created_at', { ascending: false })
           .limit(30);
@@ -1359,6 +1362,28 @@ function WorkerDetailModal({ worker, onClose, onVerify, onSaveNote, onToggleBloc
     (async () => {
       setLoading(true);
       try {
+        const loadWorkerJobs = async () => {
+          let result = await supabase
+            .from('jobs')
+            .select('*')
+            .eq('worker_id', worker.user_id)
+            .order('created_at', { ascending: false });
+
+          if (
+            result.error &&
+            (result.error.code === '42703' || String(result.error.message || '').includes('worker_id'))
+          ) {
+            result = await supabase
+              .from('jobs')
+              .select('*')
+              .eq('assigned_worker', worker.user_id)
+              .order('created_at', { ascending: false });
+          }
+
+          if (result.error) throw result.error;
+          return result.data || [];
+        };
+
         const startMonth = new Date();
         startMonth.setDate(1);
         startMonth.setHours(0, 0, 0, 0);
@@ -1366,16 +1391,16 @@ function WorkerDetailModal({ worker, onClose, onVerify, onSaveNote, onToggleBloc
         const startWeek = new Date();
         startWeek.setDate(startWeek.getDate() - 7);
 
-        const [{ data: profile }, { data: docs }, { data: bank }, { data: jobs }, { data: adminHistory }] = await Promise.all([
+        const [{ data: profile }, { data: docs }, { data: bank }, workerJobs, { data: adminHistory }] = await Promise.all([
           supabase.from('profiles').select('email, full_name, phone, created_at').eq('id', worker.user_id).maybeSingle(),
           supabase.from('documents').select('doc_type, doc_number, front_url, back_url, file_url').eq('user_id', worker.user_id),
           supabase.from('bank_accounts').select('bank_name, account_type, account_number, holder_name, holder_document').eq('user_id', worker.user_id).maybeSingle(),
-          supabase.from('jobs').select('status, created_at, service').eq('worker_id', worker.user_id).order('created_at', { ascending: false }),
+          loadWorkerJobs(),
           supabase.from(ADMIN_HISTORY_TABLE).select('id, action, detail, extra, created_at, admin_id').eq('worker_id', worker.user_id).order('created_at', { ascending: false }).limit(20),
         ]);
 
         const stats = emptyWorkerStats();
-        for (const j of jobs || []) {
+        for (const j of workerJobs || []) {
           const createdAt = new Date(j.created_at);
           hydrateWorkerStats(stats, j, createdAt, new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), startMonth);
           if (createdAt >= startWeek) stats.thisWeek += 1;
@@ -1673,7 +1698,7 @@ function JobRow({ job }) {
   return (
     <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <div className="text-sm font-bold text-white">{job.service || 'Servicio sin nombre'}</div>
+        <div className="text-sm font-bold text-white">{getJobServiceLabel(job)}</div>
         <div className="text-xs text-white/45">{job.created_at ? new Date(job.created_at).toLocaleString('es-AR') : 'Sin fecha'}</div>
       </div>
       <div className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/70">{humanizeJobStatus(job.status)}</div>
@@ -1690,6 +1715,22 @@ function groupBy(list, key) {
     out[val].push(item);
   }
   return out;
+}
+
+function getJobWorkerId(job) {
+  return job?.worker_id || job?.assigned_worker || job?.worker || null;
+}
+
+function getJobServiceLabel(job) {
+  return (
+    job?.service ||
+    job?.service_type ||
+    job?.title ||
+    job?.skill_slug ||
+    job?.skill_id ||
+    job?.description ||
+    'Servicio sin nombre'
+  );
 }
 
 function normalizeRole(role) {

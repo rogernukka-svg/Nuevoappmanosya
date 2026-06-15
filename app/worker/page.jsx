@@ -49,10 +49,10 @@ const supabase = getSupabase();
 const CHAT_SERVICE_WATERMARKS = [
   'Taxi', 'Chofer', 'Plomeria', 'Electricidad', 'Limpieza', 'Jardineria', 'Pintura', 'Albanileria',
   'Carpinteria', 'Cerrajeria', 'Mecanica', 'Refrigeracion', 'Mudanza', 'Fletes', 'Parrillero', 'Cocina',
-  'Niñera', 'Cuidador', 'Enfermeria', 'Belleza', 'Maquillaje', 'Peluqueria', 'Masajes', 'Costura',
+  'NiÃ±era', 'Cuidador', 'Enfermeria', 'Belleza', 'Maquillaje', 'Peluqueria', 'Masajes', 'Costura',
   'Tecnico PC', 'Celulares', 'Internet', 'Camara CCTV', 'Soldadura', 'Herreria', 'Vidrieria', 'Tapiceria',
   'Piscina', 'Fumigacion', 'Lavadero', 'Delivery', 'Mensajeria', 'Eventos', 'Fotografia', 'Video',
-  'DJ', 'Musica', 'Profesor', 'Traduccion', 'Contabilidad', 'Abogacia', 'Arquitectura', 'Diseño',
+  'DJ', 'Musica', 'Profesor', 'Traduccion', 'Contabilidad', 'Abogacia', 'Arquitectura', 'DiseÃ±o',
   'Veterinaria', 'Mascotas', 'Seguridad', 'Servicio general',
 ];
 
@@ -187,7 +187,7 @@ function parseJobRequestDetails(description) {
   const text = String(description || '');
 
   const parts = text
-    .split(' · ')
+    .split(' Â· ')
     .map((p) => String(p || '').trim())
     .filter(Boolean);
 
@@ -230,7 +230,7 @@ function parseJobRequestDetails(description) {
   if (
     !result.requestedDate &&
     !result.requestedTime &&
-    /presupuesto|cotización|cotizacion|diagnóstico|diagnostico/i.test(text)
+    /presupuesto|cotizaciÃ³n|cotizacion|diagnÃ³stico|diagnostico/i.test(text)
   ) {
     result.requestKind = 'quote';
   }
@@ -294,7 +294,7 @@ function workerModeMeta(status) {
   if (status === 'paused') {
     return {
       title: 'En pausa',
-      subtitle: 'No recibís pedidos temporalmente',
+      subtitle: 'No recibÃ­s pedidos temporalmente',
       tone: 'gray',
       pill: 'Pausado',
       dot: 'bg-gray-400',
@@ -305,7 +305,7 @@ function workerModeMeta(status) {
 
   return {
     title: 'Ocupado',
-    subtitle: 'Tenés un trabajo en curso',
+    subtitle: 'TenÃ©s un trabajo en curso',
     tone: 'cyan',
     pill: 'Trabajando',
     dot: 'bg-cyan-500',
@@ -353,25 +353,25 @@ const HOTSPOTS = [
   { name: 'Km 7', lat: -25.4812, lng: -54.625, intensity: 8 },
   { name: 'Km 8', lat: -25.475, lng: -54.635, intensity: 6 },
   { name: 'Km 9 Monday', lat: -25.467, lng: -54.642, intensity: 6 },
-  { name: 'Barrio Boquerón', lat: -25.529, lng: -54.6078, intensity: 7 },
+  { name: 'Barrio BoquerÃ³n', lat: -25.529, lng: -54.6078, intensity: 7 },
   { name: 'Barrio Obrero', lat: -25.5247, lng: -54.6172, intensity: 6 },
-  { name: 'Área 1 Minga', lat: -25.4974, lng: -54.6621, intensity: 8 },
-  { name: 'Área 2 Minga', lat: -25.502, lng: -54.671, intensity: 7 },
+  { name: 'Ãrea 1 Minga', lat: -25.4974, lng: -54.6621, intensity: 8 },
+  { name: 'Ãrea 2 Minga', lat: -25.502, lng: -54.671, intensity: 7 },
   { name: 'Km 14 Monday', lat: -25.437, lng: -54.712, intensity: 6 },
   { name: 'Centro Minga', lat: -25.5085, lng: -54.6398, intensity: 7 },
-  { name: 'Aviación Minga', lat: -25.495, lng: -54.648, intensity: 7 },
+  { name: 'AviaciÃ³n Minga', lat: -25.495, lng: -54.648, intensity: 7 },
   { name: 'Costanera Hernandarias', lat: -25.4052, lng: -54.6424, intensity: 7 },
   { name: 'Centro Hernandarias', lat: -25.4062, lng: -54.64, intensity: 8 },
   { name: 'UNINTER Hernandarias', lat: -25.43, lng: -54.635, intensity: 6 },
-  { name: 'Itaipú Acceso 1', lat: -25.4105, lng: -54.5895, intensity: 8 },
+  { name: 'ItaipÃº Acceso 1', lat: -25.4105, lng: -54.5895, intensity: 8 },
   { name: 'Centro Franco', lat: -25.558, lng: -54.613, intensity: 7 },
-  { name: 'Río Monday', lat: -25.554, lng: -54.62, intensity: 6 },
-  { name: 'Fracción San Agustín', lat: -25.548, lng: -54.595, intensity: 7 },
+  { name: 'RÃ­o Monday', lat: -25.554, lng: -54.62, intensity: 6 },
+  { name: 'FracciÃ³n San AgustÃ­n', lat: -25.548, lng: -54.595, intensity: 7 },
   { name: 'Shopping del Sol', lat: -25.2914, lng: -57.5802, intensity: 10 },
   { name: 'Shopping Mariscal', lat: -25.2989, lng: -57.5889, intensity: 9 },
   { name: 'Villa Morra', lat: -25.2972, lng: -57.582, intensity: 8 },
   { name: 'Las Lomas', lat: -25.2849, lng: -57.566, intensity: 7 },
-  { name: 'Centro Asunción', lat: -25.2836, lng: -57.6359, intensity: 9 },
+  { name: 'Centro AsunciÃ³n', lat: -25.2836, lng: -57.6359, intensity: 9 },
   { name: 'Avenida Eusebio Ayala', lat: -25.3026, lng: -57.5837, intensity: 9 },
   { name: 'San Lorenzo Centro', lat: -25.3401, lng: -57.5078, intensity: 8 },
   { name: 'Universidad Nacional (UNA)', lat: -25.3385, lng: -57.5088, intensity: 7 },
@@ -379,9 +379,9 @@ const HOTSPOTS = [
   { name: 'Aeropuerto Silvio Pettirossi', lat: -25.2401, lng: -57.5139, intensity: 10 },
   { name: 'Zona Norte - Fdo', lat: -25.307, lng: -57.527, intensity: 7 },
   { name: 'Zona Sur - Fdo', lat: -25.325, lng: -57.531, intensity: 6 },
-  { name: 'Lambaré Centro', lat: -25.345, lng: -57.606, intensity: 7 },
+  { name: 'LambarÃ© Centro', lat: -25.345, lng: -57.606, intensity: 7 },
   { name: 'Yacht y Golf Club', lat: -25.3647, lng: -57.6004, intensity: 8 },
-  { name: 'Ñemby Centro', lat: -25.394, lng: -57.535, intensity: 7 },
+  { name: 'Ã‘emby Centro', lat: -25.394, lng: -57.535, intensity: 7 },
   { name: 'Limpio Centro', lat: -25.159, lng: -57.485, intensity: 6 },
 ];
 
@@ -401,14 +401,14 @@ function AvailabilityCarousel({ value, onChange }) {
     {
       id: 'paused',
       title: 'En pausa',
-      subtitle: 'No recibís pedidos temporalmente',
+      subtitle: 'No recibÃ­s pedidos temporalmente',
       pill: 'Pausado',
       tone: 'amber',
     },
     {
       id: 'busy',
       title: 'Ocupado',
-      subtitle: 'Tenés un trabajo en curso',
+      subtitle: 'TenÃ©s un trabajo en curso',
       pill: 'Trabajando',
       tone: 'rose',
     },
@@ -524,7 +524,7 @@ function AvailabilityCarousel({ value, onChange }) {
                         }`}
                       />
                       <span className="text-[12px] font-semibold text-gray-700">
-                        Deslizá para cambiar
+                        DeslizÃ¡ para cambiar
                       </span>
                     </div>
                   </button>
@@ -586,7 +586,7 @@ function WorkerFeedPlaceholder({ onOpenProfile }) {
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#62bfb9]/12 text-[#18b8aa]"><Sparkles size={22} /></div>
         <div>
           <h2 className="text-[19px] font-black text-slate-950">Feed profesional</h2>
-          <p className="text-[13px] font-semibold text-slate-500">Mostrá trabajos, fotos y videos.</p>
+          <p className="text-[13px] font-semibold text-slate-500">MostrÃ¡ trabajos, fotos y videos.</p>
         </div>
       </div>
      <button
@@ -598,7 +598,7 @@ function WorkerFeedPlaceholder({ onOpenProfile }) {
 </button>
       <div className="mt-4 rounded-[24px] border border-dashed border-[#62bfb9]/25 bg-[#62bfb9]/6 p-5 text-center">
         <div className="text-[15px] font-black text-slate-900">Feed listo para conectar</div>
-        <p className="mt-1 text-[13px] font-semibold leading-5 text-slate-500">Mantenemos la función y dejamos la vista limpia para el próximo paso.</p>
+        <p className="mt-1 text-[13px] font-semibold leading-5 text-slate-500">Mantenemos la funciÃ³n y dejamos la vista limpia para el prÃ³ximo paso.</p>
       </div>
     </section>
   );
@@ -654,7 +654,7 @@ function scrollWorkerChatToBottom(behavior = chatKeyboardOffset > 40 ? 'auto' : 
 
   const [status, setStatus] = useState(() => {
     if (typeof window === 'undefined') return 'available';
-    return localStorage.getItem('worker_status') || 'available';
+    return localStorage.getItem('worker_status') === 'paused' ? 'paused' : 'available';
   });
 
   const [isConnected, setIsConnected] = useState(true);
@@ -767,7 +767,7 @@ async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
 
 async function openGoogleMaps(lat, lng) {
   if (lat == null || lng == null) {
-    toast.error('El cliente todavía no compartió ubicación');
+    toast.error('El cliente todavÃ­a no compartiÃ³ ubicaciÃ³n');
     return;
   }
 
@@ -775,7 +775,7 @@ async function openGoogleMaps(lat, lng) {
   const lo = Number(lng);
 
   if (Number.isNaN(la) || Number.isNaN(lo)) {
-    toast.error('Ubicación inválida');
+    toast.error('UbicaciÃ³n invÃ¡lida');
     return;
   }
 
@@ -808,7 +808,7 @@ function openExternalNavigation(lat, lng) {
   const lo = Number(lng);
 
   if (Number.isNaN(la) || Number.isNaN(lo)) {
-    toast.error('Ubicación inválida');
+    toast.error('UbicaciÃ³n invÃ¡lida');
     return;
   }
 
@@ -857,7 +857,7 @@ const sheetSnapMeta = useMemo(() => {
     }
   }, [status]);
 
-  /* === SESIÓN === */
+  /* === SESIÃ“N === */
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -880,8 +880,8 @@ const sheetSnapMeta = useMemo(() => {
         setUser(currentUser);
         await ensureWorkerProfile(currentUser.id);
       } catch (err) {
-        console.error('Error inicializando sesión:', err);
-        toast.error('Error al obtener usuario o sesión expirada');
+        console.error('Error inicializando sesiÃ³n:', err);
+        toast.error('Error al obtener usuario o sesiÃ³n expirada');
         router.replace('/auth/login');
       }
     })();
@@ -928,7 +928,7 @@ useEffect(() => {
       lastSent = now;
 
       try {
-        // 🔥 1. actualizar perfil
+        // ðŸ”¥ 1. actualizar perfil
         await supabase.from('worker_profiles').upsert(
           {
             user_id: user.id,
@@ -943,7 +943,7 @@ useEffect(() => {
           { onConflict: 'user_id' }
         );
 
-        // 🔥 2. guardar en tabla realtime (ESTO FALTABA)
+        // ðŸ”¥ 2. guardar en tabla realtime (ESTO FALTABA)
        await supabase.from('worker_locations').upsert(
   {
     user_id: user.id,
@@ -954,12 +954,12 @@ useEffect(() => {
   { onConflict: 'user_id' }
 );
 
-        console.log('📍 ubicación enviada realtime');
+        console.log('ðŸ“ ubicaciÃ³n enviada realtime');
       } catch (err) {
-        console.error('❌ Error GPS realtime:', err);
+        console.error('âŒ Error GPS realtime:', err);
       }
     },
-    (err) => console.warn('🚫 Error GPS:', err),
+    (err) => console.warn('ðŸš« Error GPS:', err),
     {
       enableHighAccuracy: false,
       maximumAge: 0,
@@ -986,7 +986,7 @@ useEffect(() => {
         return;
       }
 
-      if (data?.status) setStatus(data.status);
+      if (data?.status) setStatus(data.status === 'paused' ? 'paused' : 'available');
     };
 
     fetchStatus();
@@ -1053,14 +1053,14 @@ useEffect(() => {
   const assignedToMe = String(job.worker_id || '') === String(workerId);
   const isOpen = String(job.status || '').toLowerCase() === 'open';
 
-  // ✅ Si el pedido ya viene dirigido a este trabajador,
-  // debe aparecer sí o sí.
+  // âœ… Si el pedido ya viene dirigido a este trabajador,
+  // debe aparecer sÃ­ o sÃ­.
   if (assignedToMe) return true;
 
-  // 🚫 Si no está abierto y no es mío, no se muestra.
+  // ðŸš« Si no estÃ¡ abierto y no es mÃ­o, no se muestra.
   if (!isOpen) return false;
 
-  // ✅ Pedidos generales: filtrar por rubro/skills.
+  // âœ… Pedidos generales: filtrar por rubro/skills.
   return matchesWorkerService(job, workerSkills);
 });
 
@@ -1088,20 +1088,8 @@ useEffect(() => {
 
     setJobs(enriched);
 
-    const activeImmediateJob = enriched.find((j) => {
-      if (j.worker_id !== workerId) return false;
-      if (!['accepted', 'assigned'].includes(String(j.status || '').toLowerCase())) return false;
-      return !shouldKeepWorkerAvailable(j);
-    });
-
     const currentStatus = workerProfile?.status || 'available';
-    const finalStatus =
-      activeImmediateJob
-        ? 'busy'
-        : currentStatus === 'busy'
-        ? 'available'
-        : currentStatus;
-
+    const finalStatus = currentStatus === 'paused' ? 'paused' : 'available';
     const finalIsActive = finalStatus === 'available';
 
     setStatus(finalStatus);
@@ -1111,12 +1099,12 @@ useEffect(() => {
       .update({
         status: finalStatus,
         is_active: finalIsActive,
-        busy_until: activeImmediateJob ? new Date(Date.now() + 60 * 60000).toISOString() : null,
+        busy_until: null,
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', workerId);
   } catch (err) {
-    console.error('❌ Error cargando trabajos:', err);
+    console.error('âŒ Error cargando trabajos:', err);
     toast.error('Error al cargar trabajos');
   } finally {
     setLoading(false);
@@ -1232,8 +1220,8 @@ if (String(fresh.status || '').toLowerCase() === 'cancelled') {
 
   toast(
     fresh.status === 'cancelled'
-      ? '🚫 El cliente canceló el trabajo'
-      : '✅ El cliente finalizó el trabajo'
+      ? 'ðŸš« El cliente cancelÃ³ el trabajo'
+      : 'âœ… El cliente finalizÃ³ el trabajo'
   );
 }, [jobs, selectedJob]);
 /* === NUEVOS TRABAJOS === */
@@ -1272,7 +1260,7 @@ useEffect(() => {
           .maybeSingle();
 
         if (error) {
-          console.warn('Error leyendo skills del worker para notificación:', error.message);
+          console.warn('Error leyendo skills del worker para notificaciÃ³n:', error.message);
           return;
         }
 
@@ -1314,10 +1302,10 @@ useEffect(() => {
 
         toast(
           details.requestKind === 'booking'
-            ? '🗓️ Nueva agenda disponible para tu servicio'
+            ? 'ðŸ—“ï¸ Nueva agenda disponible para tu servicio'
             : details.requestKind === 'quote'
-            ? '💬 Nuevo presupuesto disponible para tu servicio'
-            : '🆕 ¡Nueva solicitud de trabajo disponible!'
+            ? 'ðŸ’¬ Nuevo presupuesto disponible para tu servicio'
+            : 'ðŸ†• Â¡Nueva solicitud de trabajo disponible!'
         );
       }
     )
@@ -1385,8 +1373,8 @@ useEffect(() => {
 
                 const assignedToMe = String(data.worker_id || '') === String(user.id);
 
-// ✅ Pedido directo al trabajador: entra siempre.
-// ✅ Pedido general: entra solo si matchea rubro.
+// âœ… Pedido directo al trabajador: entra siempre.
+// âœ… Pedido general: entra solo si matchea rubro.
 if (!assignedToMe && !matchesWorkerService(data, workerSkills)) return;
 
                 let client = null;
@@ -1421,17 +1409,17 @@ if (!assignedToMe && !matchesWorkerService(data, workerSkills)) return;
                 const details = parseJobRequestDetails(data.description);
                 toast(
                   details.requestKind === 'booking'
-                    ? '🗓️ Nueva agenda disponible para tu servicio'
+                    ? 'ðŸ—“ï¸ Nueva agenda disponible para tu servicio'
                     : details.requestKind === 'quote'
-                    ? '💬 Nuevo presupuesto disponible para tu servicio'
-                    : '🆕 Nuevo pedido disponible cerca tuyo'
+                    ? 'ðŸ’¬ Nuevo presupuesto disponible para tu servicio'
+                    : 'ðŸ†• Nuevo pedido disponible cerca tuyo'
                 );
               })();
             }
             return;
           }
 
-          if (data.worker_id === user.id) {
+          if (String(data.worker_id || '') === String(user.id)) {
             setJobs((prev) =>
               prev.some((j) => j.id === data.id)
                 ? prev.map((j) => (j.id === data.id ? { ...j, ...data } : j))
@@ -1443,7 +1431,7 @@ if (!assignedToMe && !matchesWorkerService(data, workerSkills)) return;
             }
 
             if (data.status === 'cancelled') {
-              toast.warning('🚫 El cliente canceló el trabajo.');
+              toast.warning('ðŸš« El cliente cancelÃ³ el trabajo.');
 
               (async () => {
                 const { data: wp } = await supabase
@@ -1467,7 +1455,7 @@ if (!assignedToMe && !matchesWorkerService(data, workerSkills)) return;
                 setStatus(nextStatus);
               })();
             } else if (data.status === 'completed') {
-              toast.success('🎉 Trabajo finalizado por el cliente.');
+              toast.success('ðŸŽ‰ Trabajo finalizado por el cliente.');
 
               (async () => {
                 const { data: wp } = await supabase
@@ -1492,15 +1480,8 @@ if (!assignedToMe && !matchesWorkerService(data, workerSkills)) return;
               })();
 
               setIsChatOpen(false);
-            } else if (data.status === 'accepted' || data.status === 'scheduled') {
-              const keepAvailable =
-                data.status === 'scheduled' ? true : shouldKeepWorkerAvailable(data);
-
-              if (keepAvailable) {
-                setStatus((prev) => (prev === 'paused' ? 'paused' : 'available'));
-              } else {
-                setStatus('busy');
-              }
+            } else if (data.status === 'accepted' || data.status === 'assigned' || data.status === 'scheduled') {
+              setStatus((prev) => (prev === 'paused' ? 'paused' : 'available'));
             }
           }
 
@@ -1552,7 +1533,7 @@ if (!assignedToMe && !matchesWorkerService(data, workerSkills)) return;
           console.log('Evento realtime desconocido:', type, data);
       }
     } catch (err) {
-      console.warn('⚠️ Error en RealtimeCore worker:', err);
+      console.warn('âš ï¸ Error en RealtimeCore worker:', err);
     }
   });
 
@@ -1579,7 +1560,7 @@ async function toggleStatus() {
     });
 
     if (status === 'busy' && activeImmediateJob) {
-      toast.warning('Tenés un trabajo inmediato en curso. Finalizalo antes de volver a disponible.');
+      toast.warning('TenÃ©s un trabajo inmediato en curso. Finalizalo antes de volver a disponible.');
       return;
     }
 
@@ -1612,109 +1593,14 @@ async function toggleStatus() {
 
     toast.success(
       newStatus === 'available'
-        ? '🟢 Estás disponible'
+        ? 'ðŸŸ¢ EstÃ¡s disponible'
         : newStatus === 'paused'
-        ? '⏸️ Estás en pausa'
-        : '🔵 Estás trabajando'
+        ? 'â¸ï¸ EstÃ¡s en pausa'
+        : 'ðŸ”µ EstÃ¡s trabajando'
     );
   } catch (err) {
     console.error('Error cambiando estado:', err.message);
     toast.error('No se pudo cambiar tu estado');
-  }
-}
-
-/* === ACCEPT / OPEN JOB === */
-async function acceptJob(job) {
-  try {
-    if (!job?.id || !user?.id) {
-      toast.error('Faltan datos para aceptar el pedido');
-      return null;
-    }
-
-    if (String(job.status || '').toLowerCase() !== 'open') {
-      toast.warning('Este trabajo ya fue tomado');
-      return null;
-    }
-
-    const details = parseJobRequestDetails(job?.description);
-    const isScheduledBooking = details.requestKind === 'booking';
-
-    const nextJobStatus = isScheduledBooking ? 'scheduled' : 'accepted';
-    const nextWorkerStatus = isScheduledBooking ? 'available' : 'busy';
-    const nextBusyUntil = isScheduledBooking
-      ? null
-      : new Date(Date.now() + 60 * 60000).toISOString();
-
-    const { data: updatedJob, error: jobError } = await supabase
-      .from('jobs')
-      .update({
-        status: nextJobStatus,
-        worker_id: user.id,
-        accepted_at: new Date().toISOString(),
-      })
-      .eq('id', job.id)
-      .eq('status', 'open')
-      .select(`
-        id,
-        title,
-        description,
-        status,
-        client_id,
-        worker_id,
-        client_lat,
-        client_lng,
-        created_at,
-        service_type
-      `)
-      .maybeSingle();
-
-    if (jobError) throw jobError;
-
-    if (!updatedJob) {
-      toast.warning('Este pedido ya fue tomado por otro trabajador');
-      await loadJobs();
-      return null;
-    }
-
-    const { error: workerError } = await supabase
-      .from('worker_profiles')
-      .update({
-        status: nextWorkerStatus,
-        is_active: nextWorkerStatus === 'available',
-        busy_until: nextBusyUntil,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', user.id);
-
-    if (workerError) throw workerError;
-
-    setStatus(nextWorkerStatus);
-
-    const enrichedJob = {
-      ...job,
-      ...updatedJob,
-      client: job.client || null,
-    };
-
-    setJobs((prev) =>
-      prev.map((j) =>
-        String(j.id) === String(job.id)
-          ? enrichedJob
-          : j
-      )
-    );
-
-    toast.success(
-      isScheduledBooking
-        ? '📅 Agenda aceptada correctamente'
-        : '✅ Pedido aceptado correctamente'
-    );
-
-    return enrichedJob;
-  } catch (err) {
-    console.error('❌ Error aceptando pedido:', err);
-    toast.error('No se pudo aceptar el pedido');
-    return null;
   }
 }
 
@@ -1725,20 +1611,9 @@ async function openWorkerJob(job) {
       return;
     }
 
-    const currentStatus = String(job.status || '').toLowerCase();
-
-    if (currentStatus === 'open') {
-      const acceptedJob = await acceptJob(job);
-
-      if (!acceptedJob) return;
-
-      await openChat(acceptedJob);
-      return;
-    }
-
     await openChat(job);
   } catch (err) {
-    console.error('❌ Error abriendo pedido:', err);
+    console.error('âŒ Error abriendo pedido:', err);
     toast.error('No se pudo abrir el pedido');
   }
 }
@@ -1748,7 +1623,7 @@ async function openWorkerJob(job) {
     try {
       const { error } = await supabase.from('jobs').update({ status: 'rejected' }).eq('id', job.id);
       if (error) throw error;
-      toast('🚫 Trabajo rechazado correctamente');
+      toast('ðŸš« Trabajo rechazado correctamente');
       setJobs((prev) => prev.filter((j) => j.id !== job.id));
     } catch (err) {
       toast.error('Error al rechazar trabajo');
@@ -1794,7 +1669,7 @@ async function openWorkerJob(job) {
 
       setStatus(nextStatus);
 
-      toast.success('🎉 Trabajo finalizado correctamente');
+      toast.success('ðŸŽ‰ Trabajo finalizado correctamente');
 
       setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: 'completed' } : j)));
 
@@ -1816,56 +1691,58 @@ async function openChat(job) {
       return;
     }
 
-    let cid = null;
+    let cid = job?.chat_id ? String(job.chat_id) : null;
 
-    const { data: chatByJob, error: chatByJobError } = await supabase
-      .from('chats')
-      .select('id')
-      .eq('job_id', job.id)
-      .eq('client_id', job.client_id)
-      .eq('worker_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (chatByJobError) throw chatByJobError;
-
-    if (chatByJob?.id) {
-      cid = chatByJob.id;
-    } else {
-      const { data: chatByPair, error: chatByPairError } = await supabase
+    if (!cid) {
+      const { data: chatByJob, error: chatByJobError } = await supabase
         .from('chats')
         .select('id')
+        .eq('job_id', job.id)
         .eq('client_id', job.client_id)
         .eq('worker_id', user.id)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (chatByPairError) throw chatByPairError;
+      if (chatByJobError) throw chatByJobError;
 
-      if (chatByPair?.id) {
-        cid = chatByPair.id;
-
-        await supabase
-          .from('chats')
-          .update({ job_id: job.id })
-          .eq('id', cid);
+      if (chatByJob?.id) {
+        cid = chatByJob.id;
       } else {
-        const { data: newChat, error: newChatError } = await supabase
+        const { data: chatByPair, error: chatByPairError } = await supabase
           .from('chats')
-          .insert([
-            {
-              job_id: job.id,
-              client_id: job.client_id,
-              worker_id: user.id,
-            },
-          ])
           .select('id')
-          .single();
+          .eq('client_id', job.client_id)
+          .eq('worker_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        if (newChatError) throw newChatError;
-        cid = newChat.id;
+        if (chatByPairError) throw chatByPairError;
+
+        if (chatByPair?.id) {
+          cid = chatByPair.id;
+
+          await supabase
+            .from('chats')
+            .update({ job_id: job.id })
+            .eq('id', cid);
+        } else {
+          const { data: newChat, error: newChatError } = await supabase
+            .from('chats')
+            .insert([
+              {
+                job_id: job.id,
+                client_id: job.client_id,
+                worker_id: user.id,
+              },
+            ])
+            .select('id')
+            .single();
+
+          if (newChatError) throw newChatError;
+          cid = newChat.id;
+        }
       }
     }
 
@@ -1961,7 +1838,7 @@ setWorkerUnreadByJob((prev) => {
 
     chatChannelRef.current = ch;
   } catch (err) {
-    console.error('❌ Error abriendo chat:', err);
+    console.error('âŒ Error abriendo chat:', err);
     toast.error('No se pudo abrir el chat');
   }
 }
@@ -1984,14 +1861,16 @@ useEffect(() => {
         .maybeSingle();
 
       if (chatError) throw chatError;
-      if (!chat?.job_id || !chat?.client_id) {
+      if (!chat?.client_id) {
         toast.error('No encontramos este chat en tus pedidos');
         return;
       }
 
-      let job = jobs.find((item) => String(item.id) === String(chat.job_id));
+      let job = chat.job_id
+        ? jobs.find((item) => String(item.id) === String(chat.job_id))
+        : null;
 
-      if (!job) {
+      if (!job && chat.job_id) {
         const { data: jobData, error: jobError } = await supabase
           .from('jobs')
           .select('*')
@@ -2000,6 +1879,31 @@ useEffect(() => {
 
         if (jobError) throw jobError;
         job = jobData;
+      }
+
+      if (!job) {
+        const { data: newJob, error: createJobError } = await supabase
+          .from('jobs')
+          .insert([
+            {
+              client_id: chat.client_id,
+              worker_id: user.id,
+              status: 'open',
+              description: 'Consulta desde chat cliente',
+            },
+          ])
+          .select('*')
+          .single();
+
+        if (createJobError) throw createJobError;
+        job = newJob;
+
+        const { error: linkChatError } = await supabase
+          .from('chats')
+          .update({ job_id: job.id })
+          .eq('id', chat.id);
+
+        if (linkChatError) throw linkChatError;
       }
 
       if (!alive || !job) return;
@@ -2034,35 +1938,36 @@ async function sendMessage() {
   }
 
   if (selectedJob?.status === 'completed') {
-    toast.info('✅ Este trabajo ya fue finalizado. No se pueden enviar más mensajes.');
+    toast.info('âœ… Este trabajo ya fue finalizado. No se pueden enviar mÃ¡s mensajes.');
     return;
   }
 
   try {
     const attempt = canAttemptAction(`worker-panel-chat:${selectedJob.chat_id}:${user.id}`, { limit: 8, windowMs: 60_000 });
     if (!attempt.allowed) {
-      toast.warning('Estás enviando muy rápido. Esperá unos segundos.');
+      toast.warning('EstÃ¡s enviando muy rÃ¡pido. EsperÃ¡ unos segundos.');
       return;
     }
 
     setSending(true);
 
-    const { data, error } = await supabase
-      .from('messages')
-      .insert([{ chat_id: selectedJob.chat_id, sender_id: user.id, text: safety.text, content: safety.text }])
-      .select();
+    const { data, error } = await supabase.rpc('post_chat_message', {
+      p_chat_id: selectedJob.chat_id,
+      p_text: safety.text,
+    });
 
     if (error) throw error;
 
     setMessages((prev) => {
-      if (prev.some((m) => m.id === data?.[0]?.id)) return prev;
-      return [...prev, data[0]];
+      const nextMessage = Array.isArray(data) ? data[0] : data;
+      if (!nextMessage || prev.some((m) => m.id === nextMessage.id)) return prev;
+      return [...prev, nextMessage];
     });
 
     inputRef.current.value = '';
     setTimeout(() => scrollWorkerChatToBottom(), 80);
   } catch (err) {
-    console.error('❌ Error enviando mensaje:', err);
+    console.error('âŒ Error enviando mensaje:', err);
     toast.error('No se pudo enviar el mensaje');
   } finally {
     setSending(false);
@@ -2146,10 +2051,10 @@ async function sendMessage() {
 
       <p className="mt-1 text-[13px] font-semibold leading-5 text-slate-500">
         {status === 'available'
-          ? 'Estás visible para recibir pedidos.'
+          ? 'EstÃ¡s visible para recibir pedidos.'
           : status === 'paused'
-          ? 'Estás en pausa. Nadie te verá disponible.'
-          : 'Tenés un servicio en curso.'}
+          ? 'EstÃ¡s en pausa. Nadie te verÃ¡ disponible.'
+          : 'TenÃ©s un servicio en curso.'}
       </p>
     </div>
   </div>
@@ -2182,7 +2087,7 @@ async function sendMessage() {
       ? 'Estoy disponible'
       : status === 'paused'
       ? 'Volver a estar disponible'
-      : 'Estoy trabajando'}
+      : 'Estoy disponible'}
   </button>
 </section>
 
@@ -2226,8 +2131,8 @@ async function sendMessage() {
           jobs.length === 0 ? (
             <div className="mt-6 rounded-[30px] border border-dashed border-[#62bfb9]/35 bg-white/82 p-8 text-center shadow-[0_18px_50px_rgba(98,191,185,0.10)] backdrop-blur">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[24px] bg-[#62bfb9]/12 text-[#18b8aa]"><Briefcase size={28} /></div>
-              <h3 className="mt-4 text-[21px] font-black text-slate-950">Todavía no hay pedidos</h3>
-              <p className="mx-auto mt-2 max-w-sm text-[14px] font-semibold leading-6 text-slate-500">Cuando entre una solicitud compatible con tus rubros, aparece acá al instante.</p>
+              <h3 className="mt-4 text-[21px] font-black text-slate-950">TodavÃ­a no hay pedidos</h3>
+              <p className="mx-auto mt-2 max-w-sm text-[14px] font-semibold leading-6 text-slate-500">Cuando entre una solicitud compatible con tus rubros, aparece acÃ¡ al instante.</p>
             </div>
           ) : (
             <section className="grid gap-3">
@@ -2251,7 +2156,7 @@ const lastMessage =
 const clientMessage =
   lastMessage?.text?.trim() ||
   details.notes ||
-  details.summary.join(' · ') ||
+  details.summary.join(' Â· ') ||
   job.title ||
   'Consulta desde feed cliente';
 
@@ -2424,7 +2329,7 @@ const unreadMessages =
       <div>
         <h2 className="text-[19px] font-black text-slate-950">Mi oficio profesional</h2>
         <p className="text-[13px] font-semibold text-slate-500">
-          Editá foto, rubros, radio de cobertura y presentación laboral.
+          EditÃ¡ foto, rubros, radio de cobertura y presentaciÃ³n laboral.
         </p>
       </div>
     </div>
@@ -2511,7 +2416,7 @@ const unreadMessages =
                 <span className="h-1.5 w-1.5 rounded-full bg-white" />
                 <span className="h-1.5 w-1.5 rounded-full bg-white" />
               </span>
-              <span>{selectedJob?.client?.full_name || 'El cliente'} está escribiendo…</span>
+              <span>{selectedJob?.client?.full_name || 'El cliente'} estÃ¡ escribiendoâ€¦</span>
             </div>
           )}
         </header>
@@ -2526,7 +2431,7 @@ const unreadMessages =
 
             {messages.length > 0 && (
               <div className="mx-auto mb-5 max-w-[330px] rounded-xl bg-white/72 px-4 py-3 text-center text-[12px] font-bold leading-5 text-[#1e4e53] shadow-sm backdrop-blur-md">
-                <ShieldCheck size={14} className="mb-1 inline text-[#1e4e53]" /> Los mensajes están protegidos dentro de ManosYA.
+                <ShieldCheck size={14} className="mb-1 inline text-[#1e4e53]" /> Los mensajes estÃ¡n protegidos dentro de ManosYA.
               </div>
             )}
 
@@ -2536,10 +2441,10 @@ const unreadMessages =
                   <MessageCircle size={28} />
                 </div>
                 <div className="mt-4 text-lg font-black text-white">
-                  Conversación iniciada
+                  ConversaciÃ³n iniciada
                 </div>
                 <div className="mt-2 max-w-[280px] text-sm font-semibold text-white/80">
-                  Respondé disponibilidad, precio o tiempo de llegada.
+                  RespondÃ© disponibilidad, precio o tiempo de llegada.
                 </div>
               </div>
             ) : (
@@ -2559,7 +2464,7 @@ const unreadMessages =
                             : 'rounded-tl-[4px] bg-[#dff7f5] text-[#123437]'
                         }`}
                       >
-                        {String(m.text || '').includes('📍 Te compartí mi ubicación.') ? (
+                        {String(m.text || '').includes('ðŸ“ Te compartÃ­ mi ubicaciÃ³n.') ? (
   <button
     type="button"
     onClick={() => {
@@ -2572,7 +2477,7 @@ const unreadMessages =
           selectedJob.client_lng
         );
       } else {
-        toast.error('Ubicación no disponible todavía');
+        toast.error('UbicaciÃ³n no disponible todavÃ­a');
       }
     }}
     className="
@@ -2624,16 +2529,16 @@ const unreadMessages =
 
     <div className="p-3">
       <div className="text-[14px] font-black text-[#123437]">
-        Ubicación compartida
+        UbicaciÃ³n compartida
       </div>
 
       <div className="mt-1 text-[12px] font-semibold text-[#123437]/60">
-        Tocá la tarjeta para abrir el mapa
+        TocÃ¡ la tarjeta para abrir el mapa
       </div>
 
       <div className="mt-3 flex items-center justify-center gap-2 rounded-full bg-[#18b8aa] px-3 py-2.5 text-[12px] font-black text-white shadow-[0_10px_24px_rgba(24,184,170,0.24)]">
         <MapPin size={14} />
-        Ir a ubicación
+        Ir a ubicaciÃ³n
       </div>
     </div>
   </button>
@@ -2664,7 +2569,7 @@ const unreadMessages =
           className="border-t border-white/30 bg-[#63c0ba] px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2"
         >
           <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
-            {['Hola, sí estoy disponible', '¿Para qué hora necesitás?', 'Te paso el precio ahora'].map((chip) => (
+            {['Hola, sÃ­ estoy disponible', 'Â¿Para quÃ© hora necesitÃ¡s?', 'Te paso el precio ahora'].map((chip) => (
               <button
                 key={chip}
                 type="button"
@@ -2701,7 +2606,7 @@ const unreadMessages =
     <input
       ref={inputRef}
       onFocus={() => setTimeout(() => scrollWorkerChatToBottom('auto'), 120)}
-      placeholder="Escribí un mensaje"
+      placeholder="EscribÃ­ un mensaje"
       className="h-12 flex-1 bg-transparent text-[15px] font-bold text-[#123437] outline-none placeholder:text-[#1e4e53]/55"
     />
   </div>
@@ -2806,7 +2711,7 @@ const unreadMessages =
         {selectedJob?.client?.full_name || clientProfile?.full_name || 'Cliente'}
       </div>
       <div className="mt-1 text-sm text-gray-500">
-        Ubicación compartida del cliente
+        UbicaciÃ³n compartida del cliente
       </div>
     </div>
   </Popup>
@@ -2825,10 +2730,10 @@ const unreadMessages =
   <Popup>
     <div className="min-w-[190px]">
       <div className="font-extrabold text-gray-800">
-        {workerSelfProfile?.full_name || 'Tu ubicación'}
+        {workerSelfProfile?.full_name || 'Tu ubicaciÃ³n'}
       </div>
       <div className="mt-1 text-sm text-gray-500">
-        Posición actual del trabajador
+        PosiciÃ³n actual del trabajador
       </div>
     </div>
   </Popup>
@@ -2855,7 +2760,7 @@ const unreadMessages =
     <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.20)] backdrop-blur">
       <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
       <span className="text-[13px] font-bold text-gray-800">
-        Ubicación del cliente
+        UbicaciÃ³n del cliente
       </span>
     </div>
 
@@ -2967,7 +2872,7 @@ const unreadMessages =
           </div>
           <div className="text-[15px] font-extrabold text-gray-900">
             {selectedJob?.price
-              ? `₲${Number(selectedJob.price).toLocaleString('es-PY')}/h`
+              ? `â‚²${Number(selectedJob.price).toLocaleString('es-PY')}/h`
               : 'A definir'}
           </div>
         </div>
@@ -3016,7 +2921,7 @@ const unreadMessages =
             Estado
           </div>
           <div className="mt-1 text-sm font-extrabold text-gray-800">
-  {selectedJob?.status === 'scheduled' ? 'Agenda aceptada' : 'En camino al cliente'}
+  {selectedJob?.status === 'scheduled' ? 'Consulta agendada' : 'Conversación activa'}
 </div>
         </div>
 
@@ -3123,7 +3028,7 @@ const unreadMessages =
                 Modalidad
               </div>
               <div className="mt-1 text-sm font-extrabold text-gray-800">
-  {selectedJob?.status === 'scheduled' ? 'Servicio agendado' : 'Atención inmediata'}
+  {selectedJob?.status === 'scheduled' ? 'Consulta agendada' : 'Chat directo'}
 </div>
             </div>
 
@@ -3167,7 +3072,7 @@ const unreadMessages =
                   if (activeJob) {
                     await openChat(activeJob);
                   } else {
-                    toast.info('No tenés chats activos actualmente');
+                    toast.info('No tenÃ©s chats activos actualmente');
                   }
                 } else {
                   setIsChatOpen(true);
@@ -3216,7 +3121,7 @@ const unreadMessages =
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <div>
                   <h3 className="font-extrabold text-gray-800">Zonas activas</h3>
-                  <p className="text-xs text-gray-500">Mapa estratégico de alta circulación</p>
+                  <p className="text-xs text-gray-500">Mapa estratÃ©gico de alta circulaciÃ³n</p>
                 </div>
 
                 <button onClick={() => setMapOpen(false)} className="text-gray-600 hover:text-red-500">
@@ -3277,7 +3182,7 @@ const unreadMessages =
             <div className="min-w-[180px]">
               <div className="font-extrabold text-gray-800">{p.name}</div>
               <div className="text-sm text-gray-500 mt-1">
-                Zona de alta circulación
+                Zona de alta circulaciÃ³n
               </div>
               <div className="mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-white text-gray-700 border-gray-200">
                 Intensidad: {p.intensity}/10
@@ -3359,24 +3264,24 @@ function Bot360({ stats = {}, workerStatus = 'available' }) {
 
   const MESSAGES = {
     motivador: [
-      '💪 Che ra’a, cada día que salís a laburar, estás construyendo tu propio futuro.',
-      '🔥 Ñandejára bendice al que trabaja con el corazón. ¡Vos estás dejando huella!',
-      '🌞 Aunque no te digan, tu esfuerzo se nota. Rodolfo te ve, y te aplaude desde su teclado 🐾.',
-      '🐾 No aflojés, que la suerte llega a los que no se rinden.',
-      '💚 No hay trabajo chico cuando se hace con ganas. Vos sos grande.',
+      'ðŸ’ª Che raâ€™a, cada dÃ­a que salÃ­s a laburar, estÃ¡s construyendo tu propio futuro.',
+      'ðŸ”¥ Ã‘andejÃ¡ra bendice al que trabaja con el corazÃ³n. Â¡Vos estÃ¡s dejando huella!',
+      'ðŸŒž Aunque no te digan, tu esfuerzo se nota. Rodolfo te ve, y te aplaude desde su teclado ðŸ¾.',
+      'ðŸ¾ No aflojÃ©s, que la suerte llega a los que no se rinden.',
+      'ðŸ’š No hay trabajo chico cuando se hace con ganas. Vos sos grande.',
     ],
     humoristico: [
-      '😹 Si trabajar fuera delito, ya tendrías cadena perpetua con tereré libre.',
-      '🙀 Con ese ritmo te contrata Itaipú directo.',
-      '😼 “Modo leyenda” activado: ¡rendimiento nivel guaraní power! 💥',
-      '🐾 Rodolfo vio tus números y dijo: “ha upéicha mismo, mi héroe del esfuerzo”.',
+      'ðŸ˜¹ Si trabajar fuera delito, ya tendrÃ­as cadena perpetua con tererÃ© libre.',
+      'ðŸ™€ Con ese ritmo te contrata ItaipÃº directo.',
+      'ðŸ˜¼ â€œModo leyendaâ€ activado: Â¡rendimiento nivel guaranÃ­ power! ðŸ’¥',
+      'ðŸ¾ Rodolfo vio tus nÃºmeros y dijo: â€œha upÃ©icha mismo, mi hÃ©roe del esfuerzoâ€.',
     ],
     consejos: [
-      '🧠 Consejo del día: saludá siempre con una sonrisa, eso vale más que mil currículums.',
-      '🌱 No corras, che amigo, lo importante es avanzar constante.',
-      '💬 Escuchá bien al cliente, y tratale como te gustaría que te traten.',
-      '🚀 Mantenete visible, respondé rápido, y los pedidos van a venir solitos.',
-      '💡 Recordá: el descanso también es parte del trabajo.',
+      'ðŸ§  Consejo del dÃ­a: saludÃ¡ siempre con una sonrisa, eso vale mÃ¡s que mil currÃ­culums.',
+      'ðŸŒ± No corras, che amigo, lo importante es avanzar constante.',
+      'ðŸ’¬ EscuchÃ¡ bien al cliente, y tratale como te gustarÃ­a que te traten.',
+      'ðŸš€ Mantenete visible, respondÃ© rÃ¡pido, y los pedidos van a venir solitos.',
+      'ðŸ’¡ RecordÃ¡: el descanso tambiÃ©n es parte del trabajo.',
     ],
   };
 
@@ -3397,7 +3302,7 @@ function Bot360({ stats = {}, workerStatus = 'available' }) {
     if (stats?.jobsCompleted && stats.jobsCompleted % 10 === 0 && stats.jobsCompleted > 0) {
       setShowParty(true);
       simulateBotTyping(
-        `🎉 ¡Epa che! Ya hiciste ${stats.jobsCompleted} trabajos. Rodolfo está bailando polka en tu honor 💃🐾`
+        `ðŸŽ‰ Â¡Epa che! Ya hiciste ${stats.jobsCompleted} trabajos. Rodolfo estÃ¡ bailando polka en tu honor ðŸ’ƒðŸ¾`
       );
       const timer = setTimeout(() => setShowParty(false), 7000);
       return () => clearTimeout(timer);
@@ -3423,39 +3328,39 @@ function Bot360({ stats = {}, workerStatus = 'available' }) {
     let extra = '';
 
     if (hour < 12) {
-      saludo = '☀️ Buen día, compa. A empezar con el mate y buena energía.';
-      cierre = 'Hoy es un buen día para avanzar 💪';
+      saludo = 'â˜€ï¸ Buen dÃ­a, compa. A empezar con el mate y buena energÃ­a.';
+      cierre = 'Hoy es un buen dÃ­a para avanzar ðŸ’ª';
     } else if (hour < 18) {
-      saludo = '🧉 Buenas tardes, che. Con tereré en mano seguimos firmes.';
-      cierre = 'Cada trabajo te acerca más a tus metas 💚';
+      saludo = 'ðŸ§‰ Buenas tardes, che. Con tererÃ© en mano seguimos firmes.';
+      cierre = 'Cada trabajo te acerca mÃ¡s a tus metas ðŸ’š';
     } else {
-      saludo = '🌙 Buenas noches, trabajador/a del alma.';
-      cierre = 'Descansá bien, mañana seguimos con todo 🌿';
+      saludo = 'ðŸŒ™ Buenas noches, trabajador/a del alma.';
+      cierre = 'DescansÃ¡ bien, maÃ±ana seguimos con todo ðŸŒ¿';
     }
 
-    if (workerStatus === 'available') saludo += ' Estás disponible, listo/a para ayudar y ganar.';
-    else if (workerStatus === 'busy') saludo += ' Estás ocupado, pero Rodolfo te acompaña.';
-    else if (workerStatus === 'paused') saludo += ' Estás en pausa, tomá un respiro y recargá energía.';
+    if (workerStatus === 'available') saludo += ' EstÃ¡s disponible, listo/a para ayudar y ganar.';
+    else if (workerStatus === 'busy') saludo += ' EstÃ¡s ocupado, pero Rodolfo te acompaÃ±a.';
+    else if (workerStatus === 'paused') saludo += ' EstÃ¡s en pausa, tomÃ¡ un respiro y recargÃ¡ energÃ­a.';
 
     const jobs = stats?.jobsCompleted || 0;
-    if (jobs === 0) extra = '🌱 Todavía no arrancaste, pero cada conexión ya es un paso adelante.';
-    else if (jobs < 5) extra = `💪 Ya completaste ${jobs} trabajo${jobs > 1 ? 's' : ''}. Buen comienzo.`;
-    else if (jobs < 15) extra = `🔥 Llevás ${jobs} trabajos hechos, se nota el compromiso.`;
-    else if (jobs < 30) extra = `🚀 ${jobs} trabajos completados. Estás dejando huella, che.`;
-    else extra = `🏆 ${jobs} trabajos… ¡una máquina total!`;
+    if (jobs === 0) extra = 'ðŸŒ± TodavÃ­a no arrancaste, pero cada conexiÃ³n ya es un paso adelante.';
+    else if (jobs < 5) extra = `ðŸ’ª Ya completaste ${jobs} trabajo${jobs > 1 ? 's' : ''}. Buen comienzo.`;
+    else if (jobs < 15) extra = `ðŸ”¥ LlevÃ¡s ${jobs} trabajos hechos, se nota el compromiso.`;
+    else if (jobs < 30) extra = `ðŸš€ ${jobs} trabajos completados. EstÃ¡s dejando huella, che.`;
+    else extra = `ðŸ† ${jobs} trabajosâ€¦ Â¡una mÃ¡quina total!`;
 
     simulateBotTyping(saludo, 600);
     setTimeout(() => simulateBotTyping(extra, 1400), 1000);
     setTimeout(() => simulateBotTyping(cierre, 2000), 1600);
 
     setTimeout(() => {
-      simulateBotTyping(`📋 Podés decirme:
-• "¿Cuántos trabajos hice?"
-• "¿Cómo voy?"
-• "Mi último trabajo"
-• "Cuánto gané"
-• "Necesito motivación"
-• "Dame un consejo"`);
+      simulateBotTyping(`ðŸ“‹ PodÃ©s decirme:
+â€¢ "Â¿CuÃ¡ntos trabajos hice?"
+â€¢ "Â¿CÃ³mo voy?"
+â€¢ "Mi Ãºltimo trabajo"
+â€¢ "CuÃ¡nto ganÃ©"
+â€¢ "Necesito motivaciÃ³n"
+â€¢ "Dame un consejo"`);
     }, 3200);
   }, [workerStatus, stats]);
 
@@ -3467,7 +3372,7 @@ function Bot360({ stats = {}, workerStatus = 'available' }) {
     memoryRef.current.lastTopic = q;
 
     if (q.includes('hola') || q.includes('buenas') || q.includes('rodolfo')) {
-      simulateBotTyping('😸 ¡Hola che! Rodolfo al servicio. Listo para darte empuje y ánimo 💪.');
+      simulateBotTyping('ðŸ˜¸ Â¡Hola che! Rodolfo al servicio. Listo para darte empuje y Ã¡nimo ðŸ’ª.');
       return;
     }
 
@@ -3475,25 +3380,25 @@ function Bot360({ stats = {}, workerStatus = 'available' }) {
       const total = stats?.jobsCompleted || 0;
       const msg =
         total === 0
-          ? '😺 Todavía sin trabajos completados, pero tranquilo, que el primero llega.'
-          : `📋 Llevás ${total} trabajo${total !== 1 ? 's' : ''} completado${total !== 1 ? 's' : ''}.`;
+          ? 'ðŸ˜º TodavÃ­a sin trabajos completados, pero tranquilo, que el primero llega.'
+          : `ðŸ“‹ LlevÃ¡s ${total} trabajo${total !== 1 ? 's' : ''} completado${total !== 1 ? 's' : ''}.`;
       simulateBotTyping(msg);
       return;
     }
 
     if (q.includes('como voy') || q.includes('rendimiento') || q.includes('eficiencia')) {
       const eff = ((stats?.efficiency || 0) * 100).toFixed(1);
-      let msg = `📊 Tu eficiencia actual es del ${eff}%. `;
-      if (eff > 85) msg += '🔥 Excelente nivel.';
-      else if (eff > 50) msg += '💪 Buen ritmo.';
-      else msg += '🌱 Vamos de a poco.';
+      let msg = `ðŸ“Š Tu eficiencia actual es del ${eff}%. `;
+      if (eff > 85) msg += 'ðŸ”¥ Excelente nivel.';
+      else if (eff > 50) msg += 'ðŸ’ª Buen ritmo.';
+      else msg += 'ðŸŒ± Vamos de a poco.';
       simulateBotTyping(msg);
       return;
     }
 
     if (q.includes('gane') || q.includes('ganancia') || q.includes('plata') || q.includes('dinero')) {
       const earn = stats?.earnings || 0;
-      simulateBotTyping(`💰 Hasta ahora juntaste ₲${earn.toLocaleString('es-PY')}.`);
+      simulateBotTyping(`ðŸ’° Hasta ahora juntaste â‚²${earn.toLocaleString('es-PY')}.`);
       return;
     }
 
@@ -3511,9 +3416,9 @@ function Bot360({ stats = {}, workerStatus = 'available' }) {
     }
 
     const fallback = [
-      '🐾 No entendí del todo, pero sé que sos un luchador nato.',
-      '💚 A veces no hay que hablar mucho, solo seguir metiéndole ganas.',
-      '😸 Si querés ver tu resumen, escribí "mi rendimiento" o "progreso".',
+      'ðŸ¾ No entendÃ­ del todo, pero sÃ© que sos un luchador nato.',
+      'ðŸ’š A veces no hay que hablar mucho, solo seguir metiÃ©ndole ganas.',
+      'ðŸ˜¸ Si querÃ©s ver tu resumen, escribÃ­ "mi rendimiento" o "progreso".',
     ];
 
     simulateBotTyping(fallback[Math.floor(Math.random() * fallback.length)]);
@@ -3531,11 +3436,11 @@ function Bot360({ stats = {}, workerStatus = 'available' }) {
         const earn = stats.earnings || 0;
 
         simulateBotTyping(
-          `📊 Resumen rápido:
-• Completados: ${stats.jobsCompleted || 0}
-• Eficiencia: ${eff}%
-• Ganancias: ₲${Number(earn).toLocaleString('es-PY')}
-🐾 Seguimos metiendo garra, compa 💪`
+          `ðŸ“Š Resumen rÃ¡pido:
+â€¢ Completados: ${stats.jobsCompleted || 0}
+â€¢ Eficiencia: ${eff}%
+â€¢ Ganancias: â‚²${Number(earn).toLocaleString('es-PY')}
+ðŸ¾ Seguimos metiendo garra, compa ðŸ’ª`
         );
 
         memoryRef.current.lastSummary = new Date().toISOString();
@@ -3547,3 +3452,4 @@ function Bot360({ stats = {}, workerStatus = 'available' }) {
 
  
 }
+

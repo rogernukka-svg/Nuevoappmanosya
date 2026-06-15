@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase } from '@/lib/supabase';
 import {
+  AudioLines,
   ChevronLeft,
   SendHorizontal,
   Sparkles,
   MapPin,
+  Mic,
   ShieldCheck,
   MessageCircle,
   BriefcaseBusiness,
@@ -25,6 +27,14 @@ import {
   workerIntentSummary,
   workerServiceSlugs,
 } from '@/lib/services';
+import { useVoiceDictation } from '@/lib/useVoiceDictation';
+import { useAudioRecorder } from '@/lib/useAudioRecorder';
+import {
+  hydrateAudioMessage,
+  hydrateAudioMessages,
+  normalizeAudioMessage,
+  uploadChatAudio,
+} from '@/lib/chatAudio';
 
 const supabase = getSupabase();
 
@@ -100,12 +110,40 @@ function formatTime(value) {
 }
 
 function normalizeMessageRecord(message) {
-  if (!message) return null;
+  return normalizeAudioMessage(message);
+}
 
-  return {
-    ...message,
-    text: String(message.text || message.content || ''),
-  };
+function TypingBubble() {
+  return (
+    <div className="flex justify-start">
+      <div className="flex items-center gap-1 rounded-[18px] rounded-tl-[4px] bg-[#dff7f5] px-4 py-3 shadow-sm">
+        {[0, 1, 2].map((item) => (
+          <span
+            key={item}
+            className="h-2 w-2 animate-bounce rounded-full bg-[#1e7f7a]"
+            style={{ animationDelay: `${item * 120}ms` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AudioMessage({ message }) {
+  const src = message?.media_url || '';
+
+  if (!src) {
+    return <div className="font-semibold text-[#123437]/70">Audio no disponible</div>;
+  }
+
+  return (
+    <audio
+      controls
+      preload="metadata"
+      src={src}
+      className="h-10 w-[220px] max-w-full"
+    />
+  );
 }
 
 export default function ChatPage() {
@@ -120,7 +158,9 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendingAudio, setSendingAudio] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(true);
+  const [counterpartTyping, setCounterpartTyping] = useState(false);
   const [activeJob, setActiveJob] = useState(null);
   const [requesting, setRequesting] = useState(false);
   const [sharingLocation, setSharingLocation] = useState(false);
@@ -129,6 +169,32 @@ export default function ChatPage() {
 
   const messagesWrapRef = useRef(null);
   const inputRef = useRef(null);
+  const typingChannelRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const typingReadyRef = useRef(false);
+  const lastTypingSentRef = useRef(0);
+  const {
+    isRecording,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+  } = useAudioRecorder();
+
+  const {
+    isListening,
+    speechError,
+    startDictation,
+    stopDictation,
+  } = useVoiceDictation({
+    onTextChange: (nextText) => {
+      setInput(nextText);
+      broadcastTyping(nextText);
+    },
+  });
+
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -175,7 +241,7 @@ export default function ChatPage() {
 
           const { data: workerExtra } = await supabase
             .from('worker_profiles')
-            .select('full_name, avatar_url, profile_photo_url, service_type, main_skill, skills')
+            .select('*')
             .eq('user_id', chat.worker_id)
             .maybeSingle();
 
@@ -252,7 +318,10 @@ if (alive) {
           .order('created_at', { ascending: true });
 
         if (error) throw error;
-        if (alive) setMessages((data || []).map(normalizeMessageRecord).filter(Boolean));
+        if (alive) {
+          const hydrated = await hydrateAudioMessages({ supabase, messages: data || [] });
+          setMessages(hydrated);
+        }
       } catch (err) {
         console.error(err);
         toast.error('No pudimos cargar mensajes');
@@ -264,7 +333,11 @@ if (alive) {
     loadMessages();
 
     const channel = supabase
-      .channel(`client-chat-${chatId}`)
+      .channel(`chat-room-${chatId}`, {
+        config: {
+          broadcast: { self: false },
+        },
+      })
       .on(
         'postgres_changes',
         {
@@ -274,17 +347,38 @@ if (alive) {
           filter: `chat_id=eq.${chatId}`,
         },
         (payload) => {
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === payload.new.id)) return prev;
-            const nextMessage = normalizeMessageRecord(payload.new);
-            return nextMessage ? [...prev, nextMessage] : prev;
+          const nextMessage = normalizeMessageRecord(payload.new);
+          hydrateAudioMessage({ supabase, message: nextMessage }).then((readyMessage) => {
+            if (!readyMessage) return;
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === readyMessage.id)) return prev;
+              return [...prev, readyMessage];
+            });
           });
         }
       )
-      .subscribe();
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (!payload?.user_id || String(payload.user_id) === String(user.id)) return;
+
+        setCounterpartTyping(true);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+          setCounterpartTyping(false);
+          typingTimeoutRef.current = null;
+        }, 2200);
+      })
+      .subscribe((status) => {
+        typingReadyRef.current = status === 'SUBSCRIBED';
+      });
+
+    typingChannelRef.current = channel;
 
     return () => {
       alive = false;
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+      typingReadyRef.current = false;
+      typingChannelRef.current = null;
       supabase.removeChannel(channel);
     };
   }, [chatId, user?.id]);
@@ -324,7 +418,7 @@ if (alive) {
       top: wrap.scrollHeight,
       behavior: keyboardOffset > 40 ? 'auto' : 'smooth',
     });
-  }, [messages, keyboardOffset]);
+  }, [messages, counterpartTyping, keyboardOffset]);
 
   const workerName =
   workerUserProfile?.full_name ||
@@ -357,6 +451,46 @@ if (alive) {
     [workerService]
   );
 
+function broadcastTyping(nextValue) {
+  if (!user?.id || !chatId || !nextValue.trim()) return;
+
+  const now = Date.now();
+  if (now - lastTypingSentRef.current < 1200) return;
+  lastTypingSentRef.current = now;
+
+  if (!typingReadyRef.current || !typingChannelRef.current) return;
+
+  typingChannelRef.current.send({
+    type: 'broadcast',
+    event: 'typing',
+    payload: {
+      user_id: user.id,
+      chat_id: chatId,
+      at: now,
+    },
+  });
+}
+
+function toggleVoiceDictation() {
+  if (isListening) {
+    stopDictation();
+    return;
+  }
+
+  startDictation({ currentText: input });
+  setTimeout(() => inputRef.current?.focus(), 80);
+}
+
+async function postChatMessage(text) {
+  const { data, error } = await supabase.rpc('post_chat_message', {
+    p_chat_id: chatId,
+    p_text: text,
+  });
+
+  if (error) throw error;
+  return normalizeMessageRecord(Array.isArray(data) ? data[0] : data);
+}
+
 async function sendMessage(e) {
   e.preventDefault();
 
@@ -375,25 +509,11 @@ async function sendMessage(e) {
   try {
     setSending(true);
 
-    const { data, error } = await supabase
-      .from('messages')
-      .insert([
-        {
-          chat_id: chatId,
-          sender_id: user.id,
-          text: safety.text,
-          content: safety.text,
-        },
-      ])
-      .select()
-      .single();
-
-    if (error) throw error;
+    const data = await postChatMessage(safety.text);
 
     setMessages((prev) => {
-      if (prev.some((m) => m.id === data.id)) return prev;
-      const nextMessage = normalizeMessageRecord(data);
-      return nextMessage ? [...prev, nextMessage] : prev;
+      if (!data || prev.some((m) => m.id === data.id)) return prev;
+      return [...prev, data];
     });
 
     setInput('');
@@ -402,6 +522,82 @@ async function sendMessage(e) {
     toast.error('Error enviando mensaje');
   } finally {
     setSending(false);
+  }
+}
+
+async function sendAudioMessage(blob, durationMs = 0) {
+  if (!user?.id || !chatId || !blob || sendingAudio) return;
+
+  try {
+    setSendingAudio(true);
+
+    const audio = await uploadChatAudio({
+      supabase,
+      chatId,
+      userId: user.id,
+      blob,
+      durationMs,
+    });
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        chat_id: chatId,
+        sender_id: user.id,
+        text: '[audio]',
+        content: '[audio]',
+        body: '[audio]',
+        message_type: 'audio',
+        media_path: audio.mediaPath,
+        media_url: audio.mediaUrl,
+        metadata: audio.metadata,
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    const saved = await hydrateAudioMessage({ supabase, message: data });
+    if (saved?.id) {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === saved.id)) return prev;
+        return [...prev, saved];
+      });
+    }
+  } catch (err) {
+    console.error('Error enviando audio:', err);
+    toast.error(err?.message || 'Error enviando audio');
+  } finally {
+    setSendingAudio(false);
+  }
+}
+
+async function toggleAudioRecording() {
+  if (sendingAudio) return;
+
+  if (isRecording) {
+    try {
+      const result = await stopRecording();
+      if (!result?.blob?.size) {
+        toast.error('No se grabo audio');
+        return;
+      }
+
+      await sendAudioMessage(result.blob, result.durationMs);
+    } catch (err) {
+      console.error('Error deteniendo audio:', err);
+      toast.error(err?.message || 'No se pudo enviar el audio');
+      cancelRecording();
+    }
+    return;
+  }
+
+  try {
+    await startRecording();
+    toast.message('Grabando audio. Toca de nuevo para enviar.');
+  } catch (err) {
+    console.error('Error iniciando audio:', err);
+    toast.error(err?.message || 'No se pudo iniciar la grabacion');
   }
 }
 async function shareClientLocation() {
@@ -443,14 +639,7 @@ async function shareClientLocation() {
 
     if (jobError) throw jobError;
 
-    await supabase.from('messages').insert([
-      {
-        chat_id: chatId,
-        sender_id: user.id,
-        text: '📍 Te compartí mi ubicación.',
-        content: '📍 Te compartí mi ubicación.',
-      },
-    ]);
+    await postChatMessage('Te comparti mi ubicacion.');
 
     setActiveJob((prev) =>
       prev
@@ -545,14 +734,7 @@ async function requestWorkerFromChat(customText = '') {
     const requestSafety = inspectTextSafety(finalText, { maxLength: 500 });
     if (!requestSafety.ok) throw new Error(requestSafety.error);
 
-    await supabase.from('messages').insert([
-      {
-        chat_id: chatId,
-        sender_id: user.id,
-        text: requestSafety.text,
-        content: requestSafety.text,
-      },
-    ]);
+    await postChatMessage(requestSafety.text);
 
     try {
       localStorage.setItem(
@@ -649,7 +831,7 @@ async function requestWorkerFromChat(customText = '') {
       >
         <ChatServicePattern />
 
-        <div className="relative z-10">
+        <div className="relative z-10 pb-24">
           <div className="mx-auto mb-4 w-fit rounded-lg bg-white/28 px-3 py-1 text-[12px] font-black text-[#1e4e53] backdrop-blur-md">
             Hoy
           </div>
@@ -681,6 +863,7 @@ async function requestWorkerFromChat(customText = '') {
               {messages.map((m) => {
                 const mine = m.sender_id === user?.id;
                 const messageText = String(m.text || m.content || '');
+                const isAudio = m.message_type === 'audio';
 
                 return (
                   <div
@@ -760,6 +943,8 @@ async function requestWorkerFromChat(customText = '') {
       </div>
     </div>
   </button>
+) : isAudio ? (
+  <AudioMessage message={m} />
 ) : (
   <div className="whitespace-pre-wrap break-words font-semibold">
     {m.text || ''}
@@ -773,6 +958,8 @@ async function requestWorkerFromChat(customText = '') {
                   </div>
                 );
               })}
+
+              {counterpartTyping ? <TypingBubble /> : null}
             </div>
           )}
         </div>
@@ -802,10 +989,12 @@ async function requestWorkerFromChat(customText = '') {
         onClick={() => {
          if (isRequestChip) {
   setInput(chip);
+  broadcastTyping(chip);
   return;
 }
 
           setInput(chip);
+          broadcastTyping(chip);
         }}
         disabled={requesting}
         className="whitespace-nowrap rounded-full bg-white/28 px-3 py-2 text-[11px] font-black text-[#1e4e53] backdrop-blur-md active:bg-white/45 disabled:opacity-60"
@@ -815,6 +1004,12 @@ async function requestWorkerFromChat(customText = '') {
     );
   })}
 </div>
+
+        {isListening ? (
+          <div className="mb-2 px-2 text-[11px] font-black text-[#123437]/75">
+            Escuchando...
+          </div>
+        ) : null}
 
         <div className="flex items-end gap-2">
   <button
@@ -836,7 +1031,10 @@ async function requestWorkerFromChat(customText = '') {
     <input
       ref={inputRef}
       value={input}
-      onChange={(e) => setInput(e.target.value)}
+      onChange={(e) => {
+        setInput(e.target.value);
+        broadcastTyping(e.target.value);
+      }}
       onFocus={() => {
         setTimeout(() => {
           const wrap = messagesWrapRef.current;
@@ -848,6 +1046,39 @@ async function requestWorkerFromChat(customText = '') {
       className="h-12 flex-1 bg-transparent text-[15px] font-bold text-[#123437] outline-none placeholder:text-[#1e4e53]/55"
     />
   </div>
+
+  <button
+    type="button"
+    onClick={toggleVoiceDictation}
+    className={[
+      'flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-[0_10px_26px_rgba(18,52,55,0.14)] backdrop-blur-md transition active:scale-95',
+      isListening
+        ? 'animate-pulse bg-[#123437] text-white'
+        : 'bg-white/38 text-[#1e4e53]',
+    ].join(' ')}
+    aria-label={isListening ? 'Detener dictado' : 'Dictar mensaje'}
+  >
+    <Mic size={20} strokeWidth={2.7} />
+  </button>
+
+  {!input.trim() ? (
+    <button
+      type="button"
+      onClick={toggleAudioRecording}
+      disabled={sendingAudio}
+      className={[
+        'flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-[0_10px_26px_rgba(18,52,55,0.14)] backdrop-blur-md transition active:scale-95 disabled:opacity-45',
+        isRecording ? 'animate-pulse bg-[#123437] text-white' : 'bg-white/38 text-[#1e4e53]',
+      ].join(' ')}
+      aria-label={isRecording ? 'Enviar audio' : 'Grabar audio'}
+    >
+      {sendingAudio ? (
+        <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#1e4e53] border-t-transparent" />
+      ) : (
+        <AudioLines size={20} strokeWidth={2.7} />
+      )}
+    </button>
+  ) : null}
 
   <button
     type="submit"

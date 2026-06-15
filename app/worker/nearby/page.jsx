@@ -1,12 +1,12 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const SKILLS = [
   { slug: 'limpieza', name: 'Limpieza' },
-  { slug: 'plomeria', name: 'Plomería' },
-  { slug: 'jardineria', name: 'Jardinería / Césped' },
+  { slug: 'plomeria', name: 'PlomerÃ­a' },
+  { slug: 'jardineria', name: 'JardinerÃ­a / CÃ©sped' },
   { slug: 'electricidad', name: 'Electricidad' },
   { slug: 'auxilio-vehicular', name: 'Auxilio vehicular' },
   { slug: 'fletes', name: 'Fletes' },
@@ -25,7 +25,7 @@ export default function WorkerNearbyPage() {
 
   async function updateMyLocation() {
     if (!navigator.geolocation) {
-      setErr('Tu navegador no soporta geolocalización');
+      setErr('Tu navegador no soporta geolocalizaciÃ³n');
       return;
     }
     navigator.geolocation.getCurrentPosition(async p => {
@@ -36,7 +36,7 @@ export default function WorkerNearbyPage() {
   }
 
   async function searchNearby() {
-    if (!coords) return setErr('Primero actualizá tu ubicación');
+    if (!coords) return setErr('Primero actualizÃ¡ tu ubicaciÃ³n');
     setBusy(true); setErr(null);
     const { data, error } = await supabase.rpc('fn_find_nearby_jobs', {
       lon: coords.lon, lat: coords.lat,
@@ -50,12 +50,12 @@ export default function WorkerNearbyPage() {
     }
   }
 
-  async function takeJob(jobId) {
-    const { error } = await supabase.rpc('take_job', { job_id: jobId });
-    if (error) return alert(error.message);
-    alert('✅ Tomaste el trabajo. Revisá en "Mis trabajos".');
-    searchNearby();
+  function openJobDetails(jobId) {
+    window.location.href = `/job/${jobId}`;
   }
+
+
+
 
   return (
     <div className="container">
@@ -72,12 +72,12 @@ export default function WorkerNearbyPage() {
           <select value={radius} onChange={e=>setRadius(Number(e.target.value))} className="select">
             {RADII.map(r => <option key={r} value={r}>{r} km</option>)}
           </select>
-          <button onClick={updateMyLocation} className="btn btn-ghost">Actualizar ubicación</button>
+          <button onClick={updateMyLocation} className="btn btn-ghost">Actualizar ubicaciÃ³n</button>
           <button onClick={searchNearby} disabled={busy} className="btn btn-primary">
-            {busy ? 'Buscando…' : 'Buscar trabajos'}
+            {busy ? 'Buscandoâ€¦' : 'Buscar trabajos'}
           </button>
         </div>
-        {coords && <div className="text-xs text-white/60 mt-2">Ubicación: {coords.lat.toFixed(4)}, {coords.lon.toFixed(4)}</div>}
+        {coords && <div className="text-xs text-white/60 mt-2">UbicaciÃ³n: {coords.lat.toFixed(4)}, {coords.lon.toFixed(4)}</div>}
       </section>
 
       {/* resultados */}
@@ -90,7 +90,7 @@ export default function WorkerNearbyPage() {
               <h3 className="font-bold">{job.title}</h3>
               <p className="text-sm opacity-70">{job.description}</p>
             </div>
-            <button onClick={() => takeJob(job.id)} className="btn btn-primary">Tomar</button>
+            <button onClick={() => openJobDetails(job.id)} className="btn btn-primary">Ver consulta</button>
           </article>
         ))}
       </div>

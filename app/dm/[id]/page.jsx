@@ -4,8 +4,35 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { motion } from 'framer-motion';
-import { CheckCircle, MapPin } from 'lucide-react';
+import { AudioLines, CheckCircle, MapPin, Mic } from 'lucide-react';
 import { canAttemptAction, inspectTextSafety } from '@/lib/security';
+import { useVoiceDictation } from '@/lib/useVoiceDictation';
+import { useAudioRecorder } from '@/lib/useAudioRecorder';
+import { hydrateAudioMessage, hydrateAudioMessages, uploadChatAudio } from '@/lib/chatAudio';
+
+function TypingBubble() {
+  return (
+    <div className="my-2 flex justify-start">
+      <div className="flex items-center gap-1 rounded-2xl rounded-bl-md bg-zinc-700 px-4 py-3 shadow-sm">
+        {[0, 1, 2].map((item) => (
+          <span
+            key={item}
+            className="h-2 w-2 animate-bounce rounded-full bg-emerald-300"
+            style={{ animationDelay: `${item * 120}ms` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AudioMessage({ message }) {
+  const src = message?.media_url || '';
+
+  if (!src) return <span>Audio no disponible</span>;
+
+  return <audio controls preload="metadata" src={src} className="h-10 w-[220px] max-w-full" />;
+}
 
 export default function DMPage() {
   const { id: otherId } = useParams();
@@ -14,9 +41,37 @@ export default function DMPage() {
   const [user, setUser] = useState(null);
   const [err, setErr] = useState(null);
   const [completedCount, setCompletedCount] = useState(0);
+  const [sendingAudio, setSendingAudio] = useState(false);
+  const [counterpartTyping, setCounterpartTyping] = useState(false);
   const [viewportHeight, setViewportHeight] = useState('100dvh');
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const messagesWrapRef = useRef(null);
+  const typingChannelRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const typingReadyRef = useRef(false);
+  const lastTypingSentRef = useRef(0);
+  const {
+    isRecording,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+  } = useAudioRecorder();
+
+  const {
+    isListening,
+    speechError,
+    startDictation,
+    stopDictation,
+  } = useVoiceDictation({
+    onTextChange: (nextText) => {
+      setNewMsg(nextText);
+      broadcastTyping(nextText);
+    },
+  });
+
+  useEffect(() => {
+    if (speechError) setErr(speechError);
+  }, [speechError]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -52,7 +107,7 @@ export default function DMPage() {
       top: wrap.scrollHeight,
       behavior: keyboardOffset > 40 ? 'auto' : 'smooth',
     });
-  }, [messages.length, keyboardOffset]);
+  }, [messages.length, counterpartTyping, keyboardOffset]);
 
   async function loadMessages() {
     if (!user || !otherId) return;
@@ -70,7 +125,8 @@ export default function DMPage() {
       return;
     }
 
-    setMessages(data || []);
+    const hydrated = await hydrateAudioMessages({ supabase, messages: data || [] });
+    setMessages(hydrated);
   }
 
   async function loadCompletedJobs(workerId) {
@@ -100,9 +156,12 @@ export default function DMPage() {
           msg.sender_id === otherId &&
           msg.receiver_id === user.id
         ) {
-          setMessages((prev) => {
-            if (prev.some((item) => item.id === msg.id)) return prev;
-            return [...prev, msg];
+          hydrateAudioMessage({ supabase, message: msg }).then((readyMessage) => {
+            if (!readyMessage) return;
+            setMessages((prev) => {
+              if (prev.some((item) => item.id === readyMessage.id)) return prev;
+              return [...prev, readyMessage];
+            });
           });
         }
       })
@@ -112,6 +171,70 @@ export default function DMPage() {
       supabase.removeChannel(channel);
     };
   }, [user, otherId]);
+
+  useEffect(() => {
+    if (!user?.id || !otherId) return;
+
+    const sortedIds = [String(user.id), String(otherId)].sort().join('-');
+    const channel = supabase
+      .channel(`dm-typing-${sortedIds}`, {
+        config: {
+          broadcast: { self: false },
+        },
+      })
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (!payload?.user_id || String(payload.user_id) === String(user.id)) return;
+
+        setCounterpartTyping(true);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+          setCounterpartTyping(false);
+          typingTimeoutRef.current = null;
+        }, 2200);
+      })
+      .subscribe((status) => {
+        typingReadyRef.current = status === 'SUBSCRIBED';
+      });
+
+    typingChannelRef.current = channel;
+
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+      typingReadyRef.current = false;
+      typingChannelRef.current = null;
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, otherId]);
+
+  function broadcastTyping(nextValue) {
+    if (!user?.id || !otherId || !nextValue.trim()) return;
+
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 1200) return;
+    lastTypingSentRef.current = now;
+
+    if (!typingReadyRef.current || !typingChannelRef.current) return;
+
+    typingChannelRef.current.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: {
+        user_id: user.id,
+        other_id: otherId,
+        at: now,
+      },
+    });
+  }
+
+  function toggleVoiceDictation() {
+    if (isListening) {
+      stopDictation();
+      return;
+    }
+
+    startDictation({ currentText: newMsg });
+  }
 
   async function sendMessage(content) {
     const safety = inspectTextSafety(content);
@@ -143,6 +266,73 @@ export default function DMPage() {
 
     setMessages((prev) => (prev.some((item) => item.id === data.id) ? prev : [...prev, data]));
     setNewMsg('');
+  }
+
+  async function sendAudioMessage(blob, durationMs = 0) {
+    if (!user?.id || !otherId || !blob || sendingAudio) return;
+
+    const folderId = [String(user.id), String(otherId)].sort().join('-');
+
+    try {
+      setSendingAudio(true);
+
+      const audio = await uploadChatAudio({
+        supabase,
+        chatId: `dm-${folderId}`,
+        userId: user.id,
+        blob,
+        durationMs,
+      });
+
+      const { data, error } = await supabase
+        .from('dm_messages')
+        .insert({
+          sender_id: user.id,
+          receiver_id: otherId,
+          content: '[audio]',
+          message_type: 'audio',
+          media_path: audio.mediaPath,
+          media_url: audio.mediaUrl,
+          metadata: audio.metadata,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const saved = await hydrateAudioMessage({ supabase, message: data });
+      setMessages((prev) => (prev.some((item) => item.id === saved.id) ? prev : [...prev, saved]));
+    } catch (error) {
+      setErr(error?.message || 'No se pudo enviar el audio');
+    } finally {
+      setSendingAudio(false);
+    }
+  }
+
+  async function toggleAudioRecording() {
+    if (sendingAudio) return;
+
+    if (isRecording) {
+      try {
+        const result = await stopRecording();
+        if (!result?.blob?.size) {
+          setErr('No se grabo audio');
+          return;
+        }
+
+        await sendAudioMessage(result.blob, result.durationMs);
+      } catch (error) {
+        setErr(error?.message || 'No se pudo enviar el audio');
+        cancelRecording();
+      }
+      return;
+    }
+
+    try {
+      await startRecording();
+    } catch (error) {
+      setErr(error?.message || 'No se pudo iniciar la grabacion');
+    }
   }
 
   async function sendLocation() {
@@ -204,7 +394,7 @@ export default function DMPage() {
 
       <div
         ref={messagesWrapRef}
-        className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-white/10 bg-black/40 p-3"
+        className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-white/10 bg-black/40 p-3 pb-24"
       >
         {messages.map((message) => (
           <div
@@ -213,7 +403,9 @@ export default function DMPage() {
               message.sender_id === user?.id ? 'ml-auto bg-emerald-600' : 'mr-auto bg-zinc-700'
             }`}
           >
-            {message.lat && message.lng ? (
+            {message.message_type === 'audio' ? (
+              <AudioMessage message={message} />
+            ) : message.lat && message.lng ? (
               <a
                 href={`https://www.google.com/maps?q=${message.lat},${message.lng}`}
                 target="_blank"
@@ -227,6 +419,8 @@ export default function DMPage() {
             )}
           </div>
         ))}
+
+        {counterpartTyping ? <TypingBubble /> : null}
       </div>
 
       <form
@@ -239,7 +433,10 @@ export default function DMPage() {
         <input
           type="text"
           value={newMsg}
-          onChange={(event) => setNewMsg(event.target.value)}
+          onChange={(event) => {
+            setNewMsg(event.target.value);
+            broadcastTyping(event.target.value);
+          }}
           onFocus={() => {
             setTimeout(() => {
               const wrap = messagesWrapRef.current;
@@ -249,6 +446,39 @@ export default function DMPage() {
           className="min-w-0 flex-1 rounded-lg border border-white/10 bg-zinc-800 px-3 py-2"
           placeholder="Escribi un mensaje..."
         />
+
+        <motion.button
+          whileTap={{ scale: 0.85 }}
+          type="button"
+          onClick={toggleVoiceDictation}
+          className={[
+            'rounded-full p-2 text-white',
+            isListening ? 'animate-pulse bg-emerald-500' : 'bg-zinc-700',
+          ].join(' ')}
+          aria-label={isListening ? 'Detener dictado' : 'Dictar mensaje'}
+        >
+          <Mic size={20} />
+        </motion.button>
+
+        {!newMsg.trim() ? (
+          <motion.button
+            whileTap={{ scale: 0.85 }}
+            type="button"
+            onClick={toggleAudioRecording}
+            disabled={sendingAudio}
+            className={[
+              'rounded-full p-2 text-white disabled:opacity-50',
+              isRecording ? 'animate-pulse bg-emerald-500' : 'bg-zinc-700',
+            ].join(' ')}
+            aria-label={isRecording ? 'Enviar audio' : 'Grabar audio'}
+          >
+            {sendingAudio ? (
+              <span className="block h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            ) : (
+              <AudioLines size={20} />
+            )}
+          </motion.button>
+        ) : null}
 
         <button type="submit" className="btn btn-primary">
           Enviar
@@ -264,6 +494,11 @@ export default function DMPage() {
           <CheckCircle size={20} />
         </motion.button>
       </form>
+      {isListening ? (
+        <div className="pt-1 text-center text-xs font-bold text-emerald-300">
+          Escuchando...
+        </div>
+      ) : null}
     </div>
   );
 }

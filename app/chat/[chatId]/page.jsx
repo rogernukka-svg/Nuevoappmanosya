@@ -1,14 +1,123 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase } from '@/lib/supabase';
 import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { SendHorizontal, ChevronLeft } from 'lucide-react';
+import {
+  BriefcaseBusiness,
+  AudioLines,
+  ChevronLeft,
+  MapPin,
+  MessageCircle,
+  Mic,
+  SendHorizontal,
+  ShieldCheck,
+  Sparkles,
+  WalletCards,
+  Wrench,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { canAttemptAction, inspectTextSafety } from '@/lib/security';
+import { getServiceLabel, normalizeServiceSlug } from '@/lib/services';
+import { useVoiceDictation } from '@/lib/useVoiceDictation';
+import { useAudioRecorder } from '@/lib/useAudioRecorder';
+import {
+  hydrateAudioMessage,
+  hydrateAudioMessages,
+  normalizeAudioMessage,
+  uploadChatAudio,
+} from '@/lib/chatAudio';
 
 const supabase = getSupabase();
 const WORKER_CHAT_SEEN_MAP_KEY = 'manosya_worker_chat_seen_map';
+
+const CHAT_SERVICE_WATERMARKS = [
+  'Taxi',
+  'Chofer',
+  'Plomeria',
+  'Electricidad',
+  'Limpieza',
+  'Jardineria',
+  'Pintura',
+  'Albanileria',
+  'Carpinteria',
+  'Cerrajeria',
+  'Mecanica',
+  'Refrigeracion',
+  'Mudanza',
+  'Fletes',
+  'Parrillero',
+  'Cocina',
+  'Ninera',
+  'Cuidador',
+  'Enfermeria',
+  'Belleza',
+  'Maquillaje',
+  'Peluqueria',
+  'Masajes',
+  'Costura',
+  'Tecnico PC',
+  'Celulares',
+  'Internet',
+  'Camara CCTV',
+  'Soldadura',
+  'Herreria',
+  'Vidrieria',
+  'Tapiceria',
+  'Piscina',
+  'Fumigacion',
+  'Lavadero',
+  'Delivery',
+  'Mensajeria',
+  'Eventos',
+  'Fotografia',
+  'Video',
+  'DJ',
+  'Musica',
+  'Profesor',
+  'Traduccion',
+  'Contabilidad',
+  'Abogacia',
+  'Arquitectura',
+  'Diseno',
+  'Veterinaria',
+  'Mascotas',
+  'Seguridad',
+  'Servicio general',
+];
+
+function ChatServicePattern() {
+  const icons = [Wrench, BriefcaseBusiness, WalletCards, Sparkles, MapPin, ShieldCheck];
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div
+        className="absolute inset-0 opacity-[0.16]"
+        style={{
+          backgroundImage: `
+            radial-gradient(circle at 16px 16px, rgba(255,255,255,.58) 1.2px, transparent 1.4px),
+            linear-gradient(135deg, transparent 0 44%, rgba(255,255,255,.25) 45% 46%, transparent 47% 100%)
+          `,
+          backgroundSize: '82px 82px, 118px 118px',
+        }}
+      />
+      <div className="absolute inset-0 grid grid-cols-4 content-start gap-x-8 gap-y-9 p-6 text-white/20 sm:grid-cols-6">
+        {CHAT_SERVICE_WATERMARKS.map((service, index) => {
+          const Icon = icons[index % icons.length];
+          return (
+            <div key={`${service}-${index}`} className="flex -rotate-[18deg] flex-col items-center gap-1">
+              <Icon size={22 + (index % 3) * 5} strokeWidth={2.4} />
+              <span className="max-w-[74px] truncate text-[8px] font-black uppercase tracking-wide">
+                {service}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function markWorkerChatRead(chatId) {
   if (typeof window === 'undefined' || !chatId) return;
@@ -20,84 +129,294 @@ function markWorkerChatRead(chatId) {
   } catch {}
 }
 
+function formatTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function normalizeMessageRecord(message) {
+  return normalizeAudioMessage(message);
+}
+
+function serviceLabelFromJob(job) {
+  const serviceSource =
+    job?.service_type ||
+    job?.service_slug ||
+    job?.service ||
+    job?.category ||
+    job?.title ||
+    job?.description ||
+    '';
+
+  const slug = normalizeServiceSlug(serviceSource);
+  return getServiceLabel(slug || serviceSource, 'Consulta');
+}
+
+function profileDisplayName(profile, fallback) {
+  return String(profile?.full_name || profile?.name || fallback || 'ManosYA').trim();
+}
+
+function TypingBubble() {
+  return (
+    <div className="flex justify-start">
+      <div className="flex items-center gap-1 rounded-[18px] rounded-tl-[4px] bg-[#dff7f5] px-4 py-3 shadow-sm">
+        {[0, 1, 2].map((item) => (
+          <span
+            key={item}
+            className="h-2 w-2 animate-bounce rounded-full bg-[#1e7f7a]"
+            style={{ animationDelay: `${item * 120}ms` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AudioMessage({ message }) {
+  const src = message?.media_url || '';
+
+  if (!src) {
+    return <div className="font-semibold text-[#123437]/70">Audio no disponible</div>;
+  }
+
+  return (
+    <audio
+      controls
+      preload="metadata"
+      src={src}
+      className="h-10 w-[220px] max-w-full"
+    />
+  );
+}
+
 export default function ChatPage() {
-  const { chatId } = useParams();
+  const params = useParams();
+  const chatId = params?.chatId;
   const router = useRouter();
 
   const [user, setUser] = useState(null);
+  const [chatMeta, setChatMeta] = useState(null);
+  const [counterpartProfile, setCounterpartProfile] = useState(null);
+  const [activeJob, setActiveJob] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendingAudio, setSendingAudio] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(true);
+  const [counterpartTyping, setCounterpartTyping] = useState(false);
   const [viewportHeight, setViewportHeight] = useState('100dvh');
   const [keyboardOffset, setKeyboardOffset] = useState(0);
+
   const inputRef = useRef(null);
   const messagesWrapRef = useRef(null);
-  const realtimeRef = useRef(null);
+  const typingChannelRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const typingReadyRef = useRef(false);
+  const lastTypingSentRef = useRef(0);
+  const {
+    isRecording,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+  } = useAudioRecorder();
 
-  /* === Obtener usuario actual === */
+  const {
+    isListening,
+    speechError,
+    startDictation,
+    stopDictation,
+  } = useVoiceDictation({
+    onTextChange: (nextText) => {
+      setInput(nextText);
+      broadcastTyping(nextText);
+    },
+  });
+
   useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError]);
+
+  useEffect(() => {
+    let alive = true;
+
     supabase.auth.getUser().then(({ data }) => {
+      if (!alive) return;
       if (data?.user) setUser(data.user);
       else router.replace('/auth/login');
     });
+
+    return () => {
+      alive = false;
+    };
   }, [router]);
 
-  /* === Cargar mensajes iniciales === */
   useEffect(() => {
     if (!chatId || !user?.id) return;
-    const load = async () => {
-      const { data: chat, error: chatError } = await supabase
-        .from('chats')
-        .select('id, client_id, worker_id')
-        .eq('id', chatId)
-        .maybeSingle();
 
-      if (chatError || !chat) {
-        router.replace('/worker');
-        return;
+    let alive = true;
+
+    async function loadContext() {
+      try {
+        const { data: chat, error: chatError } = await supabase
+          .from('chats')
+          .select('id, job_id, client_id, worker_id, created_at')
+          .eq('id', chatId)
+          .maybeSingle();
+
+        if (chatError) throw chatError;
+
+        if (!chat?.id) {
+          toast.error('No encontramos este chat');
+          router.replace('/worker/feed');
+          return;
+        }
+
+        const isParticipant =
+          String(chat.client_id) === String(user.id) ||
+          String(chat.worker_id) === String(user.id);
+
+        if (!isParticipant) {
+          router.replace('/role-selector');
+          return;
+        }
+
+        const counterpartId =
+          String(chat.worker_id) === String(user.id) ? chat.client_id : chat.worker_id;
+
+        const [{ data: profile }, { data: linkedJob }] = await Promise.all([
+          counterpartId
+            ? supabase
+                .from('profiles')
+                .select('id, full_name, avatar_url, role')
+                .eq('id', counterpartId)
+                .maybeSingle()
+            : Promise.resolve({ data: null }),
+          chat.job_id
+            ? supabase.from('jobs').select('*').eq('id', chat.job_id).maybeSingle()
+            : Promise.resolve({ data: null }),
+        ]);
+
+        if (!alive) return;
+
+        setChatMeta(chat);
+        setCounterpartProfile(profile || null);
+        setActiveJob(linkedJob || null);
+        markWorkerChatRead(chatId);
+      } catch (error) {
+        console.error('No se pudo cargar el contexto del chat:', error);
+        toast.error('No pudimos cargar este chat');
       }
+    }
 
-      const isParticipant =
-        String(chat.client_id) === String(user.id) ||
-        String(chat.worker_id) === String(user.id);
+    loadContext();
 
-      if (!isParticipant) {
-        router.replace('/role-selector');
-        return;
-      }
-
-      const { data } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: true });
-      setMessages(data || []);
-      markWorkerChatRead(chatId);
+    return () => {
+      alive = false;
     };
-    load();
   }, [chatId, router, user?.id]);
 
-  /* === Escuchar mensajes en tiempo real === */
   useEffect(() => {
-    if (!chatId) return;
+    if (!chatId || !user?.id) return;
+
+    let alive = true;
+
+    async function loadMessages() {
+      try {
+        setLoadingMessages(true);
+
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('chat_id', chatId)
+          .order('created_at', { ascending: true });
+
+        if (error) throw error;
+        if (alive) {
+          const hydrated = await hydrateAudioMessages({ supabase, messages: data || [] });
+          setMessages(hydrated);
+          markWorkerChatRead(chatId);
+        }
+      } catch (error) {
+        console.error('No se pudieron cargar los mensajes:', error);
+        toast.error('No pudimos cargar mensajes');
+      } finally {
+        if (alive) setLoadingMessages(false);
+      }
+    }
+
+    loadMessages();
+
+    return () => {
+      alive = false;
+    };
+  }, [chatId, user?.id]);
+
+  useEffect(() => {
+    if (!chatId || !user?.id) return;
 
     const channel = supabase
-      .channel(`chat-${chatId}`)
+      .channel(`chat-room-${chatId}`, {
+        config: {
+          broadcast: { self: false },
+        },
+      })
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` },
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${chatId}`,
+        },
         (payload) => {
-          setMessages((prev) => {
-            if (prev.some((message) => message.id === payload.new.id)) return prev;
-            return [...prev, payload.new];
+          const incoming = normalizeMessageRecord(payload.new);
+          if (!incoming) return;
+
+          hydrateAudioMessage({ supabase, message: incoming }).then((readyMessage) => {
+            if (!readyMessage) return;
+            setMessages((prev) => {
+              if (prev.some((message) => message.id === readyMessage.id)) return prev;
+              return [...prev, readyMessage];
+            });
           });
+
           markWorkerChatRead(chatId);
         }
       )
-      .subscribe();
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (!payload?.user_id || String(payload.user_id) === String(user.id)) return;
 
-    realtimeRef.current = channel;
-    return () => supabase.removeChannel(channel);
-  }, [chatId]);
+        setCounterpartTyping(true);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+          setCounterpartTyping(false);
+          typingTimeoutRef.current = null;
+        }, 2200);
+      })
+      .subscribe((status) => {
+        typingReadyRef.current = status === 'SUBSCRIBED';
+
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('Realtime de mensajes no disponible para este chat');
+        }
+      });
+
+    typingChannelRef.current = channel;
+
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+      typingReadyRef.current = false;
+      typingChannelRef.current = null;
+      supabase.removeChannel(channel);
+    };
+  }, [chatId, user?.id]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -134,112 +453,400 @@ export default function ChatPage() {
       top: wrap.scrollHeight,
       behavior: keyboardOffset > 40 ? 'auto' : 'smooth',
     });
-  }, [messages, keyboardOffset]);
+  }, [messages, counterpartTyping, keyboardOffset]);
 
-  /* === Enviar mensaje === */
-  async function sendMessage(e) {
-    e.preventDefault();
-    if (!user?.id || !chatId) return;
-    const safety = inspectTextSafety(inputRef.current?.value || '');
+  const isWorker = Boolean(user?.id && chatMeta?.worker_id && String(chatMeta.worker_id) === String(user.id));
+  const counterpartName = profileDisplayName(counterpartProfile, isWorker ? 'Cliente' : 'Trabajador');
+  const counterpartAvatar = counterpartProfile?.avatar_url || '/avatar-fallback.png';
+  const serviceLabel = serviceLabelFromJob(activeJob);
+
+  const suggestionChips = useMemo(() => {
+    if (isWorker) {
+      return [
+        'Hola, si estoy disponible',
+        'Te paso el precio ahora',
+        'Para que hora necesitas?',
+      ];
+    }
+
+    return [
+      `Hola, seguis disponible para ${serviceLabel.toLowerCase()}?`,
+      'Necesito este servicio hoy',
+      'Cuanto me saldria?',
+    ];
+  }, [isWorker, serviceLabel]);
+
+  async function sendMessage(event) {
+    event.preventDefault();
+
+    if (!user?.id || !chatId || sending) return;
+
+    const safety = inspectTextSafety(input);
     if (!safety.ok) {
-      console.warn(safety.error);
+      toast.error(safety.error || 'Revisa el mensaje');
       return;
     }
 
-    const attempt = canAttemptAction(`worker-chat:${chatId}:${user.id}`, { limit: 8, windowMs: 60_000 });
+    const attempt = canAttemptAction(`chat:${chatId}:${user.id}`, {
+      limit: 10,
+      windowMs: 60_000,
+    });
+
     if (!attempt.allowed) {
-      console.warn('Mensaje bloqueado por rate limit local');
+      toast.error('Espera un poquito antes de enviar otro mensaje');
       return;
     }
 
     try {
       setSending(true);
-      const { error } = await supabase
-        .from('messages')
-        .insert([{ chat_id: chatId, sender_id: user.id, content: safety.text, text: safety.text }]);
+
+      const { data, error } = await supabase.rpc('post_chat_message', {
+        p_chat_id: chatId,
+        p_text: safety.text,
+      });
 
       if (error) throw error;
-      inputRef.current.value = '';
+
+      const saved = normalizeMessageRecord(data);
+      if (saved?.id) {
+        setMessages((prev) => {
+          if (prev.some((message) => message.id === saved.id)) return prev;
+          return [...prev, saved];
+        });
+      }
+
+      setInput('');
+      inputRef.current?.focus();
+      markWorkerChatRead(chatId);
     } catch (error) {
       console.error('No se pudo enviar el mensaje:', error);
+      toast.error(error?.message || 'No se pudo enviar el mensaje');
     } finally {
       setSending(false);
     }
+  }
+
+  async function sendAudioMessage(blob, durationMs = 0) {
+    if (!user?.id || !chatId || !blob || sendingAudio) return;
+
+    try {
+      setSendingAudio(true);
+
+      const audio = await uploadChatAudio({
+        supabase,
+        chatId,
+        userId: user.id,
+        blob,
+        durationMs,
+      });
+
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          chat_id: chatId,
+          sender_id: user.id,
+          text: '[audio]',
+          content: '[audio]',
+          body: '[audio]',
+          message_type: 'audio',
+          media_path: audio.mediaPath,
+          media_url: audio.mediaUrl,
+          metadata: audio.metadata,
+        })
+        .select('*')
+        .single();
+
+      if (error) throw error;
+
+      const saved = await hydrateAudioMessage({ supabase, message: data });
+      if (saved?.id) {
+        setMessages((prev) => {
+          if (prev.some((message) => message.id === saved.id)) return prev;
+          return [...prev, saved];
+        });
+      }
+
+      markWorkerChatRead(chatId);
+    } catch (error) {
+      console.error('No se pudo enviar el audio:', error);
+      toast.error(error?.message || 'No se pudo enviar el audio');
+    } finally {
+      setSendingAudio(false);
+    }
+  }
+
+  async function toggleAudioRecording() {
+    if (sendingAudio) return;
+
+    if (isRecording) {
+      try {
+        const result = await stopRecording();
+        if (!result?.blob?.size) {
+          toast.error('No se grabo audio');
+          return;
+        }
+
+        await sendAudioMessage(result.blob, result.durationMs);
+      } catch (error) {
+        console.error('No se pudo detener el audio:', error);
+        toast.error(error?.message || 'No se pudo enviar el audio');
+        cancelRecording();
+      }
+      return;
+    }
+
+    try {
+      await startRecording();
+      toast.message('Grabando audio. Toca de nuevo para enviar.');
+    } catch (error) {
+      console.error('No se pudo iniciar la grabacion:', error);
+      toast.error(error?.message || 'No se pudo iniciar la grabacion');
+    }
+  }
+
+  function applySuggestion(text) {
+    setInput(text);
+    broadcastTyping(text);
+    setTimeout(() => inputRef.current?.focus(), 40);
+  }
+
+  function toggleVoiceDictation() {
+    if (isListening) {
+      stopDictation();
+      return;
+    }
+
+    startDictation({ currentText: input });
+    setTimeout(() => inputRef.current?.focus(), 80);
+  }
+
+  function broadcastTyping(nextValue) {
+    if (!user?.id || !chatId || !nextValue.trim()) return;
+
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 1200) return;
+    lastTypingSentRef.current = now;
+
+    if (!typingReadyRef.current || !typingChannelRef.current) return;
+
+    typingChannelRef.current.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: {
+        user_id: user.id,
+        chat_id: chatId,
+        at: now,
+      },
+    });
   }
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex h-[100dvh] flex-col overflow-hidden bg-white text-gray-900"
+      className="flex h-[100dvh] flex-col overflow-hidden bg-[#63c0ba] text-[#123437]"
       style={{ height: viewportHeight }}
     >
-      {/* HEADER */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
-        <button
-          onClick={() => router.back()}
-          className="flex items-center gap-1 text-gray-600 hover:text-emerald-600"
-        >
-          <ChevronLeft size={18} /> Volver
-        </button>
-        <h2 className="font-bold text-emerald-600">Chat con cliente</h2>
-        <div className="w-6" />
-      </div>
+      <header className="relative z-20 border-b border-white/35 bg-[#63c0ba]/95 px-3 py-2 shadow-[0_10px_28px_rgba(15,64,68,0.16)] backdrop-blur-xl">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white transition hover:bg-white/15 active:scale-95"
+            aria-label="Volver"
+          >
+            <ChevronLeft size={27} strokeWidth={2.7} />
+          </button>
 
-      {/* MENSAJES */}
-      <div ref={messagesWrapRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-        {messages.map((m) => {
-          const mine = m.sender_id === user?.id;
-          return (
-            <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm shadow-sm ${
-                  mine
-                    ? 'bg-emerald-500 text-white rounded-br-md'
-                    : 'bg-gray-100 text-gray-800 rounded-bl-md'
-                }`}
-              >
-                {m.content || m.text}
-                <div
-                  className={`text-[10px] mt-1 opacity-70 ${
-                    mine ? 'text-white' : 'text-gray-500'
-                  }`}
-                >
-                  {new Date(m.created_at).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </div>
+          <img
+            src={counterpartAvatar}
+            alt={counterpartName}
+            className="h-12 w-12 shrink-0 rounded-full border-2 border-white object-cover shadow-[0_8px_18px_rgba(7,55,59,0.22)]"
+          />
+
+          <div className="min-w-0 flex-1 text-left">
+            <h1 className="truncate text-[18px] font-black leading-tight text-white drop-shadow-[0_2px_6px_rgba(7,55,59,0.16)]">
+              {counterpartName}
+            </h1>
+            <p className="truncate text-[12px] font-black text-[#123437]">
+              {isWorker ? 'Consulta por' : 'Chat por'} {serviceLabel}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => router.push(isWorker ? '/worker/feed' : '/client')}
+            className="shrink-0 rounded-full bg-white px-4 py-2.5 text-[12px] font-black text-[#123437] shadow-[0_10px_22px_rgba(7,55,59,0.14)] transition active:scale-95"
+          >
+            {isWorker ? 'Pedidos' : 'Ver pedido'}
+          </button>
+        </div>
+      </header>
+
+      <div ref={messagesWrapRef} className="relative min-h-0 flex-1 overflow-y-auto px-3 py-4">
+        <ChatServicePattern />
+
+        <div className="relative z-10 mx-auto flex max-w-[430px] flex-col gap-3 pb-24">
+          <div className="mx-auto mb-1 rounded-full bg-white/12 px-4 py-1.5 text-[12px] font-black text-[#123437]">
+            Hoy
+          </div>
+
+          <div className="mb-2 rounded-[22px] bg-white/10 px-5 py-4 text-center text-[13px] font-black leading-relaxed text-[#1e4e53] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] backdrop-blur-sm">
+            <ShieldCheck className="mx-auto mb-1 inline-block text-[#1e7f7a]" size={16} />
+            <div>
+              Los mensajes estan protegidos dentro de ManosYA. Coordinan por chat sin marcar ocupado al trabajador.
+            </div>
+          </div>
+
+          {loadingMessages ? (
+            <div className="py-12 text-center text-[14px] font-black text-white">
+              Cargando mensajes...
+            </div>
+          ) : null}
+
+          {!loadingMessages && messages.length === 0 ? (
+            <div className="mx-auto mt-10 max-w-[280px] rounded-[26px] bg-white/16 px-6 py-6 text-center text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]">
+              <MessageCircle className="mx-auto mb-2" size={28} />
+              <div className="text-[15px] font-black">Todavia no hay mensajes</div>
+              <div className="mt-1 text-[12px] font-bold text-white/78">
+                Escribi para abrir la conversacion.
               </div>
             </div>
-          );
-        })}
+          ) : null}
+
+          {messages.map((message) => {
+            const mine = String(message.sender_id || '') === String(user?.id || '');
+            const text = message.text || '';
+            const isAudio = message.message_type === 'audio';
+
+            return (
+              <div key={message.id || `${message.created_at}-${text}`} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={[
+                    'max-w-[82%] rounded-[18px] px-3 py-2 text-[14px] leading-5 shadow-sm',
+                    mine
+                      ? 'rounded-tr-[4px] bg-white text-[#123437]'
+                      : 'rounded-tl-[4px] bg-[#dff7f5] text-[#123437]',
+                  ].join(' ')}
+                >
+                  {isAudio ? (
+                    <AudioMessage message={message} />
+                  ) : (
+                    <div className="whitespace-pre-wrap break-words font-semibold">{text}</div>
+                  )}
+                  <div className="mt-1 text-right text-[10px] font-bold text-[#1e4e53]/55">
+                    {formatTime(message.created_at)}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {counterpartTyping ? <TypingBubble /> : null}
+        </div>
       </div>
 
-      {/* INPUT */}
       <form
         onSubmit={sendMessage}
-        className="p-3 border-t border-gray-100 flex gap-2 bg-white"
+        className="relative z-20 border-t border-white/30 bg-[#63c0ba] px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2 shadow-[0_-12px_30px_rgba(7,55,59,0.12)]"
       >
-        <input
-          ref={inputRef}
-          type="text"
-          onFocus={() => {
-            setTimeout(() => {
-              const wrap = messagesWrapRef.current;
-              if (!wrap) return;
-              wrap.scrollTo({ top: wrap.scrollHeight, behavior: 'auto' });
-            }, 80);
-          }}
-          placeholder="Escribí un mensaje…"
-          className="flex-1 bg-gray-100 rounded-xl px-3 py-3 outline-none focus:ring-2 focus:ring-emerald-400 border border-gray-200"
-        />
-        <button
-          disabled={sending}
-          className="px-4 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition disabled:opacity-60"
-        >
-          <SendHorizontal size={18} />
-        </button>
+        <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+          {suggestionChips.map((chip) => (
+            <button
+              key={chip}
+              type="button"
+              onClick={() => applySuggestion(chip)}
+              className="shrink-0 border-b-2 border-[#1e7f7a]/45 px-4 pb-2 text-[11px] font-black text-[#123437]"
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+
+        {isListening ? (
+          <div className="mb-2 px-2 text-[11px] font-black text-[#123437]/75">
+            Escuchando...
+          </div>
+        ) : null}
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/16 text-[#1e7f7a]"
+            aria-label="Ubicacion"
+          >
+            <MapPin size={21} strokeWidth={2.4} />
+          </button>
+
+          <div className="flex h-12 min-w-0 flex-1 items-center rounded-full bg-white/16 px-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.10)]">
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(event) => {
+                setInput(event.target.value);
+                broadcastTyping(event.target.value);
+              }}
+              onFocus={() => {
+                setTimeout(() => {
+                  const wrap = messagesWrapRef.current;
+                  if (!wrap) return;
+                  wrap.scrollTo({ top: wrap.scrollHeight, behavior: 'auto' });
+                }, 80);
+              }}
+              type="text"
+              placeholder="Escribi un mensaje"
+              className="min-w-0 flex-1 bg-transparent text-[15px] font-black text-[#123437] outline-none placeholder:text-[#123437]/38"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleVoiceDictation}
+            className={[
+              'flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-[0_10px_22px_rgba(7,55,59,0.12)] transition active:scale-95',
+              isListening
+                ? 'animate-pulse bg-[#123437] text-white'
+                : 'bg-white/18 text-[#1e7f7a]',
+            ].join(' ')}
+            aria-label={isListening ? 'Detener dictado' : 'Dictar mensaje'}
+          >
+            <Mic size={21} strokeWidth={2.6} />
+          </button>
+
+          {!input.trim() ? (
+            <button
+              type="button"
+              onClick={toggleAudioRecording}
+              disabled={sendingAudio}
+              className={[
+                'flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-[0_10px_22px_rgba(7,55,59,0.12)] transition active:scale-95 disabled:opacity-55',
+                isRecording
+                  ? 'animate-pulse bg-[#123437] text-white'
+                  : 'bg-white/18 text-[#1e7f7a]',
+              ].join(' ')}
+              aria-label={isRecording ? 'Enviar audio' : 'Grabar audio'}
+            >
+              {sendingAudio ? (
+                <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#1e7f7a] border-t-transparent" />
+              ) : (
+                <AudioLines size={22} strokeWidth={2.6} />
+              )}
+            </button>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={sending || !input.trim()}
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#1e7f7a] shadow-[0_10px_22px_rgba(7,55,59,0.15)] transition active:scale-95 disabled:opacity-55"
+            aria-label="Enviar mensaje"
+          >
+            {sending ? (
+              <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#1e7f7a] border-t-transparent" />
+            ) : (
+              <SendHorizontal size={24} strokeWidth={2.5} />
+            )}
+          </button>
+        </div>
       </form>
     </motion.div>
   );

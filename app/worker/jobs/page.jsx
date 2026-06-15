@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -11,13 +11,17 @@ import { canAttemptAction, inspectTextSafety } from '@/lib/security';
 
 const supabase = getSupabase();
 
-// === 🔹 Carga dinámica de componentes de mapa ===
+function getAssignedWorkerId(job) {
+  return job?.worker_id || null;
+}
+
+// === ðŸ”¹ Carga dinÃ¡mica de componentes de mapa ===
 const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer), { ssr: false });
 const Marker = dynamic(() => import('react-leaflet').then((m) => m.Marker), { ssr: false });
 const Tooltip = dynamic(() => import('react-leaflet').then((m) => m.Tooltip), { ssr: false });
 
-/* === 🧩 Mini ChatBox embebido === */
+/* === ðŸ§© Mini ChatBox embebido === */
 function ChatBox({ chatId, userId }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -50,7 +54,10 @@ function ChatBox({ chatId, userId }) {
     const attempt = canAttemptAction(`worker-jobs-chat:${chatId}:${userId}`, { limit: 8, windowMs: 60_000 });
     if (!attempt.allowed) return;
 
-    await supabase.from('messages').insert([{ chat_id: chatId, sender_id: userId, text: safety.text, content: safety.text }]);
+    await supabase.rpc('post_chat_message', {
+      p_chat_id: chatId,
+      p_text: safety.text,
+    });
     setText('');
   }
 
@@ -82,14 +89,14 @@ function ChatBox({ chatId, userId }) {
           className="flex-1 bg-zinc-800 text-white rounded-full px-3 py-2 text-sm focus:outline-none"
         />
         <button className="bg-emerald-500 hover:bg-emerald-600 text-black font-semibold rounded-full px-4 transition-all active:scale-95">
-          📨
+          ðŸ“¨
         </button>
       </form>
     </div>
   );
 }
 
-/* === 🔹 Mapa Cliente / Trabajador === */
+/* === ðŸ”¹ Mapa Cliente / Trabajador === */
 function JobMap({ clientLat, clientLng }) {
   const [position, setPosition] = useState(null);
 
@@ -101,7 +108,7 @@ function JobMap({ clientLat, clientLng }) {
     }
   }, []);
 
-  if (!position) return <div className="text-white/70 text-center py-5">📡 Obteniendo ubicación…</div>;
+  if (!position) return <div className="text-white/70 text-center py-5">ðŸ“¡ Obteniendo ubicaciÃ³nâ€¦</div>;
 
   return (
     <div className="h-72 w-full rounded-xl overflow-hidden border border-white/10">
@@ -124,7 +131,7 @@ function JobMap({ clientLat, clientLng }) {
   );
 }
 
-/* === 📋 Página principal === */
+/* === ðŸ“‹ PÃ¡gina principal === */
 export default function WorkerJobsPage() {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -168,7 +175,24 @@ export default function WorkerJobsPage() {
       try {
         setLoading(true);
         const { data, error } = await supabase.rpc('fn_my_jobs');
-        if (error) throw error;
+        if (error) {
+          const missingFunction =
+            error.code === '42883' ||
+            String(error.message || '').toLowerCase().includes('fn_my_jobs');
+
+          if (!missingFunction) throw error;
+
+          const { data: fallbackJobs, error: fallbackError } = await supabase
+            .from('jobs')
+            .select('*')
+            .or(`status.eq.open,worker_id.eq.${userId}`)
+            .order('created_at', { ascending: false });
+
+          if (fallbackError) throw fallbackError;
+          setJobs(fallbackJobs || []);
+          return;
+        }
+
         setJobs(data || []);
       } catch (err) {
         setError(err.message);
@@ -184,14 +208,14 @@ export default function WorkerJobsPage() {
       .channel('jobs-worker-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'jobs' }, (payload) => {
         const job = payload.new;
-        if (job.worker_id === userId) {
+        if (getAssignedWorkerId(job) === userId || String(job.status || '').toLowerCase() === 'open') {
           setJobs((prev) => [job, ...prev]);
           playAlert('/notify.mp3');
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'jobs' }, (payload) => {
         const updated = payload.new;
-        if (updated.worker_id === userId) {
+        if (getAssignedWorkerId(updated) === userId) {
           setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
           if (updated.status === 'assigned') {
             playAlert('/accepted.mp3');
@@ -208,12 +232,12 @@ export default function WorkerJobsPage() {
 
   async function handleAccept(jobId) {
     try {
-      const { error } = await supabase.rpc('accept_job', { p_job_id: jobId });
-      if (error) throw error;
-      playAlert('/accepted.mp3');
-      setActiveJob(jobs.find((j) => j.id === jobId));
+      setActiveJob({
+        ...(jobs.find((j) => j.id === jobId) || {}),
+        worker_id: userId,
+      });
     } catch (err) {
-      alert('Error al aceptar: ' + err.message);
+      alert('Error al abrir: ' + err.message);
     }
   }
 
@@ -235,7 +259,7 @@ export default function WorkerJobsPage() {
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end justify-center z-50">
         <div className="bg-zinc-900 rounded-t-2xl w-full max-w-md p-6 border-t border-white/10">
           <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-4"></div>
-          <h2 className="text-xl font-bold mb-2 text-center">🚗 Trabajo asignado</h2>
+          <h2 className="text-xl font-bold mb-2 text-center">Chat de consulta</h2>
           <p className="text-sm text-white/70 text-center mb-4">{job.title}</p>
 
           <div className="flex justify-around mb-4">
@@ -247,7 +271,7 @@ export default function WorkerJobsPage() {
                   tab === t ? 'bg-emerald-500 text-black' : 'bg-zinc-800 text-white/70'
                 }`}
               >
-                {t === 'info' ? '📋 Info' : t === 'chat' ? '💬 Chat' : '📍 Mapa'}
+                {t === 'info' ? 'ðŸ“‹ Info' : t === 'chat' ? 'ðŸ’¬ Chat' : 'ðŸ“ Mapa'}
               </button>
             ))}
           </div>
@@ -262,7 +286,7 @@ export default function WorkerJobsPage() {
                       `https://www.google.com/maps/dir/?api=1&destination=${job.client_lat},${job.client_lng}`,
                       '_blank'
                     );
-                  else alert('📍 No hay coordenadas del cliente');
+                  else alert('ðŸ“ No hay coordenadas del cliente');
                 }}
               >
                 Ver ruta
@@ -270,7 +294,7 @@ export default function WorkerJobsPage() {
               <button
                 className="btn btn-secondary"
                 onClick={() =>
-                  job.client_phone ? window.open(`tel:${job.client_phone}`) : alert('📞 Sin teléfono')
+                  job.client_phone ? window.open(`tel:${job.client_phone}`) : alert('ðŸ“ž Sin telÃ©fono')
                 }
               >
                 Llamar
@@ -292,14 +316,14 @@ export default function WorkerJobsPage() {
     );
   }
 
-  if (loading) return <div className="p-5 text-center text-white/70">Cargando trabajos…</div>;
+  if (loading) return <div className="p-5 text-center text-white/70">Cargando trabajosâ€¦</div>;
 
   return (
     <div className="container">
       <header className="mt-6 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <h1 className="text-2xl font-extrabold">📋 Mis trabajos activos</h1>
+        <h1 className="text-2xl font-extrabold">ðŸ“‹ Mis trabajos activos</h1>
 
-        {/* 🚀 Botón Activar Perfil */}
+        {/* ðŸš€ BotÃ³n Activar Perfil */}
         <button
           onClick={() => router.push('/worker/onboard')}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-white text-sm font-semibold hover:from-emerald-600 hover:to-cyan-600 transition-all active:scale-95 shadow-md"
@@ -312,7 +336,7 @@ export default function WorkerJobsPage() {
       {error && <div className="text-red-400 mb-3">{error}</div>}
 
       {jobs.length === 0 ? (
-        <p className="text-sm opacity-70">No tenés trabajos activos.</p>
+        <p className="text-sm opacity-70">No tenÃ©s trabajos activos.</p>
       ) : (
         <div className="space-y-4">
           {jobs.map((job) => (
@@ -330,10 +354,10 @@ export default function WorkerJobsPage() {
               {job.status === 'open' ? (
                 <div className="flex gap-2">
                   <button className="btn btn-primary" onClick={() => handleAccept(job.id)}>
-                    ✅ Aceptar
+                    Abrir chat
                   </button>
                   <button className="btn btn-ghost" onClick={() => handleReject(job.id)}>
-                    ❌ Rechazar
+                    âŒ Rechazar
                   </button>
                 </div>
               ) : (

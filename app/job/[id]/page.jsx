@@ -197,7 +197,6 @@ export default function JobDetailPage() {
 
         {/* Acciones */}
         <div className="flex flex-wrap gap-3 mt-4">
-          {canTake && <button onClick={() => runAction('take_job')} className="btn btn-primary">Tomar trabajo</button>}
           {canStart && <button onClick={() => runAction('start_job')} className="btn btn-primary">Iniciar</button>}
           {canComplete && <button onClick={() => runAction('complete_job')} className="btn btn-primary">Marcar como completado</button>}
           {canCancel && <button onClick={() => runAction('cancel_job')} className="btn btn-ghost">Cancelar</button>}

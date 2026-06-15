@@ -1684,6 +1684,7 @@ function WorkerHubSheet({
   loadingJobs,
   onToggleStatus,
   onRefreshJobs,
+  onOpenJobChat,
   onOpenProfile,
   onOpenPosts,
 }) {
@@ -1771,15 +1772,24 @@ function WorkerHubSheet({
               ) : (
                 <div className="space-y-2">
                   {visibleJobs.map((job) => (
-                    <div key={job.id} className="rounded-[22px] border border-slate-100 bg-slate-50 p-3">
+                    <button
+                      key={job.id}
+                      type="button"
+                      onClick={() => onOpenJobChat?.(job)}
+                      className="w-full rounded-[22px] border border-slate-100 bg-slate-50 p-3 text-left transition active:scale-[0.99]"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="truncate text-[14px] font-black">{job.title || job.service_type || 'Pedido'}</div>
                           <div className="mt-1 line-clamp-2 text-[12px] font-semibold leading-5 text-slate-500">{job.description || 'Solicitud de cliente'}</div>
+                          <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-[0.04em] text-[#18b8aa]">
+                            <MessageCircle size={13} />
+                            Abrir chat
+                          </div>
                         </div>
                         <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase text-slate-500">{job.status}</span>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -2000,12 +2010,83 @@ const draftPreviewUrlRef = useRef('');
         });
       });
 
-      setWorkerJobs(filtered);
+      const jobIds = filtered.map((job) => job.id).filter(Boolean);
+      const { data: chatsData } = jobIds.length
+        ? await supabase
+            .from('chats')
+            .select('id, job_id, client_id, worker_id')
+            .in('job_id', jobIds)
+            .eq('worker_id', me.id)
+        : { data: [] };
+
+      const chatByJobId = {};
+      for (const chat of chatsData || []) {
+        if (chat?.job_id && !chatByJobId[String(chat.job_id)]) {
+          chatByJobId[String(chat.job_id)] = chat;
+        }
+      }
+
+      setWorkerJobs(filtered.map((job) => ({
+        ...job,
+        chat_id: chatByJobId[String(job.id)]?.id || null,
+      })));
     } catch (error) {
       console.error('worker hub load error', error);
       toast.error('No se pudo cargar tu panel');
     } finally {
       setWorkerJobsLoading(false);
+    }
+  }
+
+  async function openWorkerJobChat(job) {
+    if (!job?.id || !job?.client_id || !me?.id) {
+      toast.error('Este pedido todavia no tiene datos completos para abrir chat');
+      return;
+    }
+
+    try {
+      let chatId = job.chat_id ? String(job.chat_id) : '';
+
+      if (!chatId) {
+        const { data: existingChat, error: existingChatError } = await supabase
+          .from('chats')
+          .select('id')
+          .eq('job_id', job.id)
+          .eq('client_id', job.client_id)
+          .eq('worker_id', me.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existingChatError) throw existingChatError;
+        chatId = existingChat?.id ? String(existingChat.id) : '';
+      }
+
+      if (!chatId) {
+        const { data: newChat, error: newChatError } = await supabase
+          .from('chats')
+          .insert([
+            {
+              job_id: job.id,
+              client_id: job.client_id,
+              worker_id: me.id,
+            },
+          ])
+          .select('id')
+          .single();
+
+        if (newChatError) throw newChatError;
+        chatId = newChat?.id ? String(newChat.id) : '';
+      }
+
+      if (!chatId) throw new Error('No se pudo abrir el chat del pedido');
+
+      markWorkerChatRead(chatId);
+      setWorkerHubOpen(false);
+      router.push(`/chat/${chatId}`);
+    } catch (error) {
+      console.error('open worker job chat error:', error);
+      toast.error(error?.message || 'No se pudo abrir el chat del pedido');
     }
   }
 
@@ -2988,19 +3069,15 @@ useEffect(() => {
 
       if (!nextChatId) throw new Error('No pudimos abrir el chat creado');
 
-      const { error: messageError } = await supabase.from('messages').insert([
-        {
-          chat_id: nextChatId,
-          sender_id: me.id,
-          text: messageSafety.text,
-          content: messageSafety.text,
-        },
-      ]);
+      const { error: messageError } = await supabase.rpc('post_chat_message', {
+        p_chat_id: nextChatId,
+        p_text: messageSafety.text,
+      });
 
       if (messageError) throw messageError;
 
       toast.success('Consulta enviada al trabajador');
-      router.push(`/worker?chat=${nextChatId}`);
+      router.push(`/chat/${nextChatId}`);
     } catch (error) {
       console.error('hire worker from worker feed error:', error);
       toast.error(error?.message || 'No pudimos iniciar la contratacion');
@@ -3487,7 +3564,7 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
       onOpenChat={(chatId) => {
         markWorkerChatRead(chatId);
         setShowFriendRequests(false);
-        router.push(`/worker?chat=${chatId}`);
+        router.push(`/chat/${chatId}`);
       }}
     />
   )}
@@ -3508,6 +3585,7 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
         loadingJobs={workerJobsLoading}
         onToggleStatus={toggleWorkerStatusFromFeed}
         onRefreshJobs={loadWorkerHub}
+        onOpenJobChat={openWorkerJobChat}
         onOpenProfile={() => {
           setWorkerHubOpen(false);
           setIdentityEditorOpen(true);
