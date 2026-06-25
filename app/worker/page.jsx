@@ -2069,13 +2069,17 @@ async function sendMessage() {
       <div className="max-w-screen-md mx-auto px-4 pt-5">
         {/* HEADER SOCIAL SIMPLE */}
 <header className="mb-4 flex items-center justify-between">
-  <button
-    type="button"
-    onClick={() => router.push('/role-selector')}
-    className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm active:scale-95"
-  >
-    <ChevronLeft size={21} />
-  </button>
+ <button
+  type="button"
+  onClick={() => {
+    router.replace('/role-selector');
+  }}
+  className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm active:scale-95"
+  aria-label="Cambiar modo"
+  title="Cambiar modo"
+>
+  <ChevronLeft size={21} />
+</button>
 
   <div className="text-center">
     <div className="text-[20px] font-black text-slate-950">

@@ -79,13 +79,19 @@ function primaryServiceSlug(worker) {
 }
 
 function SupplierFeedCard({ worker, selectedService = '', isActive, onOpenWorker, onOfferProduct, onMessageWorker }) {
-  const videoRef = useRef(null);
-  const playbackTokenRef = useRef(0);
-  const [followed, setFollowed] = useState(false);
-  const [liked, setLiked] = useState(false);
-  const mediaUrl = worker?.media_url || worker?.thumbnail_url || worker?.avatar_url || '/avatar-fallback.png';
-  const isVideo = String(worker?.media_type || '').toLowerCase() === 'video';
-  const isProfileOnlyCard = isProfileOnlyMedia(worker);
+ const videoRef = useRef(null);
+const playbackTokenRef = useRef(0);
+const [followed, setFollowed] = useState(false);
+const [liked, setLiked] = useState(false);
+const [videoReady, setVideoReady] = useState(false);
+const mediaUrl = worker?.media_url || worker?.thumbnail_url || worker?.avatar_url || '/avatar-fallback.png';
+const isVideo = String(worker?.media_type || '').toLowerCase() === 'video';
+const videoPosterUrl =
+  worker?.thumbnail_url ||
+  worker?.cover_url ||
+  worker?.avatar_url ||
+  '/avatar-fallback.png';
+const isProfileOnlyCard = isProfileOnlyMedia(worker);
   const serviceSlug = normalizeSlug(selectedService) || primaryServiceSlug(worker);
   const serviceLabel = serviceName(serviceSlug);
   const serviceIntent = workerIntentSummary(worker, selectedService);
@@ -109,7 +115,9 @@ function SupplierFeedCard({ worker, selectedService = '', isActive, onOpenWorker
       if (error?.name !== 'AbortError') toast.error('No pudimos compartir ahora');
     }
   };
-
+useEffect(() => {
+  setVideoReady(false);
+}, [mediaUrl]);
   useEffect(() => {
     if (!isVideo || !videoRef.current) return;
     const video = videoRef.current;
@@ -147,8 +155,46 @@ function SupplierFeedCard({ worker, selectedService = '', isActive, onOpenWorker
       style={{ scrollSnapStop: 'always' }}
       className="relative h-[var(--real-vh,100dvh)] w-full snap-start snap-always overflow-hidden bg-black"
     >
-      {isVideo ? (
-        <video ref={videoRef} {...{ [FEED_VIDEO_ATTR]: 'true' }} src={mediaUrl} muted loop playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover" />
+            {isVideo ? (
+        <div className="absolute inset-0 h-full w-full bg-[#071827]">
+          {!videoReady && (
+            <div className="absolute inset-0 z-10 overflow-hidden bg-[#071827]">
+              <img
+                src={videoPosterUrl}
+                onError={(e) => {
+                  e.currentTarget.src = '/avatar-fallback.png';
+                }}
+                alt=""
+                className="h-full w-full scale-110 object-cover opacity-45 blur-2xl"
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-[#062f33]/55 via-[#071827]/72 to-black/82" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="rounded-full border border-white/18 bg-white/10 px-4 py-2 text-[12px] font-black text-white/85 backdrop-blur-xl">
+                  Cargando video...
+                </div>
+              </div>
+            </div>
+          )}
+
+          <video
+            ref={videoRef}
+            {...{ [FEED_VIDEO_ATTR]: 'true' }}
+            src={mediaUrl}
+            muted
+            loop
+            playsInline
+            controls={false}
+            poster={videoPosterUrl}
+            preload={isActive ? 'auto' : 'metadata'}
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
+              videoReady ? 'opacity-100' : 'opacity-0'
+            }`}
+            onLoadedData={() => setVideoReady(true)}
+            onCanPlay={() => setVideoReady(true)}
+            onPlay={() => setVideoReady(true)}
+            onError={() => setVideoReady(true)}
+          />
+        </div>
       ) : isProfileOnlyCard ? (
         <ProfileOnlyFeedVisual
           entity={worker}
@@ -1109,14 +1155,16 @@ export default function SupplierPage() {
      <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)]">
   <div className="mx-auto flex max-w-4xl items-center gap-2">
     <button
-      type="button"
-      onClick={() => router.push('/role-selector')}
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/18 bg-black/28 text-white shadow-[0_12px_24px_rgba(0,0,0,0.22)] backdrop-blur-xl active:scale-95"
-      aria-label="Volver al selector de rol"
-      title="Volver"
-    >
-      <ArrowLeft size={18} strokeWidth={3} />
-    </button>
+  type="button"
+  onClick={() => {
+    router.replace('/role-selector');
+  }}
+  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/18 bg-black/28 text-white shadow-[0_12px_24px_rgba(0,0,0,0.22)] backdrop-blur-xl active:scale-95"
+  aria-label="Cambiar modo"
+  title="Cambiar modo"
+>
+  <ArrowLeft size={18} strokeWidth={3} />
+</button>
 
     <button
       type="button"

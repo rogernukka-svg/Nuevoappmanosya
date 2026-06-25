@@ -541,17 +541,24 @@ function trackWorkerClientEvent(eventType, worker, metadata = {}) {
 }
 function FeedCard({ worker, selectedService = '', isActive, isFollowed, isLiked, products = [], onOpen, onAddFriend, onMessage, onRequest, onNearbyMap, onComments, onLike, onSupplierContact }) {
   const [bioOpen, setBioOpen] = useState(false);
-  const [paused, setPaused] = useState(!isActive);
-  const [muted, setMuted] = useState(() => !isFeedSoundEnabled());
-  const videoRef = useRef(null);
-  const playbackTokenRef = useRef(0);
-  const serviceIntent = workerIntentSummary(worker, selectedService);
+const [paused, setPaused] = useState(!isActive);
+const [muted, setMuted] = useState(() => !isFeedSoundEnabled());
+const [videoReady, setVideoReady] = useState(false);
+const videoRef = useRef(null);
+const playbackTokenRef = useRef(0);
+const serviceIntent = workerIntentSummary(worker, selectedService);
   const primaryService = serviceIntent.primaryLabel;
   const serviceBadgeText = serviceIntent.badgeText;
   const serviceDetailText = serviceIntent.detailText;
   const mediaUrl = worker?.media_url || worker?.cover_url || worker?.video_thumb_url || worker?.avatar_url || '/avatar-fallback.png';
-  const isVideo = worker?.media_type === 'video';
-  const isProfileOnlyCard = isProfileOnlyMedia(worker);
+const isVideo = worker?.media_type === 'video';
+const videoPosterUrl =
+  worker?.thumbnail_url ||
+  worker?.video_thumb_url ||
+  worker?.cover_url ||
+  worker?.avatar_url ||
+  '/avatar-fallback.png';
+const isProfileOnlyCard = isProfileOnlyMedia(worker);
   const likes = worker?.likes_count || worker?.like_count || 0;
   const reviews = worker?.comments_count || worker?.total_reviews || 0;
   const isOnline = isOnlineRecent(worker);
@@ -560,7 +567,9 @@ function FeedCard({ worker, selectedService = '', isActive, isFollowed, isLiked,
   const postText = worker?.post_description || worker?.caption || worker?.bio || 'Mirá trabajos reales, consultá por chat y solicitá directo desde ManosYA.';
   const isLongBio = postText.length > 95;
   const shortBio = isLongBio ? `${postText.slice(0, 95).trim()}...` : postText;
-
+useEffect(() => {
+  setVideoReady(false);
+}, [mediaUrl]);
   useEffect(() => {
     if (!isVideo || !videoRef.current) return;
 
@@ -727,8 +736,27 @@ useEffect(() => {
       style={{ scrollSnapStop: 'always' }}
       className="relative h-[var(--real-vh,100dvh)] w-full snap-start snap-always overflow-hidden bg-black"
     >
-    {isVideo && mediaUrl ? (
-  <div onClick={toggleVideoPlay} className="absolute inset-0 h-full w-full cursor-pointer">
+        {isVideo && mediaUrl ? (
+  <div onClick={toggleVideoPlay} className="absolute inset-0 h-full w-full cursor-pointer bg-[#071827]">
+    {!videoReady && (
+      <div className="absolute inset-0 z-10 overflow-hidden bg-[#071827]">
+        <img
+          src={videoPosterUrl}
+          onError={(e) => {
+            e.currentTarget.src = '/avatar-fallback.png';
+          }}
+          alt=""
+          className="h-full w-full scale-110 object-cover opacity-45 blur-2xl"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#062f33]/55 via-[#071827]/72 to-black/82" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="rounded-full border border-white/18 bg-white/10 px-4 py-2 text-[12px] font-black text-white/85 backdrop-blur-xl">
+            Cargando video...
+          </div>
+        </div>
+      </div>
+    )}
+
     <video
       ref={videoRef}
       {...{ [FEED_VIDEO_ATTR]: 'true' }}
@@ -738,18 +766,28 @@ useEffect(() => {
       loop
       playsInline
       controls={false}
+      poster={videoPosterUrl}
       preload={isActive ? 'auto' : 'metadata'}
-      className="absolute inset-0 h-full w-full bg-black object-cover"
-      onPlay={() => setPaused(false)}
+      className={`absolute inset-0 h-full w-full bg-[#071827] object-cover transition-opacity duration-300 ${
+        videoReady ? 'opacity-100' : 'opacity-0'
+      }`}
+      onLoadedData={() => setVideoReady(true)}
+      onCanPlay={() => setVideoReady(true)}
+      onPlay={() => {
+        setVideoReady(true);
+        setPaused(false);
+      }}
       onPause={() => setPaused(true)}
       onError={(e) => {
         console.warn('No se pudo reproducir video del feed:', mediaUrl, e);
+        setVideoReady(true);
       }}
     />
-    {paused && (
+
+    {videoReady && paused && (
       <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/10">
-        <div className="rounded-full bg-black/45 px-5 py-5 backdrop-blur-md">
-          <span className="ml-1 block h-0 w-0 border-y-[15px] border-l-[22px] border-y-transparent border-l-white" />
+        <div className="rounded-full bg-black/35 px-4 py-4 backdrop-blur-md">
+          <span className="ml-1 block h-0 w-0 border-y-[11px] border-l-[17px] border-y-transparent border-l-white" />
         </div>
       </div>
     )}
@@ -1980,7 +2018,7 @@ const sharedWorkerOpenedRef = useRef('');
 const userEditedServiceQueryRef = useRef(false);
 const [mounted, setMounted] = useState(false);
 
-  const initialIntentFromUrl = serviceIntentFromSearchParams(searchParams);
+    const initialIntentFromUrl = serviceIntentFromSearchParams(searchParams);
   const initialServiceFromUrl = normalizeSlug(initialIntentFromUrl?.serviceSlug || searchParams?.get('service') || '');
   const initialTimingFromUrl = searchParams?.get('timing') || '';
 
@@ -1989,10 +2027,9 @@ const [clientProfile, setClientProfile] = useState(null);
 const [workers, setWorkers] = useState([]);
 const [supplierProducts, setSupplierProducts] = useState([]);
 const [busy, setBusy] = useState(false);
-const [selectedService, setSelectedService] = useState(() => initialServiceFromUrl || readServiceIntent()?.serviceSlug || '');
+const [selectedService, setSelectedService] = useState(() => initialServiceFromUrl || '');
 const [serviceQuery, setServiceQuery] = useState(() => {
-  const initial = initialServiceFromUrl || readServiceIntent()?.serviceSlug || '';
-  return initial ? getServiceLabel(initial, '') : '';
+  return initialServiceFromUrl ? getServiceLabel(initialServiceFromUrl, '') : '';
 });
 const [feedMode, setFeedMode] = useState('all');
 const [feedSeed, setFeedSeed] = useState(Date.now());
@@ -2074,20 +2111,24 @@ useEffect(() => {
     };
   }, []);
 
-  useEffect(() => {
+    useEffect(() => {
     if (!mounted) return;
     if (userEditedServiceQueryRef.current) return;
 
     const urlIntent = serviceIntentFromSearchParams(searchParams);
-    const storedIntent = readServiceIntent();
-    const nextIntent = urlIntent || storedIntent;
-    const nextService = normalizeSlug(nextIntent?.serviceSlug || '');
+    const nextService = normalizeSlug(urlIntent?.serviceSlug || searchParams?.get('service') || '');
 
-    if (!nextService) return;
+    if (!nextService) {
+      setSelectedService('');
+      setServiceQuery('');
+      clearServiceIntent();
+      return;
+    }
 
     if (nextService !== selectedService) {
       setSelectedService(nextService);
       setFeedIndex(0);
+      setFeedSlotIndex(0);
     }
 
     const label = getServiceLabel(nextService, '');
@@ -2096,10 +2137,11 @@ useEffect(() => {
     }
 
     saveServiceIntent({
-      ...nextIntent,
+      ...(urlIntent || {}),
+      role: 'client',
       serviceSlug: nextService,
       serviceName: label,
-      source: urlIntent ? 'client_url' : 'client_storage',
+      source: 'client_url',
     });
   }, [mounted, searchParams, selectedService, serviceQuery]);
 
@@ -3434,13 +3476,14 @@ trackWorkerClientEvent('request_service', activeWorker, {
       );
     } catch {}
 
-    saveServiceIntent({
-      role: 'client',
-      serviceSlug: chosenService,
-      serviceName: serviceLabel,
-      timing: bookingTime || null,
-      source: 'client_request_worker',
-    });
+        clearServiceIntent();
+    userEditedServiceQueryRef.current = true;
+    setSelectedService('');
+    setServiceQuery('');
+    setFeedMode('all');
+    setFeedIndex(0);
+    setFeedSlotIndex(0);
+    router.replace('/client');
 
     toast.success('Solicitud enviada. Chat conectado con el trabajador.');
   } catch (error) {
@@ -3471,9 +3514,18 @@ async function cancelActiveJob() {
     setChatId(null);
     setJobId(null);
 
-    try {
+        try {
       localStorage.removeItem('activeJobChat');
     } catch {}
+
+    clearServiceIntent();
+    userEditedServiceQueryRef.current = true;
+    setSelectedService('');
+    setServiceQuery('');
+    setFeedMode('all');
+    setFeedIndex(0);
+    setFeedSlotIndex(0);
+    router.replace('/client');
 
     toast.success('Pedido cancelado');
   } catch (error) {
@@ -3498,15 +3550,16 @@ async function cancelActiveJob() {
           <div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white">
   <div className="mx-auto flex h-12 max-w-[520px] items-center justify-between gap-2 px-0">
   <button
-    type="button"
-    onClick={() => {
-      router.push('/role-selector');
-    }}
-    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/55 bg-white/10 text-white shadow-[0_12px_28px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-2xl transition active:scale-95"
-    aria-label="Volver"
-  >
-    <ArrowLeft size={20} strokeWidth={3} />
-  </button>
+  type="button"
+  onClick={() => {
+    router.replace('/role-selector');
+  }}
+  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/55 bg-white/10 text-white shadow-[0_12px_28px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-2xl transition active:scale-95"
+  aria-label="Cambiar modo"
+  title="Cambiar modo"
+>
+  <ArrowLeft size={20} strokeWidth={3} />
+</button>
 
   <div className="relative h-11 min-w-0 flex-1 rounded-full border border-white/55 bg-white/10 shadow-[0_12px_28px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.18)] backdrop-blur-2xl">
     <Search

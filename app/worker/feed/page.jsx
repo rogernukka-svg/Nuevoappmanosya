@@ -372,21 +372,28 @@ function meLocationIcon() {
 
 function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFriend, onComments, onLike, onNearbyMap }) {
   const [bioOpen, setBioOpen] = useState(false);
-  const videoRef = useRef(null);
-  const playbackTokenRef = useRef(0);
-   const [paused, setPaused] = useState(!isActive);
-  const [muted, setMuted] = useState(() => !isFeedSoundEnabled());
+const videoRef = useRef(null);
+const playbackTokenRef = useRef(0);
+const [paused, setPaused] = useState(!isActive);
+const [muted, setMuted] = useState(() => !isFeedSoundEnabled());
+const [videoReady, setVideoReady] = useState(false);
 
   const primaryService = serviceLabelForWorker(worker);
-  const mediaUrl =
-    worker?.media_url ||
-    worker?.cover_url ||
-    worker?.video_thumb_url ||
-    worker?.avatar_url ||
-    '/avatar-fallback.png';
+const mediaUrl =
+  worker?.media_url ||
+  worker?.cover_url ||
+  worker?.video_thumb_url ||
+  worker?.avatar_url ||
+  '/avatar-fallback.png';
 
-  const isVideo = worker?.media_type === 'video';
-  const isProfileOnlyCard = isProfileOnlyMedia(worker);
+const isVideo = worker?.media_type === 'video';
+const videoPosterUrl =
+  worker?.thumbnail_url ||
+  worker?.video_thumb_url ||
+  worker?.cover_url ||
+  worker?.avatar_url ||
+  '/avatar-fallback.png';
+const isProfileOnlyCard = isProfileOnlyMedia(worker);
   const likes = worker?.likes_count || worker?.like_count || 0;
   const reviews = worker?.comments_count || worker?.total_reviews || 0;
   const isOnline = isOnlineRecent(worker);
@@ -400,7 +407,9 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFr
 
   const isLongBio = postText.length > 95;
   const shortBio = isLongBio ? `${postText.slice(0, 95).trim()}...` : postText;
-
+useEffect(() => {
+  setVideoReady(false);
+}, [mediaUrl]);
   useEffect(() => {
     if (!isVideo || !videoRef.current) return;
 
@@ -551,8 +560,27 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFr
       style={{ scrollSnapStop: 'always' }}
       className="relative h-[var(--real-vh,100dvh)] w-full snap-start snap-always overflow-hidden bg-black"
     >
-      {isVideo ? (
-        <div onClick={toggleVideoPlay} className="absolute inset-0 h-full w-full cursor-pointer">
+            {isVideo ? (
+        <div onClick={toggleVideoPlay} className="absolute inset-0 h-full w-full cursor-pointer bg-[#071827]">
+          {!videoReady && (
+            <div className="absolute inset-0 z-10 overflow-hidden bg-[#071827]">
+              <img
+                src={videoPosterUrl}
+                onError={(e) => {
+                  e.currentTarget.src = '/avatar-fallback.png';
+                }}
+                alt=""
+                className="h-full w-full scale-110 object-cover opacity-45 blur-2xl"
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-[#062f33]/55 via-[#071827]/72 to-black/82" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="rounded-full border border-white/18 bg-white/10 px-4 py-2 text-[12px] font-black text-white/85 backdrop-blur-xl">
+                  Cargando video...
+                </div>
+              </div>
+            </div>
+          )}
+
           <video
             ref={videoRef}
             {...{ [FEED_VIDEO_ATTR]: 'true' }}
@@ -560,18 +588,26 @@ function WorkerFeedCard({ worker, isActive, isFollowed, isLiked, onOpen, onAddFr
             loop
             muted={muted}
             playsInline
-            preload="metadata"
-            className="absolute inset-0 h-full w-full bg-black object-cover"
-            onPlay={() => setPaused(false)}
+            controls={false}
+            poster={videoPosterUrl}
+            preload={isActive ? 'auto' : 'metadata'}
+            className={`absolute inset-0 h-full w-full bg-[#071827] object-cover transition-opacity duration-300 ${
+              videoReady ? 'opacity-100' : 'opacity-0'
+            }`}
+            onLoadedData={() => setVideoReady(true)}
+            onCanPlay={() => setVideoReady(true)}
+            onPlay={() => {
+              setVideoReady(true);
+              setPaused(false);
+            }}
             onPause={() => setPaused(true)}
+            onError={() => setVideoReady(true)}
           />
 
-         
-
-          {paused && (
+          {videoReady && paused && (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/10">
-              <div className="rounded-full bg-black/45 px-5 py-5 backdrop-blur-md">
-                <span className="ml-1 block h-0 w-0 border-y-[15px] border-l-[22px] border-y-transparent border-l-white" />
+              <div className="rounded-full bg-black/35 px-4 py-4 backdrop-blur-md">
+                <span className="ml-1 block h-0 w-0 border-y-[11px] border-l-[17px] border-y-transparent border-l-white" />
               </div>
             </div>
           )}
@@ -3632,7 +3668,19 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
   
   return (
     
-    <div className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-slate-900"><div className="pointer-events-none absolute inset-0 bg-black" /><div className="relative z-10 mx-auto h-[var(--real-vh,100dvh)] w-full max-w-6xl overflow-hidden px-0"><div className="relative h-full"><div className="relative z-10 h-full"><div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white"><div className="flex items-center gap-2"><button type="button" onClick={() => router.back()} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-xl active:scale-95" aria-label="Volver"><ArrowLeft size={18} strokeWidth={2.2} /></button><div className="relative h-9 min-w-0 flex-1 rounded-full border border-white/16 bg-white/12 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={15} /><input value={serviceQuery} onChange={(e) => { const value = e.target.value; setServiceQuery(value); const normalizedValue = normalizeSlug(value); const matchedService = SERVICE_CATALOG.find((service) => { const slug = normalizeSlug(service.slug); const name = normalizeSlug(service.name); return slug.includes(normalizedValue) || name.includes(normalizedValue) || normalizedValue.includes(slug); }); setSelectedService(matchedService ? matchedService.slug : ''); }} placeholder="Buscar..." className="h-full w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/62 outline-none" />{serviceQuery && <button type="button" onClick={() => { setServiceQuery(''); setSelectedService(''); }} className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/16 text-white/82 active:scale-95"><X size={14} /></button>}</div></div><div className="mt-2 flex justify-center"><div className="relative grid h-10 w-[214px] grid-cols-2 items-center rounded-full border border-white/16 bg-black/32 p-1 shadow-[0_14px_34px_rgba(0,0,0,0.24)] backdrop-blur-2xl"><motion.div layout transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-white shadow-[0_8px_20px_rgba(0,0,0,0.20)]" style={{ left: feedMode === 'all' ? '4px' : '50%' }} /><button type="button" onClick={() => { setFeedMode('all'); setSelectedService(''); setServiceQuery(''); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); fetchWorkers(''); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${feedMode === 'all' ? 'text-black' : 'text-white'}`}>Todos</button><button type="button" onClick={() => { setFeedMode('near'); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${feedMode === 'near' ? 'text-black' : 'text-white'}`}>Cerca tuyo</button></div></div></div>{busy ? <div className="flex h-full items-center justify-center bg-[#081924] text-white"><div className="text-center"><div className="text-xl font-black">Cargando trabajadores</div><div className="mt-2 text-sm text-white/70">Estamos ordenando lo mejor para vos.</div></div></div> : !feedWorkers.length ? <div className="flex h-full items-center justify-center bg-[#081924] px-8 text-center text-white"><div><Compass className="mx-auto mb-3 text-white/70" size={34} /><div className="text-xl font-black">No encontramos trabajadores</div><div className="mt-2 text-sm text-white/70">ProbÃ¡ cambiar el filtro o revisar tu zona.</div><button type="button" onClick={() => fetchWorkers('')} className="mt-6 rounded-full bg-[#62bfb9] px-6 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(98,191,185,0.35)]">Actualizar</button></div></div> : <div key={`${feedMode}-${feedSeed}-${selectedService || 'todos'}`} ref={feedRef} onScroll={(e) => { const el = e.currentTarget; const cardHeight = Math.max(1, el.clientHeight); const rawIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); const nextIndex = feedWorkers.length ? rawIndex % feedWorkers.length : 0; if (nextIndex !== feedIndex && feedWorkers[nextIndex]) { setFeedIndex(nextIndex); setSelected(feedWorkers[nextIndex]); } if (rawIndex !== feedSlotIndex) setFeedSlotIndex(rawIndex); if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current); feedSnapTimerRef.current = setTimeout(() => { const snapIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); const realIndex = feedWorkers.length ? snapIndex % feedWorkers.length : 0; const shouldRecenter = feedWorkers.length > 1 && (snapIndex < feedWorkers.length || snapIndex >= feedWorkers.length * 4); const targetIndex = shouldRecenter ? feedWorkers.length * 2 + realIndex : snapIndex; setFeedSlotIndex(targetIndex); setFeedIndex(realIndex); if (feedWorkers[realIndex]) setSelected(feedWorkers[realIndex]); el.scrollTo({ top: targetIndex * cardHeight, behavior: 'auto' }); }, 120); }} style={{ scrollSnapType: 'y mandatory', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch' }} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black">
+    <div className="relative h-[var(--real-vh,100dvh)] overflow-hidden bg-black text-slate-900"><div className="pointer-events-none absolute inset-0 bg-black" /><div className="relative z-10 mx-auto h-[var(--real-vh,100dvh)] w-full max-w-6xl overflow-hidden px-0"><div className="relative h-full"><div className="relative z-10 h-full"><div className="pointer-events-auto absolute left-0 right-0 top-0 z-40 px-3 pt-[calc(env(safe-area-inset-top)+8px)] text-white"><div className="flex items-center gap-2">
+      <button
+  type="button"
+  onClick={() => {
+    router.replace('/role-selector');
+  }}
+  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-xl active:scale-95"
+  aria-label="Cambiar modo"
+  title="Cambiar modo"
+>
+  <ArrowLeft size={18} strokeWidth={2.2} />
+</button>
+      <div className="relative h-9 min-w-0 flex-1 rounded-full border border-white/16 bg-white/12 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={15} /><input value={serviceQuery} onChange={(e) => { const value = e.target.value; setServiceQuery(value); const normalizedValue = normalizeSlug(value); const matchedService = SERVICE_CATALOG.find((service) => { const slug = normalizeSlug(service.slug); const name = normalizeSlug(service.name); return slug.includes(normalizedValue) || name.includes(normalizedValue) || normalizedValue.includes(slug); }); setSelectedService(matchedService ? matchedService.slug : ''); }} placeholder="Buscar..." className="h-full w-full rounded-full bg-transparent pl-8 pr-8 text-[12px] font-bold text-white placeholder:text-white/62 outline-none" />{serviceQuery && <button type="button" onClick={() => { setServiceQuery(''); setSelectedService(''); }} className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-white/16 text-white/82 active:scale-95"><X size={14} /></button>}</div></div><div className="mt-2 flex justify-center"><div className="relative grid h-10 w-[214px] grid-cols-2 items-center rounded-full border border-white/16 bg-black/32 p-1 shadow-[0_14px_34px_rgba(0,0,0,0.24)] backdrop-blur-2xl"><motion.div layout transition={{ type: 'spring', stiffness: 300, damping: 30 }} className="absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-white shadow-[0_8px_20px_rgba(0,0,0,0.20)]" style={{ left: feedMode === 'all' ? '4px' : '50%' }} /><button type="button" onClick={() => { setFeedMode('all'); setSelectedService(''); setServiceQuery(''); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); fetchWorkers(''); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${feedMode === 'all' ? 'text-black' : 'text-white'}`}>Todos</button><button type="button" onClick={() => { setFeedMode('near'); setFeedSeed(Date.now() + Math.random()); setFeedIndex(0); setSelected(null); feedRef.current?.scrollTo({ top: 0, behavior: 'auto' }); }} className={`relative z-10 h-8 rounded-full text-[11px] font-black transition ${feedMode === 'near' ? 'text-black' : 'text-white'}`}>Cerca tuyo</button></div></div></div>{busy ? <div className="flex h-full items-center justify-center bg-[#081924] text-white"><div className="text-center"><div className="text-xl font-black">Cargando trabajadores</div><div className="mt-2 text-sm text-white/70">Estamos ordenando lo mejor para vos.</div></div></div> : !feedWorkers.length ? <div className="flex h-full items-center justify-center bg-[#081924] px-8 text-center text-white"><div><Compass className="mx-auto mb-3 text-white/70" size={34} /><div className="text-xl font-black">No encontramos trabajadores</div><div className="mt-2 text-sm text-white/70">ProbÃ¡ cambiar el filtro o revisar tu zona.</div><button type="button" onClick={() => fetchWorkers('')} className="mt-6 rounded-full bg-[#62bfb9] px-6 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(98,191,185,0.35)]">Actualizar</button></div></div> : <div key={`${feedMode}-${feedSeed}-${selectedService || 'todos'}`} ref={feedRef} onScroll={(e) => { const el = e.currentTarget; const cardHeight = Math.max(1, el.clientHeight); const rawIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); const nextIndex = feedWorkers.length ? rawIndex % feedWorkers.length : 0; if (nextIndex !== feedIndex && feedWorkers[nextIndex]) { setFeedIndex(nextIndex); setSelected(feedWorkers[nextIndex]); } if (rawIndex !== feedSlotIndex) setFeedSlotIndex(rawIndex); if (feedSnapTimerRef.current) clearTimeout(feedSnapTimerRef.current); feedSnapTimerRef.current = setTimeout(() => { const snapIndex = Math.max(0, Math.min(loopedFeedWorkers.length - 1, Math.round(el.scrollTop / cardHeight))); const realIndex = feedWorkers.length ? snapIndex % feedWorkers.length : 0; const shouldRecenter = feedWorkers.length > 1 && (snapIndex < feedWorkers.length || snapIndex >= feedWorkers.length * 4); const targetIndex = shouldRecenter ? feedWorkers.length * 2 + realIndex : snapIndex; setFeedSlotIndex(targetIndex); setFeedIndex(realIndex); if (feedWorkers[realIndex]) setSelected(feedWorkers[realIndex]); el.scrollTo({ top: targetIndex * cardHeight, behavior: 'auto' }); }, 120); }} style={{ scrollSnapType: 'y mandatory', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch' }} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black">
       {loopedFeedWorkers.map((worker, index) => (
   <WorkerFeedCard
     key={String(worker.post_id || worker.user_id || 'worker') + '-' + index}
