@@ -81,7 +81,7 @@ export default function RootPage() {
         }}
       />
 
-      {/* 26 premium visible */}
+      {/* Número decorativo */}
       <motion.div
         aria-hidden="true"
         initial={{ opacity: 0, y: 14, scale: 0.985 }}
@@ -147,7 +147,7 @@ export default function RootPage() {
 
       {/* Contenido central */}
       <section className="relative z-10 flex w-full max-w-[430px] flex-col items-center justify-center text-center">
-        {/* Copa principal */}
+        {/* Imagen principal sin copa */}
         <motion.div
           initial={{
             opacity: 0,
@@ -200,8 +200,8 @@ export default function RootPage() {
           />
 
           <Image
-            src="/manosya-copa.png"
-            alt="Copa ManosYA"
+            src="/ROGER OK.png"
+            alt="Roger ManosYA"
             width={420}
             height={420}
             priority

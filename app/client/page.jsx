@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
-import 'leaflet/dist/leaflet.css';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -64,37 +63,10 @@ import {
 
 const supabase = getSupabase();
 
-const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((m) => m.Marker), { ssr: false });
-const Polyline = dynamic(() => import('react-leaflet').then((m) => m.Polyline), { ssr: false });
-const Circle = dynamic(() => import('react-leaflet').then((m) => m.Circle), { ssr: false });
-const FitBounds = dynamic(
-  () =>
-    Promise.resolve(function FitBoundsInner({ points }) {
-      const { useMap } = require('react-leaflet');
-      const map = useMap();
-
-      useEffect(() => {
-        if (!map || !Array.isArray(points) || points.length < 2) return;
-
-        const L = require('leaflet');
-        const bounds = L.latLngBounds(points);
-
-        setTimeout(() => {
-          map.fitBounds(bounds, {
-            paddingTopLeft: [36, 90],
-            paddingBottomRight: [36, 190],
-            maxZoom: 14,
-            animate: true,
-          });
-        }, 250);
-      }, [map, points]);
-
-      return null;
-    }),
-  { ssr: false }
-);
+const ManosYaMap = dynamic(() => import('@/components/ManosYaMap'), {
+  ssr: false,
+  loading: () => <div className="flex h-full w-full items-center justify-center bg-slate-100"><div className="text-sm font-bold text-slate-500">Cargando mapa...</div></div>,
+});
 const LS_APP_ROLE = 'app_role';
 const LAST_GPS_KEY = 'manosya_last_gps';
 const FEED_SOUND_KEY = 'manosya_feed_sound_enabled';
@@ -766,7 +738,7 @@ useEffect(() => {
       loop
       playsInline
       controls={false}
-      preload="auto"
+      preload={isActive ? 'auto' : 'metadata'}
       className="absolute inset-0 h-full w-full bg-black object-cover"
       onPlay={() => setPaused(false)}
       onPause={() => setPaused(true)}
@@ -1646,50 +1618,20 @@ function NearbyMapSheet({ open, workers, center, hasMeCoords, me, selectedWorker
         </div>
 
         <div className="relative flex-1 overflow-hidden bg-[#eaf5f4]">
-          <MapContainer
+                    <ManosYaMap
             center={center}
             zoom={hasMeCoords ? 12 : 11}
-            className="h-full w-full"
-          >
-            <TileLayer
-              attribution="&copy; CartoDB"
-              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-            />
-
-            <FitBounds points={fitPoints} />
-
-            {hasMeCoords && (
-              <>
-                <Marker
-                  position={[Number(me.lat), Number(me.lon)]}
-                  icon={clientLocationIcon() || undefined}
-                />
-
-                <Circle
-                  center={[Number(me.lat), Number(me.lon)]}
-                  radius={2500}
-                  pathOptions={{
-                    color: '#62bfb9',
-                    fillColor: '#62bfb9',
-                    fillOpacity: 0.1,
-                  }}
-                />
-              </>
-            )}
-
-            {mapWorkers.map((worker) => (
-              <Marker
-                key={String(worker.user_id || worker.worker_id || worker.id)}
-                position={[Number(worker.lat), Number(worker.lng)]}
-                icon={avatarIcon(worker.avatar_url, worker) || undefined}
-                eventHandlers={{
-                  click: () => {
-                    selectMapWorker(worker);
-                  },
-                }}
-              />
-            ))}
-          </MapContainer>
+            me={me}
+            hasMeCoords={hasMeCoords}
+            showMeAsCircle={true}
+            meCircleRadius={2500}
+            meCircleColor="#62bfb9"
+            workers={mapWorkers}
+            selectedWorker={active}
+            fitPoints={fitPoints}
+            onSelectWorker={selectMapWorker}
+            onWorkerClick={selectMapWorker}
+          />
 
           <div className="pointer-events-none absolute inset-x-0 top-0 z-[998] h-16 bg-gradient-to-b from-white/72 to-transparent" />
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[998] h-[190px] bg-gradient-to-t from-[#062f33]/42 via-[#062f33]/10 to-transparent" />
@@ -2527,7 +2469,9 @@ async function fetchWorkers(serviceFilter = '') {
       return Number(b?.avg_rating || 0) - Number(a?.avg_rating || 0);
     });
 
-    console.log('CLIENT FEED MERGED', merged);
+    if (process.env.NODE_ENV === 'development') {
+  console.log('CLIENT FEED MERGED COUNT', merged.length);
+}
 
     setWorkers(merged);
     setFeedIndex(0);
@@ -2543,7 +2487,7 @@ async function fetchWorkers(serviceFilter = '') {
   if (!mounted) return;
 
   fetchWorkers(selectedService);
-}, [mounted, selectedService, hasMeCoords, feedMode]);
+}, [mounted, selectedService, feedMode]);
 useEffect(() => {
   if (!me?.id) return;
 
@@ -3815,48 +3759,20 @@ async function cancelActiveJob() {
 
                 <div className="grid gap-0 md:grid-cols-[1.45fr_0.95fr]">
                   <div className="relative h-[320px] md:h-[calc(var(--real-vh,100dvh)-350px)]">
-                    <MapContainer
+                    <ManosYaMap
                       center={mapCenter}
                       zoom={hasMeCoords ? 14 : HOME_VIEW.zoom}
-                      className="h-full w-full"
-                      whenReady={() => {
-                        setTimeout(() => mapRef.current?.invalidateSize?.(), 250);
-                      }}
-                      ref={mapRef}
-                    >
-                      <TileLayer
-                        attribution='&copy; OpenStreetMap'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      />
-
-                      {hasMeCoords && (
-                        <>
-                          <Marker
-                            position={[Number(me.lat), Number(me.lon)]}
-                            icon={clientLocationIcon() || undefined}
-                          />
-                          <Circle
-                            center={[Number(me.lat), Number(me.lon)]}
-                            radius={120}
-                            pathOptions={{ color: '#16a3a8', fillColor: '#16a3a8', fillOpacity: 0.12 }}
-                          />
-                        </>
-                      )}
-
-                      {trackingWorker && Number.isFinite(Number(trackingWorker.lat)) && Number.isFinite(Number(trackingWorker.lng)) && (
-                        <Marker
-                          position={[Number(trackingWorker.lat), Number(trackingWorker.lng)]}
-                          icon={avatarIcon(trackingWorker.avatar_url, trackingWorker) || undefined}
-                        />
-                      )}
-
-                      {Array.isArray(route) && route.length > 1 && (
-                        <Polyline
-                          positions={route}
-                          pathOptions={{ color: '#0ea5a4', weight: 5, opacity: 0.92 }}
-                        />
-                      )}
-                    </MapContainer>
+                      me={me}
+                      hasMeCoords={hasMeCoords}
+                      showMeAsCircle={true}
+                      meCircleRadius={120}
+                      meCircleColor="#16a3a8"
+                      workers={trackingWorker ? [trackingWorker] : []}
+                      route={route}
+                      routeColor="#0ea5a4"
+                      routeWeight={5}
+                      mapRef={mapRef}
+                    />
                   </div>
 
                   <div className="overflow-y-auto p-4 sm:p-5">

@@ -59,22 +59,40 @@ const [supportOpen, setSupportOpen] = useState(false);
 const [accountOpen, setAccountOpen] = useState(false);
 const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
-  useEffect(() => {
+    useEffect(() => {
+    let alive = true;
+
     const checkSession = async () => {
-      const { data } = await supabase.auth.getSession();
+      try {
+        const sessionResult = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise((resolve) => setTimeout(() => resolve(null), 1800)),
+        ]);
 
-      if (!data?.session?.user) {
+        if (!alive) return;
+
+        const user = sessionResult?.data?.session?.user || null;
+
+        if (!user) {
+          router.replace('/auth/login');
+          return;
+        }
+
+        setLoading(false);
+      } catch (error) {
+        console.warn('role selector session error:', error);
+
+        if (!alive) return;
         router.replace('/auth/login');
-        return;
       }
-
-      setLoading(false);
     };
 
     checkSession();
-  }, [router]);
 
-  const handleSelectRole = async (role) => {
+    return () => {
+      alive = false;
+    };
+  }, [router]);  const handleSelectRole = async (role) => {
     setLoading(true);
 
     const { data } = await supabase.auth.getSession();
@@ -166,10 +184,10 @@ const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
             className="mx-auto h-[clamp(38px,7dvh,62px)] w-auto object-contain"
           />
 
-          <div className="relative mx-auto mt-1 h-[clamp(92px,21dvh,158px)] w-[clamp(92px,21dvh,158px)] shrink-0">
+                    <div className="relative mx-auto mt-1 h-[clamp(92px,21dvh,158px)] w-[clamp(92px,21dvh,158px)] shrink-0">
             <div className="absolute inset-8 rounded-full bg-white/28 blur-3xl" />
             <img
-              src="/ROGER SALUDANDO.png"
+              src="/ROGER OK.png"
               alt="Roger ManosYA"
               className="relative z-10 h-full w-full object-contain drop-shadow-[0_24px_35px_rgba(8,15,52,0.20)]"
             />

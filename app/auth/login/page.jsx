@@ -1386,15 +1386,17 @@ const [currentPrompt, setCurrentPrompt] = useState({
 });
 
   const displayAvatar = useMemo(() => {
-    if (showRecognizedCard) return '/ROGER SALUDANDO.png';
-    if (draftStage === 'name') return '/ROGER SALUDANDO.png';
-    if (draftStage === 'flow') return '/ROGER DEFINITIVO pensativo.png';
-    if (draftStage === 'need') return '/ROGER DEFINITIVO pensativo.png';
-    if (draftStage === 'timing') return '/ROGER DEFINITIVO pensativo.png';
-    if (draftStage === 'email') return '/ROGER OK.png';
-    if (draftStage === 'password' || draftStage === 'login-password') return '/ROGER OK.png';
-    return '/ROGER SALUDANDO.png';
-  }, [draftStage, showRecognizedCard]);
+  if (showRecognizedCard) return '/ROGER OK.png';
+  if (draftStage === 'name') return '/ROGER OK.png';
+  if (draftStage === 'real-name') return '/ROGER OK.png';
+  if (draftStage === 'flow') return '/ROGER DEFINITIVO pensativo.png';
+  if (draftStage === 'need') return '/ROGER DEFINITIVO pensativo.png';
+  if (draftStage === 'timing') return '/ROGER DEFINITIVO pensativo.png';
+  if (draftStage === 'email') return '/ROGER OK.png';
+  if (draftStage === 'password' || draftStage === 'login-password') return '/ROGER OK.png';
+  if (draftStage === 'login-direct') return '/ROGER OK.png';
+  return '/ROGER OK.png';
+}, [draftStage, showRecognizedCard]);
 
   async function getProfileByUserId(userId) {
     const { data, error } = await supabase
@@ -2082,10 +2084,10 @@ async function handleMainContinue(latestValue = '') {
       <div className="flex min-h-screen w-full items-center justify-center bg-[#69c4c0] px-6">
         <div className="text-center">
           <img
-            src="/ROGER OK.png"
-            alt="ManosYA"
-            className="mx-auto h-[260px] w-auto object-contain"
-          />
+  src="/ROGER OK.png"
+  alt="ManosYA"
+  className="mx-auto h-[260px] w-auto object-contain"
+/>
           <div className="mt-6 text-2xl font-black text-white">Cargando ManosYA...</div>
         </div>
       </div>

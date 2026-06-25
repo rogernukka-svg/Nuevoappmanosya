@@ -33,17 +33,12 @@ import { startRealtimeCore, stopRealtimeCore } from '@/lib/realtimeCore';
 import { requireRole } from '@/lib/roleRedirect';
 import { canAttemptAction, inspectTextSafety, safeExternalUrl } from '@/lib/security';
 import { userFriendlyError } from '@/lib/userFacingErrors';
-
-/* === Leaflet Map === */
 import dynamic from 'next/dynamic';
 
-const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer), { ssr: false });
-const Circle = dynamic(() => import('react-leaflet').then((m) => m.Circle), { ssr: false });
-const CircleMarker = dynamic(() => import('react-leaflet').then((m) => m.CircleMarker), { ssr: false });
-const Popup = dynamic(() => import('react-leaflet').then((m) => m.Popup), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((m) => m.Marker), { ssr: false });
-const Polyline = dynamic(() => import('react-leaflet').then((m) => m.Polyline), { ssr: false });
+const ManosYaMap = dynamic(() => import('@/components/ManosYaMap'), {
+  ssr: false,
+  loading: () => <div className="flex h-full w-full items-center justify-center bg-slate-100"><div className="text-sm font-bold text-slate-500">Cargando mapa...</div></div>,
+});
 
 const supabase = getSupabase();
 
@@ -766,9 +761,9 @@ async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
   }
 }
 
-async function openGoogleMaps(lat, lng) {
+function openGoogleMaps(lat, lng) {
   if (lat == null || lng == null) {
-    toast.error('El cliente todavÃ­a no compartiÃ³ ubicaciÃ³n');
+    toast.error('El cliente todavía no compartió ubicación');
     return;
   }
 
@@ -776,32 +771,21 @@ async function openGoogleMaps(lat, lng) {
   const lo = Number(lng);
 
   if (Number.isNaN(la) || Number.isNaN(lo)) {
-    toast.error('UbicaciÃ³n invÃ¡lida');
+    toast.error('Ubicación inválida');
     return;
   }
 
-  setPreviewTarget({ lat: la, lng: lo });
-  setPreviewRoute(null);
-  setSheetSnap('mid');
-  setPreviewMapOpen(true);
+  const mapUrl = safeExternalUrl(
+    `https://www.google.com/maps/dir/?api=1&destination=${la},${lo}&travelmode=driving`,
+    { allowedHosts: ['google.com', 'www.google.com'] }
+  );
 
-  if (workerLocation?.lat != null && workerLocation?.lng != null) {
-    const result = await fetchRoadRoute(
-      Number(workerLocation.lat),
-      Number(workerLocation.lng),
-      la,
-      lo
-    );
-
-    if (result?.route?.length) {
-      setPreviewRoute(result.route);
-    } else {
-      setPreviewRoute([
-        [Number(workerLocation.lat), Number(workerLocation.lng)],
-        [la, lo],
-      ]);
-    }
+  if (!mapUrl) {
+    toast.error('No pudimos abrir Google Maps');
+    return;
   }
+
+  window.open(mapUrl, '_blank', 'noopener,noreferrer');
 }
 
 function openExternalNavigation(lat, lng) {
@@ -919,8 +903,8 @@ useEffect(() => {
 
       const now = Date.now();
       const movedEnough =
-        lastLat === null || distance(lastLat, lastLng, lat, lng) > 15;
-      const timeOk = now - lastSent > 10000;
+        lastLat === null || distance(lastLat, lastLng, lat, lng) > 50;
+      const timeOk = now - lastSent > 30000;
 
       if (!movedEnough && !timeOk) return;
 
@@ -955,17 +939,19 @@ useEffect(() => {
   { onConflict: 'user_id' }
 );
 
-        console.log('ðŸ“ ubicaciÃ³n enviada realtime');
+        if (process.env.NODE_ENV === 'development') {
+  console.log('ubicación enviada realtime');
+}
       } catch (err) {
         console.error('âŒ Error GPS realtime:', err);
       }
     },
     (err) => console.warn('ðŸš« Error GPS:', err),
     {
-      enableHighAccuracy: false,
-      maximumAge: 0,
-      timeout: 10000,
-    }
+  enableHighAccuracy: false,
+  maximumAge: 30000,
+  timeout: 7000,
+}
   );
 
   return () => navigator.geolocation.clearWatch(watcher);
@@ -1100,13 +1086,13 @@ useEffect(() => {
 
     const chatIds = (chatsData || []).map((chat) => chat.id).filter(Boolean);
     const { data: messagesData } = chatIds.length
-      ? await supabase
-          .from('messages')
-          .select('id, chat_id, text, content, body, created_at')
-          .in('chat_id', chatIds)
-          .order('created_at', { ascending: false })
-          .limit(250)
-      : { data: [] };
+  ? await supabase
+      .from('messages')
+      .select('id, chat_id, text, content, body, created_at')
+      .in('chat_id', chatIds)
+      .order('created_at', { ascending: false })
+      .limit(80)
+  : { data: [] };
 
     const lastMessageByChatId = {};
     for (const message of messagesData || []) {
@@ -1254,10 +1240,10 @@ useEffect(() => {
 
   refreshWorkerUnreadBadges();
 
-  const timer = setInterval(refreshWorkerUnreadBadges, 8000);
+  const timer = setInterval(refreshWorkerUnreadBadges, 20000);
 
   return () => clearInterval(timer);
-}, [user?.id, jobs.length]);
+}, [user?.id]);
 
   useEffect(() => {
     if (mapOpen) {
@@ -2734,115 +2720,21 @@ const unreadMessages =
             >
               {/* MAPA FULL */}
               <div className="absolute inset-0 z-0">
-                <MapContainer
-  whenReady={(e) => {
-    setTimeout(() => {
-      e.target.invalidateSize();
-    }, 350);
-  }}
-  center={[previewTarget.lat, previewTarget.lng]}
-  zoom={16}
-  scrollWheelZoom={true}
-  style={{ height: '100%', width: '100%' }}
->
-  <TileLayer
-    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-    attribution="&copy; OpenStreetMap contributors &copy; CARTO"
-  />
-
-  {previewRoute && (
-    <>
-      <Polyline
-        positions={previewRoute}
-        pathOptions={{
-          color: '#34d399',
-          weight: 14,
-          opacity: 0.18,
-          lineJoin: 'round',
-          lineCap: 'round',
-        }}
-      />
-
-      <Polyline
-        positions={previewRoute}
-        pathOptions={{
-          color: '#10b981',
-          weight: 8,
-          opacity: 0.35,
-          lineJoin: 'round',
-          lineCap: 'round',
-        }}
-      />
-
-      <Polyline
-        positions={previewRoute}
-        pathOptions={{
-          color: '#059669',
-          weight: 5,
-          opacity: 0.95,
-          lineJoin: 'round',
-          lineCap: 'round',
-          dashArray: '10 10',
-        }}
-      />
-    </>
-  )}
-
- <Marker
-  position={[previewTarget.lat, previewTarget.lng]}
-  icon={makeAvatarMarkerIcon({
-    avatarUrl: selectedJob?.client?.avatar_url || clientProfile?.avatar_url,
-    name: selectedJob?.client?.full_name || clientProfile?.full_name || 'Cliente',
-    borderColor: '#ef4444',
-  })}
->
-  <Popup>
-    <div className="min-w-[190px]">
-      <div className="font-extrabold text-gray-800">
-        {selectedJob?.client?.full_name || clientProfile?.full_name || 'Cliente'}
-      </div>
-      <div className="mt-1 text-sm text-gray-500">
-        UbicaciÃ³n compartida del cliente
-      </div>
-    </div>
-  </Popup>
-</Marker>
-
-  {workerLocation?.lat != null && workerLocation?.lng != null && (
-    <>
-      <Marker
-  position={[Number(workerLocation.lat), Number(workerLocation.lng)]}
-  icon={makeAvatarMarkerIcon({
-    avatarUrl: workerSelfProfile?.avatar_url,
-    name: workerSelfProfile?.full_name || 'Trabajador',
-    borderColor: '#10b981',
-  })}
->
-  <Popup>
-    <div className="min-w-[190px]">
-      <div className="font-extrabold text-gray-800">
-        {workerSelfProfile?.full_name || 'Tu ubicaciÃ³n'}
-      </div>
-      <div className="mt-1 text-sm text-gray-500">
-        PosiciÃ³n actual del trabajador
-      </div>
-    </div>
-  </Popup>
-</Marker>
-
-      <Circle
-        center={[Number(workerLocation.lat), Number(workerLocation.lng)]}
-        radius={55}
-        pathOptions={{
-          color: '#10b981',
-          weight: 1,
-          fillColor: '#10b981',
-          fillOpacity: 0.12,
-        }}
-      />
-    </>
-  )}
-</MapContainer>
+                <ManosYaMap
+                  center={[previewTarget.lat, previewTarget.lng]}
+                  zoom={16}
+                  previewTarget={previewTarget}
+                  previewTargetName={selectedJob?.client?.full_name || clientProfile?.full_name || 'Cliente'}
+                  previewTargetColor="#ef4444"
+                  route={previewRoute}
+                  routeColor="#059669"
+                  routeWeight={5}
+                  workerLocation={workerLocation}
+                  workerSelfProfile={workerSelfProfile}
+                  selectedJob={selectedJob}
+                  clientProfile={clientProfile}
+                  style={{ height: '100%', width: '100%' }}
+                />
               </div>
 
                            {/* TOP ACTIONS */}
@@ -3193,98 +3085,72 @@ const unreadMessages =
         </div>
       </div>
 
-      {/* MAP MODAL */}
+            {/* ZONAS ACTIVAS LIVIANAS */}
       <AnimatePresence>
         {mapOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex justify-center items-end"
+            className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm"
           >
             <motion.div
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 18 }}
-              className="bg-white rounded-t-[32px] w-full max-w-md shadow-[0_-20px_60px_rgba(0,0,0,0.20)] p-2"
+              className="w-full max-w-md overflow-hidden rounded-t-[32px] bg-white shadow-[0_-20px_60px_rgba(0,0,0,0.20)]"
             >
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                 <div>
                   <h3 className="font-extrabold text-gray-800">Zonas activas</h3>
-                  <p className="text-xs text-gray-500">Mapa estratÃ©gico de alta circulaciÃ³n</p>
+                  <p className="text-xs font-semibold text-gray-500">
+                    Vista liviana sin cargar mapa
+                  </p>
                 </div>
 
-                <button onClick={() => setMapOpen(false)} className="text-gray-600 hover:text-red-500">
+                <button
+                  type="button"
+                  onClick={() => setMapOpen(false)}
+                  className="text-gray-600 hover:text-red-500"
+                >
                   <XCircle size={22} />
                 </button>
               </div>
 
-              <div
-                className="w-full rounded-2xl overflow-hidden mt-2 border border-gray-200"
-                style={{ height: '70vh', minHeight: '380px', position: 'relative' }}
-              >
-                <MapContainer
-  whenReady={(e) => {
-    setTimeout(() => {
-      e.target.invalidateSize();
-    }, 350);
-  }}
-  center={[-25.5093, -54.6111]}
-  zoom={12}
-  scrollWheelZoom={true}
-  style={{ height: '100%', width: '100%' }}
->
-  <TileLayer
-    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-    attribution="&copy; OpenStreetMap contributors &copy; CARTO"
-  />
+              <div className="max-h-[70vh] overflow-y-auto p-4">
+                <div className="grid gap-2">
+                  {HOTSPOTS.slice(0, 16).map((zone) => (
+                    <button
+                      key={zone.name}
+                      type="button"
+                      onClick={() => {
+                        const mapUrl = safeExternalUrl(
+                          `https://www.google.com/maps/search/?api=1&query=${zone.lat},${zone.lng}`,
+                          { allowedHosts: ['google.com', 'www.google.com'] }
+                        );
 
-  {HOTSPOTS.map((p) => {
-    const outerRadius = Math.max(180, p.intensity * 55);
-    const innerRadius = Math.max(10, p.intensity + 6);
-    const zoneColor =
-      p.intensity >= 9 ? '#ef4444' : p.intensity >= 7 ? '#f59e0b' : '#10b981';
+                        if (mapUrl) {
+                          window.open(mapUrl, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
+                      className="flex items-center justify-between rounded-[22px] border border-[#d6f4f1] bg-[#effffb] px-4 py-3 text-left active:scale-[0.98]"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-[14px] font-black text-slate-900">
+                          {zone.name}
+                        </div>
+                        <div className="mt-0.5 text-[11px] font-bold text-[#0c6b70]">
+                          Intensidad {zone.intensity}/10
+                        </div>
+                      </div>
 
-    return (
-      <Fragment key={p.name}>
-        <Circle
-          center={[p.lat, p.lng]}
-          radius={outerRadius}
-          pathOptions={{
-            color: zoneColor,
-            fillColor: zoneColor,
-            fillOpacity: 0.14,
-            weight: 2,
-          }}
-        />
-
-        <CircleMarker
-          center={[p.lat, p.lng]}
-          radius={innerRadius}
-          pathOptions={{
-            color: '#ffffff',
-            weight: 3,
-            fillColor: zoneColor,
-            fillOpacity: 0.95,
-          }}
-        >
-          <Popup>
-            <div className="min-w-[180px]">
-              <div className="font-extrabold text-gray-800">{p.name}</div>
-              <div className="text-sm text-gray-500 mt-1">
-                Zona de alta circulaciÃ³n
-              </div>
-              <div className="mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border bg-white text-gray-700 border-gray-200">
-                Intensidad: {p.intensity}/10
-              </div>
-            </div>
-          </Popup>
-        </CircleMarker>
-      </Fragment>
-    );
-  })}
-</MapContainer>
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#18b8aa] text-white">
+                        <MapPin size={16} />
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </motion.div>
           </motion.div>

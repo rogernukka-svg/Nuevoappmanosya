@@ -4,7 +4,7 @@ import '../../globals.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { getSupabase } from '@/lib/supabase';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { requireRole } from '@/lib/roleRedirect';
 const supabase = getSupabase();
 
@@ -99,6 +99,8 @@ const showPolice = new Date() >= POLICE_REQUIRE_AFTER;
 export default function WorkerOnboardPage() {
   const [user, setUser] = useState(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isEditMode = searchParams?.get('mode') === 'edit';
 
  useEffect(() => {
   let alive = true;
@@ -143,8 +145,8 @@ export default function WorkerOnboardPage() {
           </div>
         </div>
 
-        {user ? (
-          <OnboardForm user={user} />
+                {user ? (
+          <OnboardForm user={user} isEditMode={isEditMode} />
         ) : (
           <div className="rounded-3xl bg-white border border-gray-200 shadow-sm p-10 text-center text-gray-500">
             Cargando tu perfil...
@@ -156,12 +158,12 @@ export default function WorkerOnboardPage() {
 }
 
 /* ====================== FORM ====================== */
-function OnboardForm({ user }) {
+function OnboardForm({ user, isEditMode = false }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(() => (isEditMode ? 1 : 0));
   const [submittedForReview, setSubmittedForReview] = useState(false);
-  const [reviewEditMode, setReviewEditMode] = useState(false);
+  const [reviewEditMode, setReviewEditMode] = useState(isEditMode);
 
   // Perfil base
   const [fullName, setFullName] = useState('');
@@ -412,46 +414,53 @@ const visibleAvailableSkillItems = useMemo(() => {
     );
   }, [fullName, phone, city, skills, acceptedPrivacy]);
 
-  const showReviewScreen = !isVerified && !reviewEditMode && (submittedForReview || hasMinimumProfile);
+   const showReviewScreen =
+    !isEditMode &&
+    !isVerified &&
+    !reviewEditMode &&
+    (submittedForReview || hasMinimumProfile);
 
   const wizardSteps = useMemo(() => [
     {
-      eyebrow: 'Paso 1 de 7',
-      title: 'Activemos tu perfil profesional',
-      subtitle:
-        'Yo te guio paso a paso. Sin vueltas, sin papeles eternos. Tu trabajo merece verse profesional.',
+      eyebrow: isEditMode ? 'Perfil profesional' : 'Paso 1 de 7',
+      title: isEditMode ? 'Editá tu perfil profesional' : 'Activemos tu perfil profesional',
+      subtitle: isEditMode
+        ? 'Acá manejás todo: foto, rubros, zona, documentos, cobro y verificación.'
+        : 'Yo te guio paso a paso. Sin vueltas, sin papeles eternos. Tu trabajo merece verse profesional.',
     },
     {
-      eyebrow: 'Paso 2 de 7',
+      eyebrow: isEditMode ? 'Datos del trabajador' : 'Paso 2 de 7',
       title: 'Datos básicos',
-      subtitle: 'Primero lo simple: quien sos, donde trabajas y una foto que genere confianza.',
+      subtitle: 'Nombre, teléfono, ciudad y una foto que genere confianza.',
     },
     {
-      eyebrow: 'Paso 3 de 7',
+      eyebrow: isEditMode ? 'Rubros y oficios' : 'Paso 3 de 7',
       title: 'Qué servicios ofrecés',
-      subtitle: 'Contame qué hacés mejor. Mientras más claro seas, más fácil te encuentran.',
+      subtitle: 'Elegí tus rubros. Esto define qué pedidos te llegan y cómo te encuentran.',
     },
     {
-      eyebrow: 'Paso 4 de 7',
+      eyebrow: isEditMode ? 'Zona de trabajo' : 'Paso 4 de 7',
       title: 'Zona de trabajo',
-      subtitle: 'Marcamos tu zona para que no te lleguen pedidos imposibles.',
+      subtitle: 'Ciudad, radio de cobertura y ubicación para recibir pedidos posibles.',
     },
     {
-      eyebrow: 'Paso 5 de 7',
+      eyebrow: isEditMode ? 'Presentación' : 'Paso 5 de 7',
       title: 'Presentación profesional',
-      subtitle: 'Unas pocas palabras bien dichas valen más que un formulario eterno.',
+      subtitle: 'Contá qué hacés, tu experiencia y por qué el cliente puede confiar en vos.',
     },
     {
-      eyebrow: 'Paso 6 de 7',
+      eyebrow: isEditMode ? 'Documentos' : 'Paso 6 de 7',
       title: 'Verificación segura',
-      subtitle: 'Esto cuida a los clientes y también te cuida a vos como profesional.',
+      subtitle: 'Subí o actualizá tus documentos para mantener tu perfil confiable.',
     },
     {
-      eyebrow: 'Paso 7 de 7',
-      title: 'Enviar perfil',
-      subtitle: 'Última mirada. Si todo está bien, lo mandamos a revisión.',
+      eyebrow: isEditMode ? 'Guardar cambios' : 'Paso 7 de 7',
+      title: isEditMode ? 'Guardar perfil' : 'Enviar perfil',
+      subtitle: isEditMode
+        ? 'Revisá tus datos y guardá los cambios de tu perfil profesional.'
+        : 'Última mirada. Si todo está bien, lo mandamos a revisión.',
     },
-  ], []);
+  ], [isEditMode]);
 
   const activeWizardStep = wizardSteps[currentStep] || wizardSteps[0];
   const wizardProgress = Math.round(((currentStep + 1) / wizardSteps.length) * 100);
@@ -1385,10 +1394,10 @@ function getCurrentTrackFacingMode() {
     );
   }
 
-  const showModernExperience = progress >= 0;
+    const showModernExperience = progress >= 0;
   const wizardAvatar =
     currentStep <= 1
-      ? '/ROGER SALUDANDO.png'
+      ? '/ROGER OK.png'
       : currentStep <= 4
         ? '/ROGER DEFINITIVO pensativo.png'
         : '/ROGER OK.png';
@@ -1484,12 +1493,18 @@ function getCurrentTrackFacingMode() {
               Continuar
             </button>
           ) : (
-            <button
+                        <button
               type="submit"
               disabled={!canSave || busy}
               className="rounded-2xl bg-[#62bfb9] px-5 py-4 text-sm font-black text-white shadow-[0_14px_30px_rgba(98,191,185,0.35)] disabled:opacity-50"
             >
-              {busy ? 'Enviando...' : 'Enviar mi perfil a revisión'}
+              {busy
+                ? isEditMode
+                  ? 'Guardando...'
+                  : 'Enviando...'
+                : isEditMode
+                  ? 'Guardar cambios'
+                  : 'Enviar mi perfil a revisión'}
             </button>
           )}
         </div>

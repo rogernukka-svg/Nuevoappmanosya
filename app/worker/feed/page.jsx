@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import 'leaflet/dist/leaflet.css';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -1799,13 +1798,19 @@ function WorkerHubSheet({
             </div>
           ) : (
             <div className="space-y-3">
-              <button type="button" onClick={onOpenProfile} className="flex w-full items-center justify-between rounded-[22px] bg-slate-50 p-4 text-left active:scale-[0.99]">
-                <div>
-                  <div className="text-[15px] font-black">Editar perfil</div>
-                  <div className="mt-1 text-[12px] font-semibold text-slate-500">Datos, oficio, foto y verificación.</div>
-                </div>
-                <User2 size={19} className="text-slate-500" />
-              </button>
+              <button
+  type="button"
+  onClick={onOpenProfile}
+  className="flex w-full items-center justify-between rounded-[22px] bg-slate-50 p-4 text-left active:scale-[0.99]"
+>
+  <div>
+    <div className="text-[15px] font-black">Editar perfil profesional</div>
+    <div className="mt-1 text-[12px] font-semibold text-slate-500">
+      Foto, rubro, radio, documentos, banco y verificación.
+    </div>
+  </div>
+  <User2 size={19} className="text-slate-500" />
+</button>
               <button type="button" onClick={onOpenPosts} className="flex w-full items-center justify-between rounded-[22px] bg-slate-50 p-4 text-left active:scale-[0.99]">
                 <div>
                   <div className="text-[15px] font-black">Mis publicaciones</div>
@@ -3682,28 +3687,28 @@ const mapCenter = useMemo(() => hasMeCoords ? [Number(me.lat), Number(me.lon)] :
   <AnimatePresence>
     {workerHubOpen && (
       <WorkerHubSheet
-        open={workerHubOpen}
-        tab={workerHubTab}
-        setTab={setWorkerHubTab}
-        onClose={() => setWorkerHubOpen(false)}
-        profile={viewerProfile}
-        status={workerStatus}
-        stats={workerHubStats}
-        jobs={workerJobs}
-        postsCount={workerPosts.length}
-        loadingJobs={workerJobsLoading}
-        onToggleStatus={toggleWorkerStatusFromFeed}
-        onRefreshJobs={loadWorkerHub}
-        onOpenJobChat={openWorkerJobChat}
-        onOpenProfile={() => {
-          setWorkerHubOpen(false);
-          setIdentityEditorOpen(true);
-        }}
-        onOpenPosts={() => {
-          setWorkerHubOpen(false);
-          setShowMyPosts(true);
-        }}
-      />
+  open={workerHubOpen}
+  tab={workerHubTab}
+  setTab={setWorkerHubTab}
+  onClose={() => setWorkerHubOpen(false)}
+  profile={viewerProfile}
+  status={workerStatus}
+  stats={workerHubStats}
+  jobs={workerJobs}
+  postsCount={workerPosts.length}
+  loadingJobs={workerJobsLoading}
+  onToggleStatus={toggleWorkerStatusFromFeed}
+  onRefreshJobs={loadWorkerHub}
+  onOpenJobChat={openWorkerJobChat}
+  onOpenProfile={() => {
+    setWorkerHubOpen(false);
+    router.push('/worker/onboard?mode=edit');
+  }}
+  onOpenPosts={() => {
+    setWorkerHubOpen(false);
+    setShowMyPosts(true);
+  }}
+/>
     )}
   </AnimatePresence>
   <AnimatePresence>
