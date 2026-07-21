@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation';
+import AssistedAuth from "@/components/auth/AssistedAuth";
 
-export default function LegacyLoginRedirect({ searchParams = {} }) {
-  const query = new URLSearchParams(searchParams).toString();
-  redirect(`/auth/login${query ? `?${query}` : ''}`);
+export default function LoginPage() {
+  return <AssistedAuth mode="login" />;
 }

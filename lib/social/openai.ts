@@ -1,1 +1,0 @@
-export { generateSocialReply } from './local';

@@ -1,23 +1,70 @@
-# ManoYA — Tu ayuda al instante ⚡
+# ManosYA Premium
 
-![Logo](./public/logo.svg)
+Clean premium rebuild of ManosYA.
 
-**ManoYA** es un servicio tipo Uber para oficios.  
-Conectamos clientes con profesionales cercanos mediante geolocalización, para resolver necesidades inmediatas como:
+## What This Keeps
 
-- 🧹 Limpieza por día o por hora  
-- 🌱 Corte de césped y jardinería  
-- 🔧 Plomería y electricidad  
-- 🚗 Auxilio vehicular  
-- 🎨 Pintura, mudanza y mucho más  
+- Next.js App Router.
+- Supabase Auth users.
+- Central ManosYA routes.
+- API surface required by the current hosting/integration setup.
+- Founder page, client flow, worker feed, supplier marketplace and admin dashboards.
 
----
+## What This Changes
 
-## 1) Requisitos
-- Node 18+
-- Proyecto Supabase activo
-- Variables de entorno (`.env.local`):
+- `/login` and `/register` are separate.
+- The app uses a fixed `100dvh` shell.
+- The body does not scroll globally.
+- Only feed, chat, lists, admin panels and bottom sheets scroll internally.
+- Pages are small and use reusable components.
+- Brand color follows the supplied ManosYA mint assets.
 
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://TU_PROYECTO.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=TU_ANON_KEY
+## Setup
+
+```bash
+npm install
+npm run dev
+```
+
+Copy `.env.example` to `.env.local` and fill Supabase keys.
+
+## Supabase
+
+Start with `supabase/001_premium_core.sql`.
+
+Do not delete `auth.users` if you want to keep existing users. The new schema references existing auth IDs through `public.profiles.id`.
+
+## Current Status
+
+- Build passes.
+- Auth forms are wired to Supabase when env vars exist.
+- `/api/workers` reads `worker_feed_view` when Supabase env vars exist.
+- ORS and Meta endpoints preserve the route surface and are ready for production hardening.
+- UI uses internal scroll containers and keeps the body locked.
+
+## Routes
+
+- `/`
+- `/login`
+- `/register`
+- `/auth/callback`
+- `/client`
+- `/client/new`
+- `/client/jobs`
+- `/client/profile`
+- `/worker/feed`
+- `/worker/jobs`
+- `/worker/map`
+- `/worker/onboard`
+- `/supplier`
+- `/admin`
+- `/admin/workers`
+- `/admin/analytics`
+- `/fundador`
+- `/job/[id]`
+- `/job/[id]/chat`
+- `/chat/[chatId]`
+- `/dm`
+- `/dm/[id]`
+- `/legal/privacy`
+- `/legal/terms`

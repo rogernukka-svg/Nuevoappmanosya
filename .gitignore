@@ -1,53 +1,7 @@
-# Next.js build
-.next/
-.next-build/
-out/
-
-# next-pwa generated build artifacts
-public/service-worker.js
-public/workbox-*.js
-public/worker-*.js
-
-# Node modules
-node_modules/
-
-# Env files
-.env
+.next
+node_modules
 .env.local
-.env.*.local
-
-# Vercel
-.vercel/
-
-# Supabase local debug
-.supabase/
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Cache
-.cache/
-dist/
-
-# Temporary
+.env*.local
+out
+dist
 *.log
-*.temp
-*.tmp
-
-# Android build files
-android/app/build/
-android/build/
-android/.gradle/
-android/.idea/
-.gradle/
-build/
-
-# TypeScript incremental cache
-*.tsbuildinfo

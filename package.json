@@ -1,39 +1,27 @@
 {
-  "name": "manosya-app",
+  "name": "manosya-premium",
   "version": "0.1.0",
   "private": true,
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev -p 3010",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint --ext .js,.jsx ."
+    "start": "next start -p 3010",
+    "lint": "next lint"
   },
   "dependencies": {
-    "@next/font": "^14.2.15",
-    "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.74.0",
-    "framer-motion": "^12.38.0",
-    "leaflet": "^1.9.4",
-    "leaflet.heat": "^0.2.0",
     "lucide-react": "^0.544.0",
     "next": "^14.2.33",
-    "next-pwa": "^5.6.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "react-leaflet": "^4.2.1",
-    "recharts": "^3.3.0",
-    "sonner": "^2.0.7",
-    "workbox-window": "^7.3.0"
+    "sonner": "^2.0.7"
   },
   "devDependencies": {
-    "@next/bundle-analyzer": "^16.0.1",
-    "@types/react": "^19.2.0",
     "autoprefixer": "^10.4.27",
-    "cross-env": "^10.1.0",
     "eslint": "^8.57.0",
     "eslint-config-next": "14.2.5",
     "postcss": "^8.5.8",
