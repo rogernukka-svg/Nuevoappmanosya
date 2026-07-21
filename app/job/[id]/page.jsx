@@ -39,6 +39,7 @@ export default function JobDetailPage() {
   const [user, setUser] = useState(null);
   const [job, setJob] = useState(null);
   const [photos, setPhotos] = useState([]);
+  const [chatId, setChatId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
 
@@ -53,11 +54,14 @@ export default function JobDetailPage() {
   // Flags de rol
   const isParticipant = useMemo(() => {
     if (!job || !user) return false;
-    return job.client_id === user.id || job.worker_id === user.id;
+    return job.client_id === user.id || job.worker_id === user.id || job.assigned_worker === user.id;
   }, [job, user]);
 
   const isClient = useMemo(() => job && user && job.client_id === user.id, [job, user]);
-  const isWorker = useMemo(() => job && user && job.worker_id === user.id, [job, user]);
+  const isWorker = useMemo(
+    () => job && user && (job.worker_id === user.id || job.assigned_worker === user.id),
+    [job, user]
+  );
 
   useEffect(() => {
     (async () => {
@@ -75,6 +79,59 @@ export default function JobDetailPage() {
     })();
   }, [jobId]);
 
+  useEffect(() => {
+    if (!job?.id || !user?.id) return;
+
+    let alive = true;
+
+    async function resolveChat() {
+      const workerId = job.worker_id || job.assigned_worker;
+      if (!job.client_id || !workerId) {
+        if (alive) setChatId(null);
+        return;
+      }
+
+      try {
+        const { data: existing, error: existingError } = await supabase
+          .from('chats')
+          .select('id')
+          .eq('job_id', job.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existingError) throw existingError;
+
+        if (existing?.id) {
+          if (alive) setChatId(existing.id);
+          return;
+        }
+
+        const { data: created, error: createError } = await supabase
+          .from('chats')
+          .insert({
+            job_id: job.id,
+            client_id: job.client_id,
+            worker_id: workerId,
+          })
+          .select('id')
+          .single();
+
+        if (createError) throw createError;
+        if (alive) setChatId(created?.id || null);
+      } catch (error) {
+        console.error('No se pudo preparar el chat del trabajo:', error);
+        if (alive) setChatId(null);
+      }
+    }
+
+    resolveChat();
+
+    return () => {
+      alive = false;
+    };
+  }, [job, user?.id]);
+
   async function fetchJob() {
     const { data, error } = await supabase
       .from('jobs')
@@ -83,6 +140,7 @@ export default function JobDetailPage() {
         address_text, created_at, lat, lon,
         client_id,
         worker_id,
+        assigned_worker,
         client:profiles!jobs_client_id_fkey(id, full_name, avatar_url, verified),
         worker:profiles!jobs_worker_id_fkey(id, full_name, avatar_url, verified)
       `)
@@ -140,7 +198,7 @@ export default function JobDetailPage() {
       const uid = u?.user?.id;
       if (!uid) throw new Error('Sesión inválida');
 
-      const target = isClient ? job?.worker_id : job?.client_id;
+      const target = isClient ? (job?.worker_id || job?.assigned_worker) : job?.client_id;
 
       const payload = {
         job_id: jobId,
@@ -201,7 +259,7 @@ export default function JobDetailPage() {
           {canComplete && <button onClick={() => runAction('complete_job')} className="btn btn-primary">Marcar como completado</button>}
           {canCancel && <button onClick={() => runAction('cancel_job')} className="btn btn-ghost">Cancelar</button>}
           <Link href="/worker/nearby" className="btn btn-ghost">Volver</Link>
-          <Link href={`/chat/${job.id}`} className="btn btn-ghost">Abrir chat</Link>
+          {chatId && <Link href={`/chat/${chatId}`} className="btn btn-ghost">Abrir chat</Link>}
           {isParticipant && <button className="btn btn-ghost" onClick={openReport}>Reportar problema</button>}
         </div>
 
@@ -225,7 +283,7 @@ export default function JobDetailPage() {
       {/* Fotos + Chat */}
       <section className="grid lg:grid-cols-2 gap-6 mt-6">
         <Gallery jobId={jobId} canUpload={isParticipant} photos={photos} refresh={fetchPhotos} />
-        <ChatBox jobId={jobId} canChat={isParticipant} />
+        <ChatBox jobId={jobId} chatId={chatId} canChat={isParticipant} />
       </section>
 
       {/* Modal reporte */}
@@ -331,7 +389,7 @@ function Gallery({ jobId, canUpload, photos, refresh }) {
 }
 
 /** Chat resumido */
-function ChatBox({ jobId, canChat }) {
+function ChatBox({ jobId, chatId, canChat }) {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [err, setErr] = useState(null);
@@ -339,6 +397,11 @@ function ChatBox({ jobId, canChat }) {
   const [me, setMe] = useState(null);
 
   useEffect(() => {
+    if (!chatId) {
+      setMessages([]);
+      return;
+    }
+
     (async () => {
       setErr(null);
       const { data: u } = await supabase.auth.getUser();
@@ -347,8 +410,8 @@ function ChatBox({ jobId, canChat }) {
       try {
         const { data, error } = await supabase
           .from('messages')
-          .select('id, job_id, sender_id, body, created_at, sender:profiles!messages_sender_id_fkey(full_name, avatar_url)')
-          .eq('job_id', jobId)
+          .select('id, chat_id, sender_id, text, content, body, created_at, sender:profiles!messages_sender_id_fkey(full_name, avatar_url)')
+          .eq('chat_id', chatId)
           .order('created_at', { ascending: true });
         if (error) throw error;
         setMessages(data || []);
@@ -358,12 +421,12 @@ function ChatBox({ jobId, canChat }) {
     })();
 
     const channel = supabase
-      .channel(`msgs:${jobId}`)
+      .channel(`msgs:${chatId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `job_id=eq.${jobId}` },
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` },
         payload => {
-          setMessages(prev => [...prev, payload.new]);
+          setMessages(prev => (prev.some((message) => message.id === payload.new.id) ? prev : [...prev, payload.new]));
           scrollToBottom();
         }
       )
@@ -372,7 +435,7 @@ function ChatBox({ jobId, canChat }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [jobId]);
+  }, [chatId]);
 
   useEffect(() => {
     scrollToBottom();
@@ -400,10 +463,15 @@ function ChatBox({ jobId, canChat }) {
         setErr('Estás enviando muy rápido. Esperá unos segundos.');
         return;
       }
-      const { error } = await supabase.from('messages').insert({
-        job_id: jobId,
-        sender_id: uid,
-        body: safety.text
+
+      if (!chatId) {
+        setErr('Chat no disponible todavía.');
+        return;
+      }
+
+      const { error } = await supabase.rpc('post_chat_message', {
+        p_chat_id: chatId,
+        p_text: safety.text,
       });
       if (error) throw error;
       setDraft('');
@@ -416,7 +484,7 @@ function ChatBox({ jobId, canChat }) {
     <div className="card p-4">
       <div className="flex items-center justify-between">
         <h3 className="font-heading font-extrabold text-lg">Chat</h3>
-        <Link href={`/chat/${jobId}`} className="btn btn-ghost">Abrir chat completo</Link>
+        {chatId && <Link href={`/chat/${chatId}`} className="btn btn-ghost">Abrir chat completo</Link>}
       </div>
       {err && <div className="text-red-400 text-sm mb-2">{err}</div>}
 
@@ -432,12 +500,12 @@ function ChatBox({ jobId, canChat }) {
       <form onSubmit={sendMsg} className="mt-3 flex gap-2">
         <input
           className="input"
-          placeholder={canChat ? 'Escribí un mensaje…' : 'Solo participantes pueden chatear'}
+          placeholder={canChat && chatId ? 'Escribí un mensaje…' : 'Chat no disponible'}
           value={draft}
           onChange={e => setDraft(e.target.value)}
-          disabled={!canChat}
+          disabled={!canChat || !chatId}
         />
-        <button className="btn btn-primary" disabled={!canChat || !draft.trim()}>Enviar</button>
+        <button className="btn btn-primary" disabled={!canChat || !chatId || !draft.trim()}>Enviar</button>
       </form>
     </div>
   );
@@ -448,6 +516,7 @@ function Msg({ m, meId }) {
   const name = m.sender?.full_name || 'Usuario';
   const avatar = m.sender?.avatar_url || '/avatar-fallback.png';
   const mine = meId && m.sender_id === meId;
+  const text = m.text || m.content || m.body || '';
 
   return (
     <div className={`flex ${mine ? 'justify-end' : 'justify-start'} py-1`}>
@@ -464,7 +533,7 @@ function Msg({ m, meId }) {
         )}
         <div>
           {!mine && <div className="text-white/70 text-[11px] leading-none mb-1">{name}</div>}
-          <div className="whitespace-pre-line">{m.body}</div>
+          <div className="whitespace-pre-line">{text}</div>
         </div>
       </div>
     </div>

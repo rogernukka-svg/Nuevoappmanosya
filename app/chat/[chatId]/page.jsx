@@ -313,6 +313,21 @@ export default function ChatPage() {
         if (chatError) throw chatError;
 
         if (!chat?.id) {
+          const { data: chatByJob, error: chatByJobError } = await supabase
+            .from('chats')
+            .select('id, job_id, client_id, worker_id, created_at')
+            .eq('job_id', chatId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (chatByJobError) throw chatByJobError;
+
+          if (chatByJob?.id) {
+            router.replace(`/chat/${chatByJob.id}`);
+            return;
+          }
+
           toast.error('No encontramos este chat');
           router.replace('/worker/feed');
           return;
