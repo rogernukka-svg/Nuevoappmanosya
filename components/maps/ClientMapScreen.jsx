@@ -275,7 +275,7 @@ function PlaceAvatar({ place }) {
 function loadGoogleMaps(apiKey) {
   if (typeof window === "undefined") return Promise.reject(new Error("browser only"));
   if (window.__manosyaGoogleMapsApi) return Promise.resolve(window.__manosyaGoogleMapsApi);
-  if (window.google?.maps?.importLibrary) return prepareGoogleMapsApi(window.google);
+  if (window.google?.maps) return prepareGoogleMapsApi(window.google);
   if (mapsPromise) return mapsPromise;
 
   mapsPromise = new Promise((resolve, reject) => {
@@ -285,7 +285,7 @@ function loadGoogleMaps(apiKey) {
       reject(new Error("Autoriza http://localhost:3010/* en las restricciones HTTP de tu clave."));
     };
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly`;
     script.async = true;
     script.onload = () => {
       prepareGoogleMapsApi(window.google).then(resolve).catch(reject);
@@ -298,34 +298,48 @@ function loadGoogleMaps(apiKey) {
 }
 
 async function prepareGoogleMapsApi(google) {
-  if (!google?.maps?.importLibrary) {
-    throw new Error("Google Maps no termino de cargar.");
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (google?.maps?.importLibrary) {
+      const [mapsLibrary, coreLibrary] = await Promise.all([
+        google.maps.importLibrary("maps"),
+        google.maps.importLibrary("core"),
+      ]);
+      const api = normalizeGoogleMapsApi(google, mapsLibrary, coreLibrary);
+      if (api) return api;
+    }
+
+    const api = normalizeGoogleMapsApi(google);
+    if (api) return api;
+
+    await wait(100);
   }
 
-  const [mapsLibrary, coreLibrary] = await Promise.all([
-    google.maps.importLibrary("maps"),
-    google.maps.importLibrary("core"),
-  ]);
+  throw new Error("Google Maps no termino de cargar.");
+}
 
+function normalizeGoogleMapsApi(google, mapsLibrary = {}, coreLibrary = {}) {
   const api = {
     google,
-    Map: mapsLibrary.Map || google.maps.Map,
-    OverlayView: mapsLibrary.OverlayView || google.maps.OverlayView,
-    LatLngBounds: coreLibrary.LatLngBounds || google.maps.LatLngBounds,
-    LatLng: coreLibrary.LatLng || google.maps.LatLng,
+    Map: mapsLibrary.Map || google?.maps?.Map,
+    OverlayView: mapsLibrary.OverlayView || google?.maps?.OverlayView,
+    LatLngBounds: coreLibrary.LatLngBounds || google?.maps?.LatLngBounds,
+    LatLng: coreLibrary.LatLng || google?.maps?.LatLng,
   };
 
-  if (
-    typeof api.Map !== "function" ||
-    typeof api.OverlayView !== "function" ||
-    typeof api.LatLngBounds !== "function" ||
-    typeof api.LatLng !== "function"
-  ) {
-    throw new Error("Google Maps no entrego el constructor del mapa.");
-  }
+  const isReady =
+    typeof api.Map === "function" &&
+    typeof api.OverlayView === "function" &&
+    typeof api.LatLngBounds === "function" &&
+    typeof api.LatLng === "function";
+
+  if (!isReady) return null;
 
   window.__manosyaGoogleMapsApi = api;
   return api;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function getBrowserPosition() {
