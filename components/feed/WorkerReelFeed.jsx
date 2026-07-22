@@ -9,7 +9,7 @@ import {
   Home,
   MapPin,
   MessageCircle,
-  Plus,
+  Play,
   Search,
   Send,
   Star,
@@ -74,6 +74,8 @@ export default function WorkerReelFeed({ workers = demoWorkers, role = "client",
   const [activeIndex, setActiveIndex] = useState(0);
   const [showGuide, setShowGuide] = useState(false);
   const [clientSheet, setClientSheet] = useState(null);
+  const [likedWorkers, setLikedWorkers] = useState({});
+  const [likeCounts, setLikeCounts] = useState({});
 
   useEffect(() => {
     const key = `manosya-feed-guide-v2:${role}`;
@@ -89,6 +91,41 @@ export default function WorkerReelFeed({ workers = demoWorkers, role = "client",
     }, 1800);
     return () => window.clearTimeout(timer);
   }, [activeIndex, role, showGuide]);
+
+  useEffect(() => {
+    const counts = {};
+    workers.forEach((worker) => {
+      const count = Number(worker.likesCount ?? worker.likes);
+      if (Number.isFinite(count)) counts[worker.id] = count;
+    });
+    setLikeCounts(counts);
+  }, [workers]);
+
+  useEffect(() => {
+    const workerIds = workers.map((worker) => worker.id).filter(isUuid);
+    if (workerIds.length === 0) return;
+
+    (async () => {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const { data: userData } = await supabase.auth.getUser();
+        const userId = userData?.user?.id;
+        if (!userId) return;
+
+        const { data } = await supabase
+          .from("worker_likes")
+          .select("worker_id")
+          .eq("client_id", userId)
+          .in("worker_id", workerIds);
+
+        const liked = {};
+        (data || []).forEach((row) => {
+          liked[row.worker_id] = true;
+        });
+        setLikedWorkers(liked);
+      } catch {}
+    })();
+  }, [workers]);
 
   useEffect(() => {
     const root = feedRef.current;
@@ -131,7 +168,7 @@ export default function WorkerReelFeed({ workers = demoWorkers, role = "client",
       <div ref={feedRef} className="feed-scroll">
         {workers.map((worker, index) => (
           <article key={worker.id} data-index={index} className="feed-card">
-            <WorkerMedia worker={worker} />
+            <FeedMedia worker={worker} />
             <div className="feed-vignette" />
 
             <div className="feed-content">
@@ -151,7 +188,13 @@ export default function WorkerReelFeed({ workers = demoWorkers, role = "client",
               </section>
 
               <aside className="feed-actions">
-                <ActionButton icon={Heart} label="Me gusta" value={worker.likes || "0"} onClick={role === "client" ? () => likeWorker(worker, setClientSheet) : undefined} />
+                <ActionButton
+                  icon={Heart}
+                  label="Me gusta"
+                  value={String(likeCounts[worker.id] ?? worker.likes ?? 0)}
+                  active={Boolean(likedWorkers[worker.id])}
+                  onClick={role === "client" ? () => toggleLike(worker, Boolean(likedWorkers[worker.id]), setLikedWorkers, setLikeCounts, setClientSheet) : undefined}
+                />
                 <ActionButton icon={MessageCircle} label="Comentar" value={worker.comments || "0"} onClick={role === "client" ? () => setClientSheet({ type: "comment", worker }) : undefined} />
                 <ActionButton icon={Send} label="Compartir" onClick={role === "client" ? () => shareWorker(worker, setClientSheet) : undefined} />
                 {role !== "client" && <ActionLink icon={MessageCircle} label="Mensaje" href={`/dm/${worker.id}`} />}
@@ -237,10 +280,39 @@ function WorkerMedia({ worker }) {
   return <div className="absolute inset-0" style={{ background: source || "linear-gradient(135deg, #050505, #64C7BE)" }} />;
 }
 
-function ActionButton({ icon: Icon, label, value, onClick }) {
+function FeedMedia({ worker }) {
+  const containerRef = useRef(null);
+  const [paused, setPaused] = useState(false);
+
+  function handleTap() {
+    const video = containerRef.current?.querySelector("video");
+    if (!video) return;
+
+    if (video.paused) {
+      video.play().catch(() => {});
+      setPaused(false);
+    } else {
+      video.pause();
+      setPaused(true);
+    }
+  }
+
   return (
-    <button type="button" aria-label={label} className="feed-action-button" onClick={onClick}>
-      <Icon size={24} />
+    <div ref={containerRef} className="feed-media-tap" onClick={handleTap}>
+      <WorkerMedia worker={worker} />
+      {paused ? (
+        <span className="feed-pause-icon" aria-hidden="true">
+          <Play size={48} fill="currentColor" />
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function ActionButton({ icon: Icon, label, value, active, onClick }) {
+  return (
+    <button type="button" aria-label={label} className={`feed-action-button${active ? " active" : ""}`} onClick={onClick}>
+      <Icon size={24} fill={active ? "currentColor" : "none"} />
       <small>{label}</small>
       {value ? <span>{value}</span> : null}
     </button>
@@ -266,7 +338,7 @@ function ClientFeedSheet({ sheet, onClose }) {
             worker_id: worker.id,
             post_id: isUuid(worker.postId) ? worker.postId : null,
             author_id: userId,
-            body: `${text}${rating ? ` · ${rating}/5` : ""}`,
+            body: `${text}${rating ? ` - ${rating}/5` : ""}`,
           });
         }
       } catch {}
@@ -325,22 +397,52 @@ function ClientFeedSheet({ sheet, onClose }) {
   );
 }
 
-async function likeWorker(worker, setClientSheet) {
-  if (isUuid(worker.id)) {
-    try {
-      const supabase = createSupabaseBrowserClient();
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData?.user?.id;
-      if (userId) {
-        await supabase.from("worker_likes").upsert({
-          worker_id: worker.id,
-          client_id: userId,
-        });
-      }
-    } catch {}
+async function toggleLike(worker, isLiked, setLikedWorkers, setLikeCounts, setClientSheet) {
+  if (!isUuid(worker.id)) {
+    setClientSheet({ type: "liked", worker });
+    return;
   }
 
-  setClientSheet({ type: "liked", worker });
+  setLikedWorkers((prev) => ({ ...prev, [worker.id]: !isLiked }));
+  setLikeCounts((prev) => ({
+    ...prev,
+    [worker.id]: Math.max(0, (prev[worker.id] || 0) + (isLiked ? -1 : 1)),
+  }));
+
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData?.user?.id;
+    if (!userId) throw new Error("no-session");
+
+    if (isLiked) {
+      const { error } = await supabase
+        .from("worker_likes")
+        .delete()
+        .eq("worker_id", worker.id)
+        .eq("client_id", userId);
+
+      if (error) throw error;
+      return;
+    }
+
+    const { error } = await supabase.from("worker_likes").upsert(
+      {
+        worker_id: worker.id,
+        client_id: userId,
+        post_id: isUuid(worker.postId) ? worker.postId : null,
+      },
+      { onConflict: "worker_id,client_id" }
+    );
+
+    if (error) throw error;
+  } catch {
+    setLikedWorkers((prev) => ({ ...prev, [worker.id]: isLiked }));
+    setLikeCounts((prev) => ({
+      ...prev,
+      [worker.id]: Math.max(0, (prev[worker.id] || 0) + (isLiked ? 1 : -1)),
+    }));
+  }
 }
 
 async function shareWorker(worker, setClientSheet) {

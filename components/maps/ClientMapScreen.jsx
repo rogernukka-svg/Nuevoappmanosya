@@ -2,31 +2,67 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, LocateFixed, MapPin, MessageCircle, SlidersHorizontal, Store, UserRound } from "lucide-react";
+import {
+  ArrowUpRight,
+  CheckCircle2,
+  Compass,
+  Loader2,
+  LocateFixed,
+  MapPin,
+  MessageCircle,
+  Navigation,
+  Phone,
+  Search,
+  Store,
+  Truck,
+  UserRound,
+  X,
+} from "lucide-react";
 
 const ASUNCION = { lat: -25.2867, lng: -57.3333 };
 let mapsPromise;
 
-const mapCopy = {
+const audienceCopy = {
   client: {
     kicker: "Resolver cerca",
     title: "Mapa ManosYA",
+    subtitle: "Trabajadores y comercios listos para ayudarte.",
+    placeholder: "Electricista, plomero, cables...",
     saveAction: "",
     saved: "",
+    sheetLabel: "Elegido cerca",
+    emptyTitle: "Busca por oficio o insumo",
+    emptyText: "ManosYA ordena lo mas util primero.",
   },
   worker: {
-    kicker: "Estoy disponible",
+    kicker: "Zona activa",
     title: "Mapa ManosYA",
-    saveAction: "Estoy aca",
-    saved: "Ubicacion actualizada. Ahora pueden encontrarte mejor.",
+    subtitle: "Clientes, comercios y colegas cerca de tu zona.",
+    placeholder: "Materiales, obras, fletes...",
+    saveAction: "Marcar mi zona",
+    saved: "Listo. Tu zona quedo actualizada.",
+    sheetLabel: "Conexion cerca",
+    emptyTitle: "Explora tu zona",
+    emptyText: "Marca donde estas para aparecer mejor.",
   },
   supplier: {
     kicker: "Local digital",
     title: "Mapa ManosYA",
-    saveAction: "Fijar local",
-    saved: "Local fijado. Tus insumos ya tienen direccion.",
+    subtitle: "Tu tienda aparece donde la gente busca soluciones.",
+    placeholder: "Cables, pintura, herramientas...",
+    saveAction: "Fijar mi local",
+    saved: "Listo. Tu local quedo visible en el mapa.",
+    sheetLabel: "Oportunidad cerca",
+    emptyTitle: "Muestra tu local",
+    emptyText: "Fija tu direccion para vender mejor.",
   },
 };
+
+const filterOptions = [
+  { id: "all", label: "Todo" },
+  { id: "worker", label: "Trabajadores" },
+  { id: "supplier", label: "Comercios" },
+];
 
 export default function ClientMapScreen({ audience = "client" }) {
   const mapRef = useRef(null);
@@ -37,7 +73,7 @@ export default function ClientMapScreen({ audience = "client" }) {
   const [center, setCenter] = useState(ASUNCION);
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState("all");
-  const [sort, setSort] = useState("near");
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [mapReady, setMapReady] = useState(false);
   const [error, setError] = useState("");
@@ -45,13 +81,19 @@ export default function ClientMapScreen({ audience = "client" }) {
   const [savingLocation, setSavingLocation] = useState(false);
 
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-  const copy = mapCopy[audience] || mapCopy.client;
+  const copy = audienceCopy[audience] || audienceCopy.client;
   const canSaveLocation = audience === "worker" || audience === "supplier";
 
   const visiblePlaces = useMemo(() => {
-    const filtered = filter === "all" ? places : places.filter((place) => place.type === filter);
-    return [...filtered].sort((a, b) => sort === "near" ? a.distanceKm - b.distanceKm : b.distanceKm - a.distanceKm);
-  }, [filter, places, sort]);
+    const normalizedQuery = normalizeText(query);
+    const filtered = places.filter((place) => {
+      const matchesType = filter === "all" || place.type === filter;
+      const matchesSearch = !normalizedQuery || normalizeText(searchableText(place)).includes(normalizedQuery);
+      return matchesType && matchesSearch;
+    });
+
+    return [...filtered].sort((a, b) => a.distanceKm - b.distanceKm);
+  }, [filter, places, query]);
 
   useEffect(() => {
     let alive = true;
@@ -64,15 +106,17 @@ export default function ClientMapScreen({ audience = "client" }) {
       setCenter(nextCenter);
 
       try {
-        const query = new URLSearchParams({
+        const params = new URLSearchParams({
           lat: String(nextCenter.lat),
           lng: String(nextCenter.lng),
+          audience,
         });
-        const response = await fetch(`/api/map/places?${query.toString()}`, { cache: "no-store" });
+        const response = await fetch(`/api/map/places?${params.toString()}`, { cache: "no-store" });
         const payload = await response.json();
         if (!alive) return;
-        setPlaces(Array.isArray(payload.places) ? payload.places : []);
-        setSelected(payload.places?.[0] || null);
+        const nextPlaces = Array.isArray(payload.places) ? payload.places : [];
+        setPlaces(nextPlaces);
+        setSelected(nextPlaces[0] || null);
       } catch {
         if (alive) setError("No se pudo cargar el ecosistema.");
       } finally {
@@ -84,7 +128,7 @@ export default function ClientMapScreen({ audience = "client" }) {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [audience]);
 
   useEffect(() => {
     if (!apiKey || !mapRef.current) return;
@@ -112,6 +156,14 @@ export default function ClientMapScreen({ audience = "client" }) {
   }, [apiKey]);
 
   useEffect(() => {
+    setSelected((current) => {
+      if (!visiblePlaces.length) return null;
+      if (current && visiblePlaces.some((place) => place.id === current.id)) return current;
+      return visiblePlaces[0];
+    });
+  }, [visiblePlaces]);
+
+  useEffect(() => {
     const mapsApi = mapApiRef.current;
     const map = mapInstanceRef.current;
     if (!mapsApi || !map || !mapReady) return;
@@ -126,6 +178,7 @@ export default function ClientMapScreen({ audience = "client" }) {
       map,
       position: center,
       place: { type: "client", name: "Vos", avatarUrl: "" },
+      active: false,
       onClick: () => setSelected(null),
     });
     overlaysRef.current.push(userMarker);
@@ -135,15 +188,21 @@ export default function ClientMapScreen({ audience = "client" }) {
         map,
         position: { lat: place.lat, lng: place.lng },
         place,
-        onClick: () => setSelected(place),
+        active: selected?.id === place.id,
+        onClick: () => selectPlace(place),
       });
       overlaysRef.current.push(overlay);
       bounds.extend({ lat: place.lat, lng: place.lng });
     });
 
-    if (visiblePlaces.length) map.fitBounds(bounds, 70);
+    if (visiblePlaces.length) map.fitBounds(bounds, 76);
     else map.setCenter(center);
-  }, [center, mapReady, visiblePlaces]);
+  }, [center, mapReady, selected?.id, visiblePlaces]);
+
+  function selectPlace(place) {
+    setSelected(place);
+    mapInstanceRef.current?.panTo({ lat: place.lat, lng: place.lng });
+  }
 
   function recenter() {
     getBrowserPosition().then((position) => {
@@ -181,10 +240,10 @@ export default function ClientMapScreen({ audience = "client" }) {
     }
   }
 
-  const mapBlocked = Boolean(error && (error.includes("Google") || error.includes("Autoriza")));
+  const mapBlocked = Boolean(error && (error.includes("Google") || error.includes("Autoriza") || error.includes("bloqueado")));
 
   return (
-    <section className={`client-map-screen ${mapBlocked ? "has-map-error" : ""}`}>
+    <section className={`client-map-screen map-audience-${audience} ${mapBlocked ? "has-map-error" : ""}`}>
       <div ref={mapRef} className="client-google-map" />
 
       {!apiKey || mapBlocked ? (
@@ -196,33 +255,46 @@ export default function ClientMapScreen({ audience = "client" }) {
       ) : null}
 
       <header className="client-map-header">
-        <div>
-          <small>{copy.kicker}</small>
-          <strong>{copy.title}</strong>
-        </div>
+        <form className="client-map-search" onSubmit={(event) => event.preventDefault()}>
+          <Search size={18} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={copy.placeholder}
+            aria-label="Buscar en el mapa"
+          />
+          {query ? (
+            <button type="button" onClick={() => setQuery("")} aria-label="Limpiar busqueda">
+              <X size={17} />
+            </button>
+          ) : null}
+        </form>
         <button type="button" onClick={recenter} aria-label="Mi ubicacion">
           <LocateFixed size={20} />
         </button>
       </header>
 
       <div className="client-map-controls" aria-label="Filtros del mapa">
-        <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Todo</button>
-        <button type="button" className={filter === "worker" ? "active" : ""} onClick={() => setFilter("worker")}>Trabajadores</button>
-        <button type="button" className={filter === "supplier" ? "active" : ""} onClick={() => setFilter("supplier")}>Insumos</button>
-        <button type="button" className={sort === "near" ? "active icon" : "icon"} onClick={() => setSort(sort === "near" ? "far" : "near")} aria-label="Ordenar">
-          <SlidersHorizontal size={17} />
-          {sort === "near" ? "Cerca" : "Lejos"}
-        </button>
+        {filterOptions.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className={filter === option.id ? "active" : ""}
+            onClick={() => setFilter(option.id)}
+          >
+            {option.label}
+          </button>
+        ))}
       </div>
 
       {canSaveLocation ? (
         <button type="button" className="client-map-save-location" onClick={saveMyLocation} disabled={savingLocation}>
-          <MapPin size={17} />
+          <Compass size={17} />
           {savingLocation ? "Guardando..." : copy.saveAction}
         </button>
       ) : null}
 
-      {locationNotice ? <p className="client-map-status">{locationNotice}</p> : null}
+      {locationNotice ? <p className="client-map-status" aria-live="polite">{locationNotice}</p> : null}
 
       {loading ? (
         <div className="client-map-loading">
@@ -233,30 +305,62 @@ export default function ClientMapScreen({ audience = "client" }) {
 
       {error && !mapBlocked ? <p className="client-map-error">{error}</p> : null}
 
-      <div className="client-map-list">
-        {visiblePlaces.slice(0, 4).map((place) => (
-          <button key={place.id} type="button" className={selected?.id === place.id ? "active" : ""} onClick={() => setSelected(place)}>
-            <PlaceAvatar place={place} />
-            <span>
-              <b>{place.title}</b>
-              <small>{place.distanceKm} km - {place.name}</small>
-            </span>
-          </button>
-        ))}
-      </div>
+      {!loading && !visiblePlaces.length ? (
+        <div className="client-map-no-results">
+          <Search size={18} />
+          <strong>{copy.emptyTitle}</strong>
+          <span>{copy.emptyText}</span>
+        </div>
+      ) : null}
 
       {selected ? (
-        <article className="client-map-card">
+        <article className="client-map-card" aria-label="Ficha del lugar seleccionado">
+          <button type="button" className="client-map-card-close" onClick={() => setSelected(null)} aria-label="Cerrar ficha">
+            <X size={15} />
+          </button>
           <PlaceAvatar place={selected} />
-          <div>
-            <small>{selected.type === "supplier" ? "Proveedor cerca" : "Trabajador cerca"}</small>
-            <strong>{selected.title}</strong>
-            <span>{selected.distanceKm} km - {selected.subtitle}</span>
+          <div className="client-map-card-copy">
+            <small>{copy.sheetLabel}</small>
+            <strong>{selected.name}</strong>
+            <span>{selected.title}</span>
+            <p>
+              <MapPin size={14} />
+              {selected.distanceKm} km
+              {selected.rating ? (
+                <>
+                  <CheckCircle2 size={14} />
+                  {selected.rating}
+                </>
+              ) : null}
+              {selected.type === "supplier" ? (
+                <>
+                  <Truck size={14} />
+                  {selected.hasDelivery ? "Delivery" : "Consultar envio"}
+                </>
+              ) : (
+                <>
+                  <Navigation size={14} />
+                  {selected.subtitle}
+                </>
+              )}
+            </p>
           </div>
-          <Link href={selected.href} aria-label="Contactar">
-            <MessageCircle size={19} />
-            Contactar
-          </Link>
+          <div className="client-map-card-actions">
+            {selected.phone ? (
+              <a className="call" href={`tel:${cleanPhone(selected.phone)}`} aria-label={`Llamar a ${selected.name}`}>
+                <Phone size={17} />
+                Llamar
+              </a>
+            ) : null}
+            <Link href={selected.href} aria-label={`Enviar mensaje a ${selected.name}`}>
+              <MessageCircle size={17} />
+              Mensaje
+            </Link>
+            <a href={directionsUrl(selected)} target="_blank" rel="noreferrer" aria-label="Abrir ruta en Google Maps">
+              <ArrowUpRight size={17} />
+              Ruta
+            </a>
+          </div>
         </article>
       ) : null}
     </section>
@@ -282,10 +386,11 @@ function loadGoogleMaps(apiKey) {
     const previousAuthFailure = window.gm_authFailure;
     window.gm_authFailure = () => {
       if (typeof previousAuthFailure === "function") previousAuthFailure();
-      reject(new Error("Autoriza http://localhost:3010/* en las restricciones HTTP de tu clave."));
+      reject(new Error("Autoriza http://localhost:3010/* y el dominio de produccion en las restricciones HTTP."));
     };
+
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async`;
     script.async = true;
     script.onload = () => {
       prepareGoogleMapsApi(window.google).then(resolve).catch(reject);
@@ -310,7 +415,6 @@ async function prepareGoogleMapsApi(google) {
 
     const api = normalizeGoogleMapsApi(google);
     if (api) return api;
-
     await wait(100);
   }
 
@@ -356,14 +460,24 @@ function getBrowserPosition() {
   });
 }
 
-function createAvatarOverlay(mapsApi, { map, position, place, onClick }) {
+function createAvatarOverlay(mapsApi, { map, position, place, active, onClick }) {
   class AvatarOverlay extends mapsApi.OverlayView {
     onAdd() {
       this.div = document.createElement("button");
       this.div.type = "button";
-      this.div.className = `client-map-marker ${place.type}`;
-      this.div.setAttribute("aria-label", place.name || "Marcador");
-      if (place.avatarUrl) {
+      this.div.className = `client-map-marker ${place.type}${place.type === "client" ? " current-location" : ""}${active ? " active" : ""}`;
+      this.div.setAttribute("aria-label", place.type === "client" ? "Tu ubicacion" : place.name || "Marcador");
+      if (place.type === "client") {
+        const pulse = document.createElement("span");
+        pulse.className = "client-location-pulse";
+        const core = document.createElement("span");
+        core.className = "client-location-core";
+        const dot = document.createElement("span");
+        dot.className = "client-location-dot";
+        core.appendChild(dot);
+        this.div.appendChild(pulse);
+        this.div.appendChild(core);
+      } else if (place.avatarUrl) {
         const image = document.createElement("img");
         image.src = place.avatarUrl;
         image.alt = "";
@@ -381,7 +495,7 @@ function createAvatarOverlay(mapsApi, { map, position, place, onClick }) {
       const projection = this.getProjection();
       const point = projection.fromLatLngToDivPixel(new mapsApi.LatLng(position.lat, position.lng));
       if (!point || !this.div) return;
-      this.div.style.transform = `translate(${point.x - 24}px, ${point.y - 24}px)`;
+      this.div.style.transform = `translate(${point.x}px, ${point.y}px) translate(-50%, -50%)`;
     }
 
     onRemove() {
@@ -396,6 +510,26 @@ function createAvatarOverlay(mapsApi, { map, position, place, onClick }) {
   return overlay;
 }
 
+function searchableText(place) {
+  return [
+    place.name,
+    place.title,
+    place.subtitle,
+    place.city,
+    place.address,
+    place.category,
+    ...(Array.isArray(place.skills) ? place.skills : []),
+  ].filter(Boolean).join(" ");
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
 function initials(value) {
   return String(value || "M")
     .split(/\s+/)
@@ -405,6 +539,14 @@ function initials(value) {
     .toUpperCase();
 }
 
+function cleanPhone(phone) {
+  return String(phone || "").replace(/[^\d+]/g, "");
+}
+
+function directionsUrl(place) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${place.lat},${place.lng}`)}`;
+}
+
 const mapStyle = [
   { elementType: "geometry", stylers: [{ color: "#eef8f6" }] },
   { elementType: "labels.text.fill", stylers: [{ color: "#233633" }] },
@@ -412,5 +554,6 @@ const mapStyle = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
   { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#d8efec" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
   { featureType: "water", elementType: "geometry", stylers: [{ color: "#bde6e1" }] },
 ];

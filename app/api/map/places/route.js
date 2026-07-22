@@ -8,6 +8,7 @@ export async function GET(request) {
   const lat = Number(searchParams.get("lat"));
   const lng = Number(searchParams.get("lng"));
   const service = searchParams.get("service") || "";
+  const query = searchParams.get("q") || "";
   const origin = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : ASUNCION;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -31,6 +32,7 @@ export async function GET(request) {
     places = demoPlaces(origin);
   }
 
+  places = query ? places.filter((place) => searchableText(place).includes(normalizeText(query))) : places;
   places.sort((a, b) => a.distanceKm - b.distanceKm);
 
   return NextResponse.json({
@@ -43,7 +45,7 @@ async function fetchWorkers(supabase, service) {
   try {
     let query = supabase
       .from("map_workers_view")
-      .select("user_id,full_name,avatar_url,headline,skills,city,lat,lng,rating,completed_jobs,response_minutes,is_available,media_url,media_type")
+      .select("user_id,full_name,phone,avatar_url,headline,skills,city,lat,lng,rating,completed_jobs,response_minutes,is_available,media_url,media_type")
       .limit(80);
 
     if (service) query = query.contains("skills", [service]);
@@ -51,7 +53,17 @@ async function fetchWorkers(supabase, service) {
     if (error) throw error;
     return data || [];
   } catch {
-    return [];
+    try {
+      let fallback = supabase
+        .from("map_workers_view")
+        .select("user_id,full_name,avatar_url,headline,skills,city,lat,lng,rating,completed_jobs,response_minutes,is_available,media_url,media_type")
+        .limit(80);
+      if (service) fallback = fallback.contains("skills", [service]);
+      const { data } = await fallback;
+      return data || [];
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -59,13 +71,21 @@ async function fetchSuppliers(supabase) {
   try {
     const { data, error } = await supabase
       .from("map_suppliers_view")
-      .select("user_id,business_name,category,city,address,lat,lng,logo_url,product_title,product_description,media_url,price")
+      .select("user_id,business_name,category,city,address,phone,lat,lng,logo_url,product_title,product_description,media_url,price,has_delivery")
       .limit(80);
 
     if (error) throw error;
     return data || [];
   } catch {
-    return [];
+    try {
+      const { data } = await supabase
+        .from("map_suppliers_view")
+        .select("user_id,business_name,category,city,address,lat,lng,logo_url,product_title,product_description,media_url,price")
+        .limit(80);
+      return data || [];
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -80,6 +100,9 @@ function normalizeWorker(worker, origin) {
     name: worker.full_name || "Trabajador ManosYA",
     title: worker.headline || "Trabajador verificado",
     subtitle: worker.is_available ? "Disponible ahora" : responseLabel(worker.response_minutes),
+    phone: worker.phone || "",
+    city: worker.city || "",
+    skills: Array.isArray(worker.skills) ? worker.skills : [],
     avatarUrl: worker.avatar_url || "",
     mediaUrl: worker.media_url || "",
     lat,
@@ -102,6 +125,11 @@ function normalizeSupplier(supplier, origin) {
     name: supplier.business_name || "Proveedor ManosYA",
     title: supplier.product_title || supplier.category || "Insumos disponibles",
     subtitle: supplier.address || supplier.city || "Local digital",
+    phone: supplier.phone || "",
+    city: supplier.city || "",
+    address: supplier.address || "",
+    category: supplier.category || "",
+    hasDelivery: Boolean(supplier.has_delivery),
     avatarUrl: supplier.logo_url || "",
     mediaUrl: supplier.media_url || "",
     lat,
@@ -121,6 +149,9 @@ function demoPlaces(origin) {
       name: "Carlos Medina",
       title: "Electricista",
       subtitle: "Disponible ahora",
+      phone: "+595981000001",
+      city: "Asuncion",
+      skills: ["electricidad", "urgencias"],
       avatarUrl: "",
       mediaUrl: "",
       lat: origin.lat + 0.006,
@@ -136,6 +167,11 @@ function demoPlaces(origin) {
       name: "Proveedor Centro",
       title: "Cables y herramientas",
       subtitle: "Local digital",
+      phone: "+595981000002",
+      city: "Asuncion",
+      address: "Av. San Blas",
+      category: "Insumos",
+      hasDelivery: true,
       avatarUrl: "",
       mediaUrl: "",
       lat: origin.lat - 0.005,
@@ -167,4 +203,24 @@ function responseLabel(minutes) {
   if (!value) return "Perfil verificado";
   if (value < 60) return `Responde en ${value} min`;
   return "Responde hoy";
+}
+
+function searchableText(place) {
+  return normalizeText([
+    place.name,
+    place.title,
+    place.subtitle,
+    place.city,
+    place.address,
+    place.category,
+    ...(Array.isArray(place.skills) ? place.skills : []),
+  ].filter(Boolean).join(" "));
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
 }

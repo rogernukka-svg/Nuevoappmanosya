@@ -118,6 +118,7 @@ create table if not exists public.supplier_profiles (
   lat double precision,
   lng double precision,
   phone text,
+  has_delivery boolean not null default false,
   logo_url text,
   cover_url text,
   is_active boolean not null default false,
@@ -932,6 +933,7 @@ as
 select
   user_id,
   full_name,
+  phone,
   avatar_url,
   headline,
   skills,
@@ -956,13 +958,15 @@ select
   sp.category,
   coalesce(sp.city, p.city) as city,
   coalesce(sp.address, p.address) as address,
+  coalesce(sp.phone, p.phone) as phone,
   coalesce(sp.lat, p.lat) as lat,
   coalesce(sp.lng, p.lng) as lng,
   coalesce(sp.logo_url, p.avatar_url) as logo_url,
   product.title as product_title,
   product.description as product_description,
   product.media_url,
-  product.price
+  product.price,
+  sp.has_delivery
 from public.supplier_profiles sp
 join public.profiles p on p.id = sp.user_id
 left join lateral (
