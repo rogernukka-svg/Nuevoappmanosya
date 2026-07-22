@@ -69,9 +69,14 @@ export default function ClientMapScreen({ audience = "client" }) {
   const mapInstanceRef = useRef(null);
   const mapApiRef = useRef(null);
   const overlaysRef = useRef([]);
+  const routeLineRef = useRef(null);
+  const liveMarkerRef = useRef(null);
+  const routePathRef = useRef([]);
   const [places, setPlaces] = useState([]);
   const [center, setCenter] = useState(ASUNCION);
   const [selected, setSelected] = useState(null);
+  const [trackingPlace, setTrackingPlace] = useState(null);
+  const [routeProgress, setRouteProgress] = useState(0.08);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -83,6 +88,8 @@ export default function ClientMapScreen({ audience = "client" }) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const copy = audienceCopy[audience] || audienceCopy.client;
   const canSaveLocation = audience === "worker" || audience === "supplier";
+  const trackingCopy = trackingPlace ? liveRouteCopy(audience, trackingPlace) : null;
+  const canTrackSelected = selected ? canTrackPlace(audience, selected) : false;
 
   const visiblePlaces = useMemo(() => {
     const normalizedQuery = normalizeText(query);
@@ -195,13 +202,103 @@ export default function ClientMapScreen({ audience = "client" }) {
       bounds.extend({ lat: place.lat, lng: place.lng });
     });
 
+    if (trackingPlace) return;
     if (visiblePlaces.length) map.fitBounds(bounds, 76);
     else map.setCenter(center);
-  }, [center, mapReady, selected?.id, visiblePlaces]);
+  }, [center, mapReady, selected?.id, trackingPlace, visiblePlaces]);
+
+  useEffect(() => {
+    if (!trackingPlace) return undefined;
+    const timer = window.setInterval(() => {
+      setRouteProgress((current) => (current >= 0.96 ? 0.08 : Math.min(0.96, current + 0.025)));
+    }, 900);
+
+    return () => window.clearInterval(timer);
+  }, [trackingPlace]);
+
+  useEffect(() => {
+    const mapsApi = mapApiRef.current;
+    const map = mapInstanceRef.current;
+    if (!mapsApi || !map || !mapReady) return undefined;
+
+    routeLineRef.current?.setMap(null);
+    liveMarkerRef.current?.setMap(null);
+    routeLineRef.current = null;
+    liveMarkerRef.current = null;
+    routePathRef.current = [];
+
+    if (!trackingPlace) return undefined;
+
+    const routePath = routePathForAudience(audience, center, trackingPlace);
+    routePathRef.current = routePath;
+
+    const line = mapsApi.Polyline
+      ? new mapsApi.Polyline({
+          path: routePath,
+          geodesic: true,
+          clickable: false,
+          strokeColor: "#050505",
+          strokeOpacity: 0.7,
+          strokeWeight: 5,
+          zIndex: 4,
+        })
+      : null;
+
+    if (line) {
+      line.setMap(map);
+      routeLineRef.current = line;
+    }
+
+    const startPosition = pointAlongPath(routePath, 0.08);
+    const liveMarker = createAvatarOverlay(mapsApi, {
+      map,
+      position: startPosition,
+      place: {
+        ...trackingPlace,
+        routeLive: true,
+        name: liveMarkerName(audience, trackingPlace),
+      },
+      active: true,
+      onClick: () => setSelected(trackingPlace),
+    });
+
+    liveMarkerRef.current = liveMarker;
+    focusRouteCamera(map, mapsApi, routePath);
+
+    return () => {
+      line?.setMap(null);
+      liveMarker?.setMap(null);
+      if (routeLineRef.current === line) routeLineRef.current = null;
+      if (liveMarkerRef.current === liveMarker) liveMarkerRef.current = null;
+    };
+  }, [audience, center, mapReady, trackingPlace]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!trackingPlace || !map || !mapReady) return;
+    const routePath = routePathRef.current.length ? routePathRef.current : routePathForAudience(audience, center, trackingPlace);
+    const position = pointAlongPath(routePath, routeProgress);
+    liveMarkerRef.current?.updatePosition?.(position);
+    if (routeProgress > 0.12 && routeProgress < 0.92) {
+      map.panTo(position);
+    }
+  }, [audience, center, mapReady, routeProgress, trackingPlace]);
 
   function selectPlace(place) {
     setSelected(place);
     mapInstanceRef.current?.panTo({ lat: place.lat, lng: place.lng });
+  }
+
+  function startTracking(place) {
+    if (!place) return;
+    setSelected(place);
+    setTrackingPlace(place);
+    setRouteProgress(0.08);
+  }
+
+  function stopTracking() {
+    setTrackingPlace(null);
+    setRouteProgress(0.08);
   }
 
   function recenter() {
@@ -345,6 +442,18 @@ export default function ClientMapScreen({ audience = "client" }) {
               )}
             </p>
           </div>
+          {trackingPlace?.id === selected.id && trackingCopy ? (
+            <div className="client-map-route-chip" aria-live="polite">
+              <span className="client-map-route-dot" aria-hidden="true" />
+              <div>
+                <small>{trackingCopy.kicker}</small>
+                <strong>{trackingCopy.title}</strong>
+              </div>
+              <button type="button" onClick={stopTracking}>
+                Listo
+              </button>
+            </div>
+          ) : null}
           <div className="client-map-card-actions">
             {selected.phone ? (
               <a className="call" href={`tel:${cleanPhone(selected.phone)}`} aria-label={`Llamar a ${selected.name}`}>
@@ -360,6 +469,12 @@ export default function ClientMapScreen({ audience = "client" }) {
               <ArrowUpRight size={17} />
               Ruta
             </a>
+            {canTrackSelected ? (
+              <button type="button" className="live" onClick={() => startTracking(selected)}>
+                <Navigation size={17} />
+                {routeActionLabel(audience, selected)}
+              </button>
+            ) : null}
           </div>
         </article>
       ) : null}
@@ -426,6 +541,7 @@ function normalizeGoogleMapsApi(google, mapsLibrary = {}, coreLibrary = {}) {
     google,
     Map: mapsLibrary.Map || google?.maps?.Map,
     OverlayView: mapsLibrary.OverlayView || google?.maps?.OverlayView,
+    Polyline: mapsLibrary.Polyline || google?.maps?.Polyline,
     LatLngBounds: coreLibrary.LatLngBounds || google?.maps?.LatLngBounds,
     LatLng: coreLibrary.LatLng || google?.maps?.LatLng,
   };
@@ -462,10 +578,15 @@ function getBrowserPosition() {
 
 function createAvatarOverlay(mapsApi, { map, position, place, active, onClick }) {
   class AvatarOverlay extends mapsApi.OverlayView {
+    constructor() {
+      super();
+      this.currentPosition = position;
+    }
+
     onAdd() {
       this.div = document.createElement("button");
       this.div.type = "button";
-      this.div.className = `client-map-marker ${place.type}${place.type === "client" ? " current-location" : ""}${active ? " active" : ""}`;
+      this.div.className = `client-map-marker ${place.type}${place.type === "client" ? " current-location" : ""}${place.routeLive ? " route-live" : ""}${active ? " active" : ""}`;
       this.div.setAttribute("aria-label", place.type === "client" ? "Tu ubicacion" : place.name || "Marcador");
       if (place.type === "client") {
         const pulse = document.createElement("span");
@@ -493,9 +614,14 @@ function createAvatarOverlay(mapsApi, { map, position, place, active, onClick })
 
     draw() {
       const projection = this.getProjection();
-      const point = projection.fromLatLngToDivPixel(new mapsApi.LatLng(position.lat, position.lng));
+      const point = projection.fromLatLngToDivPixel(new mapsApi.LatLng(this.currentPosition.lat, this.currentPosition.lng));
       if (!point || !this.div) return;
       this.div.style.transform = `translate(${point.x}px, ${point.y}px) translate(-50%, -50%)`;
+    }
+
+    updatePosition(nextPosition) {
+      this.currentPosition = nextPosition;
+      this.draw();
     }
 
     onRemove() {
@@ -545,6 +671,106 @@ function cleanPhone(phone) {
 
 function directionsUrl(place) {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${place.lat},${place.lng}`)}`;
+}
+
+function canTrackPlace(audience, place) {
+  if (!place || !Number.isFinite(Number(place.lat)) || !Number.isFinite(Number(place.lng))) return false;
+  if (audience === "client") return place.type === "worker" || (place.type === "supplier" && place.hasDelivery);
+  if (audience === "supplier") return place.type === "worker";
+  return true;
+}
+
+function routeActionLabel(audience, place) {
+  if (audience === "client" && place?.type === "supplier") return "Delivery";
+  if (audience === "client") return "Seguir";
+  if (audience === "worker") return "Guiarme";
+  return "Ruta viva";
+}
+
+function liveRouteCopy(audience, place) {
+  if (audience === "client" && place?.type === "supplier") {
+    return {
+      kicker: "Delivery activo",
+      title: `${firstName(place.name)} se acerca`,
+    };
+  }
+
+  if (audience === "client") {
+    return {
+      kicker: "En camino",
+      title: `${firstName(place.name)} va hacia vos`,
+    };
+  }
+
+  if (audience === "worker") {
+    return {
+      kicker: "Ruta lista",
+      title: "El cliente ve tu avance",
+    };
+  }
+
+  return {
+    kicker: "Entrega lista",
+    title: "Comparte el recorrido",
+  };
+}
+
+function liveMarkerName(audience, place) {
+  if (audience === "client") return place.name;
+  if (audience === "worker") return "Tu ruta";
+  return place.type === "supplier" ? "Delivery" : "Ruta";
+}
+
+function firstName(value) {
+  return String(value || "ManosYA").trim().split(/\s+/)[0] || "ManosYA";
+}
+
+function routePathForAudience(audience, center, place) {
+  const target = { lat: Number(place.lat), lng: Number(place.lng) };
+  const origin = audience === "client" ? target : center;
+  const destination = audience === "client" ? center : target;
+  const bend = {
+    lat: (origin.lat + destination.lat) / 2 + 0.0011,
+    lng: (origin.lng + destination.lng) / 2 - 0.001,
+  };
+
+  return [origin, bend, destination].filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+}
+
+function pointAlongPath(path, progress) {
+  const points = Array.isArray(path) ? path : [];
+  if (!points.length) return ASUNCION;
+  if (points.length === 1) return points[0];
+
+  const clamped = Math.max(0, Math.min(1, Number(progress) || 0));
+  const scaled = clamped * (points.length - 1);
+  const index = Math.min(points.length - 2, Math.floor(scaled));
+  const localProgress = scaled - index;
+  return interpolatePoint(points[index], points[index + 1], localProgress);
+}
+
+function interpolatePoint(a, b, progress) {
+  return {
+    lat: a.lat + (b.lat - a.lat) * progress,
+    lng: a.lng + (b.lng - a.lng) * progress,
+  };
+}
+
+function focusRouteCamera(map, mapsApi, path) {
+  if (!map || !mapsApi?.LatLngBounds || !Array.isArray(path) || path.length < 2) return;
+  const bounds = new mapsApi.LatLngBounds();
+  path.forEach((point) => bounds.extend(point));
+
+  try {
+    map.fitBounds(bounds, { top: 116, right: 46, bottom: 230, left: 46 });
+  } catch {
+    map.fitBounds(bounds, 92);
+  }
+
+  window.setTimeout(() => {
+    const zoom = Number(map.getZoom?.());
+    if (Number.isFinite(zoom) && zoom > 15) map.setZoom(15);
+  }, 180);
 }
 
 const mapStyle = [

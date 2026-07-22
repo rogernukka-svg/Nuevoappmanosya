@@ -55,6 +55,7 @@ export default function AppShell({ role = "auto", title, children, action, immer
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const requestedRole = role === "auto" ? "auto" : normalizeRole(role);
   const [resolvedRole, setResolvedRole] = useState(requestedRole === "auto" ? null : requestedRole);
+  const isMapScreen = title === "Mapa";
 
   useEffect(() => {
     let alive = true;
@@ -129,24 +130,26 @@ export default function AppShell({ role = "auto", title, children, action, immer
   }
 
   return (
-    <section className="premium-shell">
-      <header className="safe-x flex items-center justify-between pt-4">
-        <Link href="/" aria-label="ManosYA inicio" className="rounded-full bg-[var(--color-primary)] px-4 py-3 text-[var(--color-ink)]">
-          <Brand size="sm" />
-        </Link>
-        <div className="min-w-0 px-3 text-center">
-          <p className="truncate text-sm font-black">{title}</p>
-        </div>
-        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm">
-          {headerAction}
-        </div>
-      </header>
+    <section className={`premium-shell${isMapScreen ? " premium-shell-map" : ""}`}>
+      {!isMapScreen ? (
+        <header className="safe-x flex items-center justify-between pt-4">
+          <Link href="/" aria-label="ManosYA inicio" className="rounded-full bg-[var(--color-primary)] px-4 py-3 text-[var(--color-ink)]">
+            <Brand size="sm" />
+          </Link>
+          <div className="min-w-0 px-3 text-center">
+            <p className="truncate text-sm font-black">{title}</p>
+          </div>
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm">
+            {headerAction}
+          </div>
+        </header>
+      ) : null}
 
-      <div className="screen safe-x py-4">{children}</div>
+      <div className={isMapScreen ? "screen map-screen-slot" : "screen safe-x py-4"}>{children}</div>
 
       {roleReady ? (
         <nav
-          className="safe-x safe-bottom grid gap-2 border-t border-black/5 bg-white/92 pt-2 backdrop-blur-2xl"
+          className={`safe-x safe-bottom grid gap-2 border-t border-black/5 bg-white/92 pt-2 backdrop-blur-2xl${isMapScreen ? " map-shell-nav" : ""}`}
           style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}
         >
           {nav.map((item) => {
