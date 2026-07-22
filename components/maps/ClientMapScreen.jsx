@@ -31,6 +31,7 @@ const mapCopy = {
 export default function ClientMapScreen({ audience = "client" }) {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
+  const mapApiRef = useRef(null);
   const overlaysRef = useRef([]);
   const [places, setPlaces] = useState([]);
   const [center, setCenter] = useState(ASUNCION);
@@ -90,9 +91,10 @@ export default function ClientMapScreen({ audience = "client" }) {
 
     let alive = true;
     loadGoogleMaps(apiKey)
-      .then((google) => {
+      .then((mapsApi) => {
         if (!alive || !mapRef.current) return;
-        mapInstanceRef.current = new google.maps.Map(mapRef.current, {
+        mapApiRef.current = mapsApi;
+        mapInstanceRef.current = new mapsApi.Map(mapRef.current, {
           center: ASUNCION,
           zoom: 13,
           disableDefaultUI: true,
@@ -110,17 +112,17 @@ export default function ClientMapScreen({ audience = "client" }) {
   }, [apiKey]);
 
   useEffect(() => {
-    const google = window.google;
+    const mapsApi = mapApiRef.current;
     const map = mapInstanceRef.current;
-    if (!google || !map || !mapReady) return;
+    if (!mapsApi || !map || !mapReady) return;
 
     overlaysRef.current.forEach((overlay) => overlay.setMap(null));
     overlaysRef.current = [];
 
-    const bounds = new google.maps.LatLngBounds();
+    const bounds = new mapsApi.LatLngBounds();
     bounds.extend(center);
 
-    const userMarker = createAvatarOverlay(google, {
+    const userMarker = createAvatarOverlay(mapsApi, {
       map,
       position: center,
       place: { type: "client", name: "Vos", avatarUrl: "" },
@@ -129,7 +131,7 @@ export default function ClientMapScreen({ audience = "client" }) {
     overlaysRef.current.push(userMarker);
 
     visiblePlaces.forEach((place) => {
-      const overlay = createAvatarOverlay(google, {
+      const overlay = createAvatarOverlay(mapsApi, {
         map,
         position: { lat: place.lat, lng: place.lng },
         place,
@@ -272,7 +274,8 @@ function PlaceAvatar({ place }) {
 
 function loadGoogleMaps(apiKey) {
   if (typeof window === "undefined") return Promise.reject(new Error("browser only"));
-  if (window.google?.maps) return Promise.resolve(window.google);
+  if (window.__manosyaGoogleMapsApi) return Promise.resolve(window.__manosyaGoogleMapsApi);
+  if (window.google?.maps?.importLibrary) return prepareGoogleMapsApi(window.google);
   if (mapsPromise) return mapsPromise;
 
   mapsPromise = new Promise((resolve, reject) => {
@@ -284,12 +287,45 @@ function loadGoogleMaps(apiKey) {
     const script = document.createElement("script");
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async`;
     script.async = true;
-    script.onload = () => resolve(window.google);
+    script.onload = () => {
+      prepareGoogleMapsApi(window.google).then(resolve).catch(reject);
+    };
     script.onerror = reject;
     document.head.appendChild(script);
   });
 
   return mapsPromise;
+}
+
+async function prepareGoogleMapsApi(google) {
+  if (!google?.maps?.importLibrary) {
+    throw new Error("Google Maps no termino de cargar.");
+  }
+
+  const [mapsLibrary, coreLibrary] = await Promise.all([
+    google.maps.importLibrary("maps"),
+    google.maps.importLibrary("core"),
+  ]);
+
+  const api = {
+    google,
+    Map: mapsLibrary.Map || google.maps.Map,
+    OverlayView: mapsLibrary.OverlayView || google.maps.OverlayView,
+    LatLngBounds: coreLibrary.LatLngBounds || google.maps.LatLngBounds,
+    LatLng: coreLibrary.LatLng || google.maps.LatLng,
+  };
+
+  if (
+    typeof api.Map !== "function" ||
+    typeof api.OverlayView !== "function" ||
+    typeof api.LatLngBounds !== "function" ||
+    typeof api.LatLng !== "function"
+  ) {
+    throw new Error("Google Maps no entrego el constructor del mapa.");
+  }
+
+  window.__manosyaGoogleMapsApi = api;
+  return api;
 }
 
 function getBrowserPosition() {
@@ -306,8 +342,8 @@ function getBrowserPosition() {
   });
 }
 
-function createAvatarOverlay(google, { map, position, place, onClick }) {
-  class AvatarOverlay extends google.maps.OverlayView {
+function createAvatarOverlay(mapsApi, { map, position, place, onClick }) {
+  class AvatarOverlay extends mapsApi.OverlayView {
     onAdd() {
       this.div = document.createElement("button");
       this.div.type = "button";
@@ -329,7 +365,7 @@ function createAvatarOverlay(google, { map, position, place, onClick }) {
 
     draw() {
       const projection = this.getProjection();
-      const point = projection.fromLatLngToDivPixel(new google.maps.LatLng(position.lat, position.lng));
+      const point = projection.fromLatLngToDivPixel(new mapsApi.LatLng(position.lat, position.lng));
       if (!point || !this.div) return;
       this.div.style.transform = `translate(${point.x - 24}px, ${point.y - 24}px)`;
     }
